@@ -15,54 +15,25 @@
 #include <linux/atomic.h>
 #include <linux/cache.h>
 #include <linux/compiler.h>
-#include <airymax/lsm_types.h>
-#include <airymax/error.h>
+#include <linux/airymax/lsm_types.h>
+#include <linux/airymax/error.h>
+#include <linux/airymax/ipc.h>
 
-/* ─── Badge Field Extraction Macros ────────────────────────────────────── */
-/*
+/* ─── Badge Field Macros ─────────────────────────────────────────────────
+ * AIRY_BADGE_EPOCH/RANDTAG/PERMS 提取宏和 AIRY_BADGE_COMPILE 构造宏
+ * 由 <linux/airymax/ipc.h> 统一定义（[SC] 单一宿主原则）。
  * Badge layout (64-bit):
  *   [63:48]  epoch      (16 bits)
  *   [47:16]  random tag (32 bits)
  *   [15:0]   permissions (16 bits)
  */
-#define AIRY_BADGE_EPOCH(b)    (((__u64)(b) >> 48) & 0xFFFFULL)
-#define AIRY_BADGE_PERMS(b)    ((__u64)(b) & 0xFFFFULL)
-#define AIRY_BADGE_RANDTAG(b)  (((__u64)(b) >> 16) & 0xFFFFFFFFULL)
-
-/* ─── Badge Construction Macro ─────────────────────────────────────────── */
-#define AIRY_BADGE_MAKE(epoch, randtag, perms) \
-	(((__u64)((epoch) & 0xFFFFULL) << 48) | \
-	 (((__u64)(randtag) & 0xFFFFFFFFULL) << 16) | \
-	 ((__u64)(perms) & 0xFFFFULL))
-
-/* ─── Capability Slot: 64-byte cacheline-aligned ─────────────────────── */
-struct airy_cap_slot {
-	__u64   badge;              /* 64-bit Capability Folding badge */
-	__u32   agent_id;           /* Owning agent ID */
-	__u32   flags;              /* Slot flags */
-	__u32   randtag;            /* Random tag for forgery prevention */
-	__u16   perms;              /* Permission bits */
-	__u16   _pad;               /* Alignment */
-	__u8    _reserved[56];      /* Cacheline padding */
-} ____cacheline_aligned_in_smp;
 
 /* ─── Global Capability Array: 1024 slots ────────────────────────────── */
-#define AIRY_CAP_MAX_AGENTS      1024
-
-extern struct airy_cap_slot agent_caps[AIRY_CAP_MAX_AGENTS];
+/* struct airy_cap_slot, AIRY_CAP_MAX_AGENTS, struct airy_task_sec 由
+ * <linux/airymax/lsm_types.h> 统一定义（[SC] 单一宿主原则）。
+ * 本头文件通过 #include <linux/airymax/lsm_types.h> 引入这些类型。 */
+extern struct airy_cap_slot *agent_caps;
 extern atomic_t              airy_cap_global_epoch;
-
-/* ─── Agent Security Blob (per-task) ──────────────────────────────────── */
-struct airy_task_sec {
-	__u32   agent_id;
-	__u32   cap_space_root;
-	__u32   agent_state;
-	__u32   fault_count;
-	__u64   sched_budget_ns;
-	__u64   last_heartbeat;
-	__u32   frozen_reason;
-	__u32   _reserved;
-};
 
 /* ─── LSM Blob Sizes ──────────────────────────────────────────────────── */
 extern struct lsm_blob_sizes airy_blob_sizes;
@@ -113,9 +84,27 @@ struct airy_cap_slot *airy_cap_lookup(__u32 agent_id);
 int airy_cap_register(__u32 agent_id, __u64 badge);
 
 /* ─── Capability Derivation ───────────────────────────────────────────── */
-#include <airymax/security_types.h>
+#include <linux/airymax/security_types.h>
 int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		    enum airy_cap_op op, __u16 new_perms);
+
+/* ─── IPC Ring Structure (single-host for security/airy + kernel/superv) ─ */
+/**
+ * struct airy_ipc_ring - An IPC ring buffer between two agents.
+ * @frozen:           Whether the ring is currently frozen.
+ * @freeze_reason:    Reason code for the freeze (0 if not frozen).
+ * @freeze_timestamp: Monotonic timestamp (ns) when the ring was frozen.
+ *
+ * Defined here (not in a [SC] header) because it is an internal
+ * kernel implementation type, not a UAPI contract. Both
+ * security/airy/airy_ipc_freeze.c and kernel/superv/airy_ipc_freeze.c
+ * include this header to obtain the single definition.
+ */
+struct airy_ipc_ring {
+	bool    frozen;
+	__u32   freeze_reason;
+	__u64   freeze_timestamp;
+};
 
 /* ─── Slowpath Capability Check ───────────────────────────────────────── */
 struct io_uring_cmd;

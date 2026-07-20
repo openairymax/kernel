@@ -11,7 +11,7 @@
 
 #include <linux/atomic.h>
 #include <linux/compiler.h>
-#include <airymax/error.h>
+#include <linux/airymax/error.h>
 
 #include "../../security/airy/airy_cap.h"
 

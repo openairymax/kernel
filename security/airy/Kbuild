@@ -12,7 +12,6 @@ airy-y := airy_lsm.o \
 	  airy_cap_check.o \
 	  airy_cap_revoke.o \
 	  airy_cap_rotate.o \
-	  airy_superv_lsm.o \
 	  airy_ipc_freeze.o \
 	  airy_die_notify.o \
 	  airy_eventfd.o

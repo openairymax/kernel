@@ -11,7 +11,7 @@
  */
 
 #include <linux/random.h>
-#include <airymax/ipc.h>
+#include <linux/airymax/ipc.h>
 
 #include "airy_cap.h"
 

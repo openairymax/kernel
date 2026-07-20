@@ -11,7 +11,7 @@
 #ifndef _UAPI_AIRYMAX_LSM_TYPES_H
 #define _UAPI_AIRYMAX_LSM_TYPES_H
 
-#include <airymax/uapi_compat.h>
+#include <linux/airymax/uapi_compat.h>
 
 /* ─── LSM Hook Coverage ──────────────────────────────────────────────── */
 #define AIRY_LSM_HOOK_COUNT     250  /* Total pure-C LSM hooks */

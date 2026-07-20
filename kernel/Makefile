@@ -133,8 +133,11 @@ obj-$(CONFIG_RESOURCE_KUNIT_TEST) += resource_kunit.o
 obj-$(CONFIG_SYSCTL_KUNIT_TEST) += sysctl-test.o
 
 # Airymax kernel subsystems
-obj-$(CONFIG_SECURITY_AIRY) += superv/
-obj-$(CONFIG_AIRY_SYSCALL) += syscalls/
+obj-$(CONFIG_SECURITY_AIRY)	+= superv/
+obj-$(CONFIG_AIRY_SYSCALL)	+= syscalls/
+obj-$(CONFIG_AIRY_COREKERN)	+= corekern/
+obj-$(CONFIG_AIRY_LOG)		+= log/
+obj-$(CONFIG_AIRY_IPC)		+= ipc/
 
 CFLAGS_stackleak.o += $(DISABLE_STACKLEAK_PLUGIN)
 obj-$(CONFIG_GCC_PLUGIN_STACKLEAK) += stackleak.o

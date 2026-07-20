@@ -12,7 +12,7 @@
 #ifndef _UAPI_AIRYMAX_IPC_H
 #define _UAPI_AIRYMAX_IPC_H
 
-#include <airymax/uapi_compat.h>
+#include <linux/airymax/uapi_compat.h>
 
 /* ─── Constants ──────────────────────────────────────────────────────── */
 #define AIRY_IPC_MAGIC          0x41524531u /* 'ARE1' */

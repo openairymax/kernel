@@ -10,7 +10,7 @@
  */
 
 #include <linux/atomic.h>
-#include <airymax/error.h>
+#include <linux/airymax/error.h>
 
 #include "airy_cap.h"
 

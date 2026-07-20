@@ -10,7 +10,7 @@
 #ifndef _UAPI_AIRYMAX_MEMORY_TYPES_H
 #define _UAPI_AIRYMAX_MEMORY_TYPES_H
 
-#include <airymax/uapi_compat.h>
+#include <linux/airymax/uapi_compat.h>
 
 /* ─── Memory Tier Levels ─────────────────────────────────────────────── */
 enum airy_mem_level {

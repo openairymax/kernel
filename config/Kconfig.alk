@@ -4,12 +4,51 @@
 menu "Airymax Kernel (ALK)"
 
 config AIRY_SYSCALL
-	bool "Enable Airymax syscalls (512-515)"
+	bool "Enable Airymax syscalls (454-457)"
 	depends on SECURITY_AIRY
 	default y
 	help
-	  Enables the 4 Airymax system calls for agent IPC,
-	  memory rotation control, scheduler control, and
-	  cognition lifecycle notification.
+	  Enables the 4 Airymax system calls (numbers 454-457, avoiding
+	  the x32 historical range 512-547) for agent capability
+	  invocation, memory rotation control, scheduler control, and
+	  cognition lifecycle notification. 20 reserved slots (458-477)
+	  are kept for future extension.
+
+config AIRY_COREKERN
+	bool "Airymax Core-Kernel Enhancements (corekern/)"
+	depends on SECURITY_AIRY
+	default y
+	help
+	  Enables the Airymax core-kernel enhancement subsystem under
+	  kernel/corekern/. This hosts the sched_tac kernel side
+	  (stc_policy/dispatch/mcs_map/stats), io_uring IPC kernel side
+	  (airy_uring_cmd/ring/fastpath/zero_copy), agent 8-state
+	  lifecycle (taskflow), kernel memory tiering, time/object/
+	  locking/irq helpers, and eBPF struct_ops probes.
+
+	  Subdirectories: api/ sched/ ipc/ taskflow/ memory/ time/
+	  object/ locking/ irq/ bpf/.
+
+config AIRY_LOG
+	bool "Airyx Unified Logging (A-ULP) kernel side"
+	depends on SECURITY_AIRY
+	default y
+	help
+	  Enables the Airymax Unified Logging Protocol kernel side
+	  under kernel/log/. Provides printk 8-level mapping, 128B
+	  fixed-size log record ring buffer (alloc_pages + mmap), and
+	  PMEM persistence backend.
+
+config AIRY_IPC
+	bool "Airymax IPC kernel infrastructure"
+	depends on SECURITY_AIRY
+	default y
+	help
+	  Enables the Airymax IPC kernel infrastructure under
+	  kernel/ipc/. Hosts the IPC system-call entry shim and the
+	  capability-folding Native-Word badge verifier. The IPC data
+	  plane itself is carried by io_uring IORING_OP_URING_CMD
+	  (zero-syscall fast path); this directory provides only the
+	  control-plane helpers.
 
 endmenu

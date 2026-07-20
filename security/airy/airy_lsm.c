@@ -6,7 +6,7 @@
  *
  * Registers with DEFINE_LSM(airy) at LSM_ORDER_MUTABLE.  Implements five
  * core LSM hooks: uring_cmd, task_alloc, task_free, task_kill, file_open.
- * Read-only security data is protected with __lsm_ro_after_init.
+ * Read-only security data is protected with __ro_after_init.
  */
 
 #include <linux/lsm_hooks.h>
@@ -16,18 +16,18 @@
 #include <linux/cred.h>
 #include <linux/sched.h>
 #include <linux/sched/signal.h>
-#include <airymax/lsm_types.h>
-#include <airymax/error.h>
+#include <linux/airymax/lsm_types.h>
+#include <linux/airymax/error.h>
 
 #include "airy_cap.h"
 
 /* ─── Module parameter ─────────────────────────────────────────────────── */
-static bool airy_enabled __lsm_ro_after_init = true;
+static bool airy_enabled __ro_after_init = true;
 module_param(airy_enabled, bool, 0644);
 MODULE_PARM_DESC(airy_enabled, "Enable Airy Pure-C LSM (default: true)");
 
 /* ─── LSM blob sizes ──────────────────────────────────────────────────── */
-struct lsm_blob_sizes airy_blob_sizes __lsm_ro_after_init = {
+struct lsm_blob_sizes airy_blob_sizes __ro_after_init = {
 	.lbs_task = sizeof(struct airy_task_sec),
 };
 
@@ -95,7 +95,7 @@ static int airy_uring_cmd(struct io_uring_cmd *ioucmd)
 }
 
 /* ─── Hook list ────────────────────────────────────────────────────────── */
-static struct security_hook_list airy_hooks[] __lsm_ro_after_init = {
+static struct security_hook_list airy_hooks[] __ro_after_init = {
 	LSM_HOOK_INIT(uring_cmd,  airy_uring_cmd),
 	LSM_HOOK_INIT(task_alloc, airy_task_alloc),
 	LSM_HOOK_INIT(task_free,  airy_task_free),

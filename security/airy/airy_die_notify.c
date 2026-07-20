@@ -13,7 +13,7 @@
 #include <linux/notifier.h>
 #include <linux/kdebug.h>
 #include <linux/sched.h>
-#include <airymax/error.h>
+#include <linux/airymax/error.h>
 
 #include "airy_cap.h"
 
@@ -48,10 +48,10 @@ static __u32 airy_die_map_fault(unsigned long val)
 		return AIRY_FAULT_VM_FAULT;        /* Kernel OOPS → VM fault */
 	case DIE_PAGE_FAULT:
 		return AIRY_FAULT_VM_FAULT;        /* Page fault → VM fault */
-	case DIE_BUG:
-		return AIRY_FAULT_ABNORMAL_CAP;    /* BUG() → abnormal capability */
-	case DIE_NMIWATCHDOG:
-		return AIRY_FAULT_TIMEOUT;         /* NMI watchdog → timeout */
+	case DIE_TRAP:
+		return AIRY_FAULT_ABNORMAL_CAP;    /* BUG()/trap → abnormal capability */
+	case DIE_NMI:
+		return AIRY_FAULT_TIMEOUT;         /* NMI/NMI watchdog → timeout */
 	default:
 		return 0;                          /* Not a fatal condition */
 	}

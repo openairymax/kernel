@@ -11,7 +11,7 @@
 #ifndef _UAPI_AIRYMAX_SECURITY_TYPES_H
 #define _UAPI_AIRYMAX_SECURITY_TYPES_H
 
-#include <airymax/uapi_compat.h>
+#include <linux/airymax/uapi_compat.h>
 
 /* ─── Capability Type ────────────────────────────────────────────────── */
 typedef __u64 cap_t;

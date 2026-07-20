@@ -4,13 +4,14 @@
  *
  * Syscall numbering — [SC] shared contract header.
  *
- * 4 core syscalls (512-515) + 20 reserved (516-535).
+ * 4 core syscalls (454-457) + 20 reserved (458-477), avoiding the
+ * x32 historical range 512-547.
  */
 
 #ifndef _UAPI_AIRYMAX_SYSCALLS_H
 #define _UAPI_AIRYMAX_SYSCALLS_H
 
-#include <airymax/uapi_compat.h>
+#include <linux/airymax/uapi_compat.h>
 
 /* ─── Core Syscalls (454-457) ────────────────────────────────────────── */
 #define AIRY_SYS_CALL            454   /* IPC send/recv */

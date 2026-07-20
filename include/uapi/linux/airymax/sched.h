@@ -11,13 +11,19 @@
 #ifndef _UAPI_AIRYMAX_SCHED_H
 #define _UAPI_AIRYMAX_SCHED_H
 
-#include <airymax/uapi_compat.h>
+#include <linux/airymax/uapi_compat.h>
+#include <linux/airymax/lsm_types.h>
 
 /* ─── Task Descriptor Magic ──────────────────────────────────────────── */
 #define AIRY_TASK_MAGIC         0x41475453u /* 'AGTS' */
 
 /* ─── Agent Capacity ─────────────────────────────────────────────────── */
-#define MAC_MAX_AGENTS          1024
+/*
+ * Maximum number of agents is defined by the capability table size
+ * AIRY_CAP_MAX_AGENTS in <linux/airymax/lsm_types.h> (single source
+ * of truth per [SC] single-host principle). sched.h re-exports it
+ * here for scheduling-domain consumers.
+ */
 
 /* ─── Task Priority Range ────────────────────────────────────────────── */
 #define AIRY_PRIO_MIN           0
@@ -44,16 +50,21 @@ static inline airy_vtime_t airy_vtime_decay(airy_vtime_t vtime, __u32 weight)
 }
 
 /* ─── Task Descriptor ────────────────────────────────────────────────── */
+/*
+ * Field ordering: 64-bit fields are grouped after the header word to
+ * guarantee natural 8-byte alignment without padding. 32-bit fields
+ * occupy the tail. Total size = 64 bytes (verified by _Static_assert).
+ */
 struct airy_task_desc {
 	__u32       magic;          /* offset 0:  AIRY_TASK_MAGIC */
 	__u16       prio;           /* offset 4:  priority [0,139] */
 	__u16       _pad;           /* offset 6:  alignment padding */
-	airy_vtime_t vtime;         /* offset 8:  virtual time Q16.16 */
-	__u32       agent_id;       /* offset 12: agent identifier [0,1023] */
-	__u32       sched_policy;   /* offset 16: SCHED_DEADLINE/FIFO/OTHER */
-	__u64       runtime_ns;     /* offset 20: runtime budget (ns) */
-	__u64       deadline_ns;    /* offset 28: deadline (ns) */
-	__u64       period_ns;      /* offset 36: period (ns) */
+	__u64       runtime_ns;     /* offset 8:  runtime budget (ns) */
+	__u64       deadline_ns;    /* offset 16: deadline (ns) */
+	__u64       period_ns;      /* offset 24: period (ns) */
+	airy_vtime_t vtime;         /* offset 32: virtual time Q16.16 */
+	__u32       agent_id;       /* offset 36: agent identifier [0,1023] */
+	__u32       sched_policy;   /* offset 40: SCHED_DEADLINE/FIFO/OTHER */
 	__u32       weight;         /* offset 44: EEVDF weight */
 	__u32       state;          /* offset 48: agent lifecycle state */
 	__u8        reserved[12];   /* offset 52: reserved */

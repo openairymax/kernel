@@ -10,24 +10,14 @@
  */
 
 #include <linux/jiffies.h>
+#include <linux/clocksource.h>
+#include <linux/sched.h>
 #include <asm/barrier.h>
-#include <airymax/error.h>
+#include <linux/airymax/error.h>
 
 #include "airy_cap.h"
 
-/* ─── IPC Ring Structure ──────────────────────────────────────────────── */
-
-/**
- * struct airy_ipc_ring - An IPC ring buffer between two agents.
- * @frozen:           Whether the ring is currently frozen.
- * @freeze_reason:    Reason code for the freeze (0 if not frozen).
- * @freeze_timestamp: Monotonic timestamp (ns) when the ring was frozen.
- */
-struct airy_ipc_ring {
-	bool    frozen;
-	__u32   freeze_reason;
-	__u64   freeze_timestamp;
-};
+/* struct airy_ipc_ring is defined in airy_cap.h (single-host). */
 
 /* ─── Freeze Operation ────────────────────────────────────────────────── */
 
@@ -91,4 +81,27 @@ int airy_ipc_fastpath_check(struct airy_ipc_ring *ring)
 		return -AIRY_EIPC_FROZEN;
 
 	return 0;
+}
+
+/* ─── Ring Lookup ─────────────────────────────────────────────────────── */
+
+/**
+ * airy_ipc_ring_for_task - Look up the IPC ring associated with a task.
+ * @task: The task to look up.
+ *
+ * Returns the IPC ring registered for @task's agent, or NULL if no
+ * ring is currently associated.
+ *
+ * M0 stage: per-agent ring assignment is not yet wired; returns NULL
+ * so that die_notifier skips the freeze step gracefully. When the
+ * io_uring IPC ring pool is implemented, this will consult the
+ * agent_caps[agent_id].ring field (OS-IRON-004 progressive development).
+ */
+struct airy_ipc_ring *airy_ipc_ring_for_task(struct task_struct *task)
+{
+	if (!task || !task->security)
+		return NULL;
+
+	/* M0: no ring field in airy_task_sec yet */
+	return NULL;
 }

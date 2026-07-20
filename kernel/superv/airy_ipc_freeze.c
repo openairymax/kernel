@@ -9,17 +9,11 @@
  */
 
 #include <asm/barrier.h>
-#include <airymax/error.h>
+#include <linux/airymax/error.h>
 
 #include "../../security/airy/airy_cap.h"
 
-/* ─── IPC Ring (matching LSM definition) ──────────────────────────────── */
-
-struct airy_ipc_ring {
-	bool    frozen;
-	__u32   freeze_reason;
-	__u64   freeze_timestamp;
-};
+/* struct airy_ipc_ring is defined in airy_cap.h (single-host). */
 
 /* ─── Delegates (declared in security/airy/) ──────────────────────────── */
 extern void airy_ipc_freeze_ring(struct airy_ipc_ring *ring, __u32 reason);

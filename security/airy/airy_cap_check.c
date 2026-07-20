@@ -24,9 +24,9 @@
 #include <linux/delay.h>
 #include <linux/printk.h>
 
-#include <airymax/error.h>
-#include <airymax/security_types.h>
-#include <airymax/lsm_types.h>
+#include <linux/airymax/error.h>
+#include <linux/airymax/security_types.h>
+#include <linux/airymax/lsm_types.h>
 
 #include "airy_cap.h"
 

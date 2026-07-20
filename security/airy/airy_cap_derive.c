@@ -17,8 +17,8 @@
 #include <linux/atomic.h>
 #include <linux/compiler.h>
 
-#include <airymax/security_types.h>
-#include <airymax/error.h>
+#include <linux/airymax/security_types.h>
+#include <linux/airymax/error.h>
 
 #include "airy_cap.h"
 
@@ -77,7 +77,7 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		randtag = (__u64)src->randtag;
 		perms   = new_perms & src->perms;  /* may demote */
 
-		dst->badge    = AIRY_BADGE_MAKE(epoch, randtag, perms);
+		dst->badge    = AIRY_BADGE_COMPILE(epoch, randtag, perms);
 		dst->agent_id = dst_agent;
 		dst->flags    = src->flags;
 		dst->randtag  = src->randtag;
@@ -113,7 +113,7 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		epoch = AIRY_BADGE_EPOCH(src->badge);
 		randtag = (__u64)src->randtag;
 
-		WRITE_ONCE(src->badge, AIRY_BADGE_MAKE(epoch, randtag,
+		WRITE_ONCE(src->badge, AIRY_BADGE_COMPILE(epoch, randtag,
 						       new_perms));
 		WRITE_ONCE(src->perms, new_perms);
 		break;
@@ -148,7 +148,7 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		epoch   = AIRY_BADGE_EPOCH(src->badge);
 		perms   = src->perms;
 
-		WRITE_ONCE(src->badge, AIRY_BADGE_MAKE(epoch, new_tag,
+		WRITE_ONCE(src->badge, AIRY_BADGE_COMPILE(epoch, new_tag,
 						       perms));
 		WRITE_ONCE(src->randtag, new_tag);
 		break;

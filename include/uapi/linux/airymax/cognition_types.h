@@ -11,7 +11,7 @@
 #ifndef _UAPI_AIRYMAX_COGNITION_TYPES_H
 #define _UAPI_AIRYMAX_COGNITION_TYPES_H
 
-#include <airymax/uapi_compat.h>
+#include <linux/airymax/uapi_compat.h>
 
 /* ─── Q16.16 Fixed-Point ─────────────────────────────────────────────── */
 typedef __s32 airy_q16_t;
@@ -19,8 +19,15 @@ typedef __s32 airy_q16_t;
 #define AIRY_Q16_ONE            (1 << 16)  /* 1.0 in Q16.16 */
 #define AIRY_Q16_HALF           (1 << 15)  /* 0.5 in Q16.16 */
 
+/*
+ * Float conversion helpers are userspace-only: the kernel does not
+ * use floating-point (IRON-9 §2.1). Guard with #ifndef __KERNEL__ so
+ * kernel TUs never see the float types.
+ */
+#ifndef __KERNEL__
 #define AIRY_Q16_TO_FLOAT(x)    ((float)(x) / (float)(1 << 16))
 #define AIRY_Q16_FROM_FLOAT(f)  ((airy_q16_t)((f) * (float)(1 << 16)))
+#endif /* __KERNEL__ */
 
 /* ─── CoreLoopThree: Perception → Think → Act ──────────────────────── */
 enum airy_cog_phase {

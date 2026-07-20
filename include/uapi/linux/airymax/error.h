@@ -16,7 +16,7 @@
 #ifndef _UAPI_AIRYMAX_ERROR_H
 #define _UAPI_AIRYMAX_ERROR_H
 
-#include <airymax/uapi_compat.h>
+#include <linux/airymax/uapi_compat.h>
 
 /* ─── Error type ─────────────────────────────────────────────────────── */
 typedef __s32 airy_err_t;

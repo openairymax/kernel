@@ -9,7 +9,7 @@
  */
 
 #include <linux/eventfd.h>
-#include <airymax/error.h>
+#include <linux/airymax/error.h>
 
 #include "../../security/airy/airy_cap.h"
 

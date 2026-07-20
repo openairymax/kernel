@@ -4,16 +4,14 @@
  *
  * airy_core.c — ALK-6.6 Minimal Boot Entry Point.
  *
- * Calls airy_lsm_init() and prints the Airymax boot banner.
+ * Prints the Airymax boot banner. The Airy LSM is initialised
+ * separately by the LSM framework via DEFINE_LSM(airy).init callback,
+ * so this function does NOT call airy_init() directly.
  */
 
 #include <linux/init.h>
 #include <linux/printk.h>
 #include <airymax/build_types.h>
-
-/* ─── LSM Init (declared in security/airy/) ───────────────────────────── */
-
-extern int airy_init(void);
 
 /* ─── Boot Banner ─────────────────────────────────────────────────────── */
 
@@ -23,9 +21,6 @@ static int __init airy_core_init(void)
 		AIRY_BUILD_VERSION_MAJOR,
 		AIRY_BUILD_VERSION_MINOR,
 		AIRY_BUILD_VERSION_PATCH);
-
-	/* Delegate LSM initialisation to the security/airy module */
-	airy_init();
 
 	return 0;
 }

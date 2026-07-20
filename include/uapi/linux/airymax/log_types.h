@@ -11,7 +11,7 @@
 #ifndef _UAPI_AIRYMAX_LOG_TYPES_H
 #define _UAPI_AIRYMAX_LOG_TYPES_H
 
-#include <airymax/uapi_compat.h>
+#include <linux/airymax/uapi_compat.h>
 
 /* ─── Magic ──────────────────────────────────────────────────────────── */
 #define AIRY_LOG_MAGIC          0x414C4F47  /* 'ALOG' */
