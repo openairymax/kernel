@@ -54,4 +54,25 @@ struct airy_cog_config {
 	__u8         _pad[7];              /* Alignment */
 };
 
+/* ─── [DSL] Degraded Survival Layer Fallback Block ──────────────────────
+ * When AIRY_SC_FALLBACK is defined, CoreLoopThree collapses to ACT-only
+ * (perception and think phases skipped). Thinkdual collapses to FAST
+ * mode. Q16.16 fixed-point remains available (integer-only, no float).
+ * See [DSL] §2.2.
+ */
+#ifdef AIRY_SC_FALLBACK
+	/* CoreLoopThree collapses to ACT-only. */
+	#define AIRY_DSL_COG_PERCEPT  AIRY_COG_ACT
+	#define AIRY_DSL_COG_THINK    AIRY_COG_ACT
+	#define AIRY_DSL_COG_ACT      AIRY_COG_ACT
+	#define AIRY_DSL_COG_PHASES   1  /* Only ACT retained */
+
+	/* Thinkdual collapses to FAST. */
+	#define AIRY_DSL_THINK_FAST  AIRY_THINK_FAST
+	#define AIRY_DSL_THINK_SLOW  AIRY_THINK_FAST
+	#define AIRY_DSL_THINK_MODES 1  /* Only FAST retained */
+
+	#warning "AIRY_SC_FALLBACK active: cognition_types.h degraded to ACT-only CoreLoop, FAST-only Thinkdual"
+#endif /* AIRY_SC_FALLBACK */
+
 #endif /* _UAPI_AIRYMAX_COGNITION_TYPES_H */

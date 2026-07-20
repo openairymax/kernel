@@ -33,4 +33,31 @@ enum airy_mem_level {
 #define AIRY_PAGE_CLASS_SHMEM    0x04  /* Shared memory page */
 #define AIRY_PAGE_CLASS_AGENT    0x08  /* Agent-private page */
 
+/* ─── [DSL] Degraded Survival Layer Fallback Block ──────────────────────
+ * When AIRY_SC_FALLBACK is defined, MemoryRoVol L2-L4 tiering is
+ * unavailable; only L1 (hot tier, anonymous pages) is accessible. All
+ * GFP flags collapse to AIRY_GFP_HOT and all page classes collapse to
+ * AIRY_PAGE_CLASS_ANON. alloc_pages + mmap remain functional.
+ * See [DSL] §2.2 and §4.1.
+ */
+#ifdef AIRY_SC_FALLBACK
+	/* All tiers collapse to L1 hot. */
+	#define AIRY_DSL_MEM_LEVEL   AIRY_MEM_HOT
+	#define AIRY_DSL_MEM_TIERS   1  /* Only L1 retained */
+
+	/* All GFP flags collapse to HOT. */
+	#define AIRY_DSL_GFP_HOT     AIRY_GFP_HOT
+	#define AIRY_DSL_GFP_WARM    AIRY_GFP_HOT
+	#define AIRY_DSL_GFP_COLD    AIRY_GFP_HOT
+	#define AIRY_DSL_GFP_PMEM    AIRY_GFP_HOT
+
+	/* All page classes collapse to ANON. */
+	#define AIRY_DSL_PAGE_CLASS_ANON   AIRY_PAGE_CLASS_ANON
+	#define AIRY_DSL_PAGE_CLASS_FILE   AIRY_PAGE_CLASS_ANON
+	#define AIRY_DSL_PAGE_CLASS_SHMEM  AIRY_PAGE_CLASS_ANON
+	#define AIRY_DSL_PAGE_CLASS_AGENT  AIRY_PAGE_CLASS_ANON
+
+	#warning "AIRY_SC_FALLBACK active: memory_types.h degraded to L1 hot tier only, MemoryRoVol L2-L4 unavailable"
+#endif /* AIRY_SC_FALLBACK */
+
 #endif /* _UAPI_AIRYMAX_MEMORY_TYPES_H */

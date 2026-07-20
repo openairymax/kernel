@@ -92,4 +92,25 @@ enum airy_agent_state {
 #define AIRY_SCHED_POLICY_EEVDF      3
 #define AIRY_SCHED_POLICY_BESTEFFORT 4
 
+/* ─── [DSL] Degraded Survival Layer Fallback Block ──────────────────────
+ * When AIRY_SC_FALLBACK is defined, sched_tac three-tier scheduling is
+ * unavailable and all agents fall back to Linux 6.6 default EEVDF
+ * (SCHED_NORMAL + nice). Only AIRY_TASK_MAGIC and AIRY_CAP_MAX_AGENTS
+ * (re-exported via lsm_types.h) are authoritative in fallback mode.
+ * See [DSL] §2.2 and §4.1.3.
+ */
+#ifdef AIRY_SC_FALLBACK
+	/* All sched_tac policies collapse to EEVDF default. */
+	#define AIRY_DSL_SCHED_POLICY_DEADLINE   AIRY_SCHED_POLICY_EEVDF
+	#define AIRY_DSL_SCHED_POLICY_FIFO       AIRY_SCHED_POLICY_EEVDF
+	#define AIRY_DSL_SCHED_POLICY_EEVDF      AIRY_SCHED_POLICY_EEVDF
+	#define AIRY_DSL_SCHED_POLICY_BESTEFFORT AIRY_SCHED_POLICY_EEVDF
+	#define AIRY_DSL_SCHED_POLICIES          1  /* Only EEVDF retained */
+
+	/* vtime decay collapses to identity (no weighted decay in fallback). */
+	#define AIRY_DSL_VTIME_DECAY(vtime, weight)  (vtime)
+
+	#warning "AIRY_SC_FALLBACK active: sched.h degraded to EEVDF default only, sched_tac three-tier unavailable"
+#endif /* AIRY_SC_FALLBACK */
+
 #endif /* _UAPI_AIRYMAX_SCHED_H */

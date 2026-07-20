@@ -58,4 +58,22 @@ enum airy_log_level {
 #define AIRY_LOG_FAC_IPC        0x0006  /* IPC facility */
 #define AIRY_LOG_FAC_MEMORY     0x0007  /* Memory subsystem facility */
 
+/* ─── [DSL] Degraded Survival Layer Fallback Block ──────────────────────
+ * When AIRY_SC_FALLBACK is defined, A-ULP does not initialize the Ring
+ * Buffer and only LOG_FATAL + LOG_ERROR levels are honoured. All other
+ * levels are silently mapped to LOG_ERROR so that callers compiling in
+ * fallback mode still produce visible output via the printk native path.
+ * See docs/AirymaxOS/10-architecture/11-degraded-survival-layer.md §2.2.
+ */
+#ifdef AIRY_SC_FALLBACK
+	#define AIRY_DSL_LOG_DEBUG   AIRY_LOG_ERROR
+	#define AIRY_DSL_LOG_INFO    AIRY_LOG_ERROR
+	#define AIRY_DSL_LOG_WARN    AIRY_LOG_ERROR
+	#define AIRY_DSL_LOG_ERROR   AIRY_LOG_ERROR
+	#define AIRY_DSL_LOG_FATAL   AIRY_LOG_FATAL
+	#define AIRY_DSL_LOG_LEVELS  2  /* Only FATAL + ERROR retained */
+
+	#warning "AIRY_SC_FALLBACK active: log_types.h degraded to LOG_FATAL+LOG_ERROR only, Ring Buffer disabled"
+#endif /* AIRY_SC_FALLBACK */
+
 #endif /* _UAPI_AIRYMAX_LOG_TYPES_H */

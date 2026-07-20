@@ -63,6 +63,86 @@ typedef __s32 airy_err_t;
 #define AIRY_ECAP_CORRUPT     (-76)    /* Capability slot corrupted */
 #define AIRY_ECAP_OVERFLOW    (-77)    /* Capability table overflow */
 #define AIRY_ECAP_SYS         (-82)    /* System capability required */
+#define AIRY_ECAP_BADGE       (-78)    /* Badge compilation failed (H6) */
+
+/* ─── Config/Version Error Codes (sub-space: -101 to -120) ─────────────
+ * Cross-cutting: configuration version mismatch and schema errors.
+ * AIRY_ECFGVERSION is the single non-POSIX code retained in [DSL] mode
+ * (see 11-degraded-survival-layer.md §4.1.1).
+ */
+#define AIRY_ECFGVERSION      (-101)   /* Configuration version mismatch */
+#define AIRY_ECFGSCHEMA       (-102)   /* Configuration schema invalid */
+#define AIRY_ECFGBASE64       (-103)   /* Base64 decode failure */
+#define AIRY_ECFGJSON         (-104)   /* JSON parse failure */
+#define AIRY_ECFGIO           (-105)   /* Config I/O error */
+
+/* ─── A-ULS Scheduler/Lifecycle Error Codes (sub-space: -121 to -140) ──
+ * Unified Lifecycle Supervision: sched_tac policy, budget, deadline,
+ * and agent lifecycle state transitions.
+ */
+#define AIRY_ESCHED_POLICY    (-121)   /* Invalid scheduling policy */
+#define AIRY_ESCHED_BUDGET    (-122)   /* Runtime budget exceeded */
+#define AIRY_ESCHED_DEADLINE  (-123)   /* Deadline missed */
+#define AIRY_ESCHED_PERIOD    (-124)   /* Invalid period */
+#define AIRY_ESCHED_PRIO      (-125)   /* Invalid priority */
+#define AIRY_ESCHED_WEIGHT    (-126)   /* Invalid EEVDF weight */
+#define AIRY_ELIFECYCLE_STATE (-127)   /* Invalid agent lifecycle state */
+#define AIRY_ELIFECYCLE_TRANS (-128)   /* Illegal state transition */
+#define AIRY_ELIFECYCLE_AGENT (-129)   /* Agent not found */
+#define AIRY_ELIFECYCLE_ZOMBIE (-130)  /* Agent in zombie state */
+
+/* ─── MemoryRoVol Error Codes (sub-space: -141 to -160) ────────────────
+ * Memory Roving Volume: tier allocation, PMEM, CXL, page classification.
+ */
+#define AIRY_EMEM_TIER        (-141)   /* Invalid memory tier */
+#define AIRY_EMEM_GFP         (-142)   /* Invalid GFP flags */
+#define AIRY_EMEM_PMEM        (-143)   /* PMEM operation failed */
+#define AIRY_EMEM_CXL         (-144)   /* CXL operation failed */
+#define AIRY_EMEM_PAGE_CLASS  (-145)   /* Invalid page classification */
+#define AIRY_EMEM_MMAP        (-146)   /* mmap failed */
+#define AIRY_EMEM_ALLOC       (-147)   /* alloc_pages failed */
+#define AIRY_EMEM_OOM         (-148)   /* Out of memory (agent-scoped) */
+
+/* ─── A-UCS Cognition Error Codes (sub-space: -161 to -180) ────────────
+ * Unified Cognition Subsystem: CoreLoopThree, Thinkdual, Q16.16.
+ */
+#define AIRY_ECOG_PHASE       (-161)   /* Invalid cognition phase */
+#define AIRY_ECOG_MODE        (-162)   /* Invalid think mode */
+#define AIRY_ECOG_Q16         (-163)   /* Q16.16 overflow/underflow */
+#define AIRY_ECOG_TIMEOUT     (-164)   /* Cognition loop timeout */
+#define AIRY_ECOG_ITERATIONS  (-165)   /* Max think iterations exceeded */
+#define AIRY_ECOG_CONFIDENCE  (-166)   /* Confidence threshold not met */
+
+/* ─── A-ULP Log Error Codes (sub-space: -181 to -200) ──────────────────
+ * Unified Logging and Printk: Ring Buffer, persistence, facility.
+ */
+#define AIRY_ELOG_RING        (-181)   /* Ring Buffer write failed */
+#define AIRY_ELOG_FULL        (-182)   /* Ring Buffer full */
+#define AIRY_ELOG_LEVEL       (-183)   /* Invalid log level */
+#define AIRY_ELOG_FACILITY    (-184)   /* Invalid facility code */
+#define AIRY_ELOG_PERSIST     (-185)   /* Log persistence failed */
+#define AIRY_ELOG_MAGIC       (-186)   /* Log record magic mismatch */
+
+/* ─── Object/Handle Error Codes (sub-space: -201 to -220) ──────────────
+ * Airymax Object System: handle resolution, reference counting.
+ */
+#define AIRY_EOBJ_HANDLE      (-201)   /* Invalid object handle */
+#define AIRY_EOBJ_REFCOUNT    (-202)   /* Reference count overflow/underflow */
+#define AIRY_EOBJ_TYPE        (-203)   /* Object type mismatch */
+#define AIRY_EOBJ_GONE        (-204)   /* Object already destroyed */
+
+/* ─── Syscall Error Codes (sub-space: -221 to -240) ────────────────────
+ * Airymax syscall surface: numbering, dispatch, ABI.
+ */
+#define AIRY_ESYS_NUMBER      (-221)   /* Invalid syscall number */
+#define AIRY_ESYS_ARGS        (-222)   /* Invalid syscall arguments */
+#define AIRY_ESYS_DISABLED    (-223)   /* Syscall disabled in [DSL] mode */
+#define AIRY_ESYS_ABI         (-224)   /* ABI mismatch */
+
+/* ─── Reserved Sub-spaces (-241 to -300) ───────────────────────────────
+ * Reserved for future Airymax subsystems. Do not allocate without
+ * updating docs/AirymaxOS/30-interfaces/08-sc-error-contract.md.
+ */
 
 /* ─── Fault Codes (positive uint32_t) ────────────────────────────────── */
 #define AIRY_FAULT_CAP_FORGED        0x1001  /* Badge forgery (security breach) */

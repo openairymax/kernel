@@ -43,4 +43,51 @@
 	typedef uint8_t   __u8;
 #endif
 
+/* ─── [DSL] Degraded Survival Layer Fallback Block ──────────────────────
+ * When AIRY_SC_FALLBACK is defined, the three-way type bridge collapses
+ * to a two-way bridge: __KERNEL__ vs non-__KERNEL__. The non-Linux
+ * branch (macOS/Windows) reuses the Linux user-space typedefs because
+ * both rely on <stdint.h> with identical fixed-width mappings. This
+ * guarantees that agentrt cross-platform builds still compile when the
+ * full [SC] contract is degraded. See [DSL] §2.2.
+ */
+#ifdef AIRY_SC_FALLBACK
+	#ifdef __KERNEL__
+		/* Kernel branch unchanged — <linux/types.h> is authoritative. */
+	#else
+		/* All user-space branches collapse to <stdint.h> mapping. */
+		#ifndef _AIRY_DSL_UAPI_COMPAT_DONE
+			#define _AIRY_DSL_UAPI_COMPAT_DONE
+			#include <stdint.h>
+			#ifndef __s32
+				typedef int32_t   __s32;
+			#endif
+			#ifndef __u32
+				typedef uint32_t  __u32;
+			#endif
+			#ifndef __s64
+				typedef int64_t   __s64;
+			#endif
+			#ifndef __u64
+				typedef uint64_t  __u64;
+			#endif
+			#ifndef __s16
+				typedef int16_t   __s16;
+			#endif
+			#ifndef __u16
+				typedef uint16_t  __u16;
+			#endif
+			#ifndef __s8
+				typedef int8_t    __s8;
+			#endif
+			#ifndef __u8
+				typedef uint8_t   __u8;
+			#endif
+		#endif
+	#endif
+	#define AIRY_DSL_UAPI_BRANCHES  2  /* __KERNEL__ vs user-space */
+
+	#warning "AIRY_SC_FALLBACK active: uapi_compat.h degraded to two-way bridge (__KERNEL__ vs user-space)"
+#endif /* AIRY_SC_FALLBACK */
+
 #endif /* _UAPI_AIRYMAX_UAPI_COMPAT_H */

@@ -4,8 +4,11 @@
  *
  * Security types — [SC] shared contract header.
  *
- * POSIX capability 41 IDs, LSM hook 250 IDs, Cupolas 4-value verdict,
- * seL4 CNode 7 derivation operations, and capability type definitions.
+ * POSIX capability 44 IDs (41 standard + 3 Airymax extensions),
+ * Airy LSM 5 implemented hooks (Linux 6.6 LSM framework exposes ~250
+ * total slots — see lsm_types.h AIRY_LSM_KERNEL_HOOK_TOTAL),
+ * Cupolas 4-value verdict, seL4 CNode 7 derivation operations,
+ * and capability type definitions.
  */
 
 #ifndef _UAPI_AIRYMAX_SECURITY_TYPES_H
@@ -87,5 +90,45 @@ enum airy_cap_op {
 	AIRY_CAP_OP_ROTATE  = 6,   /* Rotate capability badge */
 	AIRY_CAP_OP_MAX
 };
+
+/* ─── [DSL] Degraded Survival Layer Fallback Block ──────────────────────
+ * When AIRY_SC_FALLBACK is defined, the 41 POSIX capability IDs remain
+ * authoritative (needed for slowpath airy_cap_check()), but Badge
+ * derivation/compilation is suspended (sec_d unreachable). The Badge
+ * access macros below return 0 so that callers extracting fields from
+ * a fixed-0 badge still compile (H6 hard constraint). All non-POSIX
+ * Airymax-specific cap IDs (41-43) are unavailable.
+ * See [DSL] §2.2, §4.2 and §4.4.
+ */
+#ifdef AIRY_SC_FALLBACK
+	/* H6: Badge access macros return 0 (badge is always 0 in [DSL]). */
+	#ifndef AIRY_DSL_BADGE_EPOCH
+		#define AIRY_DSL_BADGE_EPOCH(b)         ((__u32)0)
+	#endif
+	#ifndef AIRY_DSL_BADGE_RANDTAG
+		#define AIRY_DSL_BADGE_RANDTAG(b)       ((__u32)0)
+	#endif
+	#ifndef AIRY_DSL_BADGE_PERMS
+		#define AIRY_DSL_BADGE_PERMS(b)         ((__u16)0)
+	#endif
+	#define AIRY_DSL_BADGE_COMPILE(epoch, randtag, perms)  0ULL
+
+	/* Badge derivation/compilation suspended — sec_d unreachable. */
+	#define AIRY_DSL_CAP_OP_COPY     AIRY_CAP_OP_COPY
+	#define AIRY_DSL_CAP_OP_MINT     AIRY_CAP_OP_COPY   /* MINT degrades to COPY */
+	#define AIRY_DSL_CAP_OP_MOVE     AIRY_CAP_OP_MOVE
+	#define AIRY_DSL_CAP_OP_MUTATE   AIRY_CAP_OP_COPY   /* MUTATE degrades to COPY */
+	#define AIRY_DSL_CAP_OP_REVOKE   AIRY_CAP_OP_DELETE /* REVOKE degrades to DELETE */
+	#define AIRY_DSL_CAP_OP_DELETE   AIRY_CAP_OP_DELETE
+	#define AIRY_DSL_CAP_OP_ROTATE   AIRY_CAP_OP_DELETE /* ROTATE suspended */
+	#define AIRY_DSL_CAP_OPS         2  /* Only COPY + DELETE retained */
+
+	/* Airymax-specific cap IDs (41-43) unavailable in fallback. */
+	#define AIRY_DSL_CAP_AGENT_SPAWN  (-1)
+	#define AIRY_DSL_CAP_GPU_SCHED    (-1)
+	#define AIRY_DSL_CAP_NPU_ACCESS   (-1)
+
+	#warning "AIRY_SC_FALLBACK active: security_types.h degraded — 41 POSIX caps retained, Badge macros return 0 (H6), Airymax cap IDs suspended"
+#endif /* AIRY_SC_FALLBACK */
 
 #endif /* _UAPI_AIRYMAX_SECURITY_TYPES_H */
