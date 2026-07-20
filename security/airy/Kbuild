@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Airy Pure-C LSM — Kernel Build
+#
+
+obj-$(CONFIG_SECURITY_AIRY) += airy.o
+
+airy-y := airy_lsm.o \
+	  airy_cap_init.o \
+	  airy_cap_array.o \
+	  airy_cap_derive.o \
+	  airy_cap_check.o \
+	  airy_cap_revoke.o \
+	  airy_cap_rotate.o \
+	  airy_superv_lsm.o \
+	  airy_ipc_freeze.o \
+	  airy_die_notify.o \
+	  airy_eventfd.o

@@ -823,8 +823,18 @@ __SYSCALL(__NR_cachestat, sys_cachestat)
 #define __NR_fchmodat2 452
 __SYSCALL(__NR_fchmodat2, sys_fchmodat2)
 
+/* Airymax syscalls (453-456) */
+#define __NR_airy_sys_call 453
+__SYSCALL(__NR_airy_sys_call, sys_airy_sys_call)
+#define __NR_airy_sys_rovol_ctl 454
+__SYSCALL(__NR_airy_sys_rovol_ctl, sys_airy_sys_rovol_ctl)
+#define __NR_airy_sys_sched_ctl 455
+__SYSCALL(__NR_airy_sys_sched_ctl, sys_airy_sys_sched_ctl)
+#define __NR_airy_sys_clt_notify 456
+__SYSCALL(__NR_airy_sys_clt_notify, sys_airy_sys_clt_notify)
+
 #undef __NR_syscalls
-#define __NR_syscalls 453
+#define __NR_syscalls 457
 
 /*
  * 32 bit systems traditionally used different

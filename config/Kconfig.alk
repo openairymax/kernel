@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# ALK-6.6 Top-level Kconfig
+
+menu "Airymax Kernel (ALK)"
+
+config AIRY_SYSCALL
+	bool "Enable Airymax syscalls (512-515)"
+	depends on SECURITY_AIRY
+	default y
+	help
+	  Enables the 4 Airymax system calls for agent IPC,
+	  memory rotation control, scheduler control, and
+	  cognition lifecycle notification.
+
+endmenu

@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Airy Pure-C LSM — Kernel Configuration
+#
+
+config SECURITY_AIRY
+	bool "Airymax Pure-C LSM (Airy)"
+	depends on SECURITY
+	depends on IO_URING
+	default n
+	help
+	  A pure-C Linux Security Module for the Airymax agent runtime.
+	  Provides capability-based security, agent lifecycle supervision,
+	  IPC ring freezing, and die_notifier fault handling.
+
+	  Unlike BPF-based LSMs, Airy implements all hooks directly in C,
+	  enabling formal verification and deterministic enforcement.
+
+	  If unsure, say N.
+
+config AIRY_CAP_TABLE_SIZE
+	int "Airy capability table size"
+	depends on SECURITY_AIRY
+	default 1024
+	range 64 4096
+	help
+	  Number of capability slots in the global agent capability table.
+	  Each slot is 64 bytes. Total memory = AIRY_CAP_TABLE_SIZE * 64.

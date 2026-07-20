@@ -375,6 +375,10 @@
 451	common	cachestat		sys_cachestat
 452	common	fchmodat2		sys_fchmodat2
 453	64	map_shadow_stack	sys_map_shadow_stack
+454	common	airy_sys_call		sys_airy_sys_call
+455	common	airy_sys_rovol_ctl		sys_airy_sys_rovol_ctl
+456	common	airy_sys_sched_ctl		sys_airy_sys_sched_ctl
+457	common	airy_sys_clt_notify	sys_airy_sys_clt_notify
 
 #
 # Due to a historical design error, certain syscalls are numbered differently
