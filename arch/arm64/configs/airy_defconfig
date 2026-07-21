@@ -1,6 +1,16 @@
+# SPDX-License-Identifier: GPL-2.0-only
 # Airymax arm64 defconfig fragment
+# Requires: make ARCH=arm64 defconfig && merge_config.sh -m .config arch/arm64/configs/airy_defconfig
+# This fragment is applied on top of the arm64 base defconfig.
+# CONFIG_SECURITY must be enabled for SECURITY_AIRY to take effect
+# (SECURITY_AIRY depends on SECURITY && IO_URING).
+CONFIG_SECURITY=y
 CONFIG_SECURITY_AIRY=y
 CONFIG_AIRY_SYSCALL=y
+CONFIG_AIRY_COREKERN=y
+CONFIG_AIRY_LOG=y
+CONFIG_AIRY_IPC=y
+CONFIG_AIRY_CAP_TABLE_SIZE=1024
 # CONFIG_BPF_LSM is not set
 CONFIG_IO_URING=y
 CONFIG_SCHED_DEADLINE=y

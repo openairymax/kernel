@@ -657,6 +657,22 @@ Q:	http://patchwork.linuxtv.org/project/linux-media/list/
 T:	git git://linuxtv.org/anttip/media_tree.git
 F:	drivers/media/usb/airspy/
 
+AIRYMAX SECURITY MODULE (Capability Folding + Micro-Supervisor)
+M:	Decheng Li <lidecheng@spharx.com>
+R:	Liren Wang <wangliren@spharx.com>
+L:	linux-kernel@vger.kernel.org
+S:	Maintained
+F:	security/airy/
+F:	kernel/superv/
+F:	kernel/corekern/
+F:	kernel/log/
+F:	kernel/ipc/
+F:	kernel/syscalls/
+F:	include/uapi/linux/airymax/
+F:	include/airymax/
+F:	arch/*/configs/airy_defconfig
+F:	config/Kconfig.alk
+
 ALACRITECH GIGABIT ETHERNET DRIVER
 M:	Lino Sanfilippo <LinoSanfilippo@gmx.de>
 S:	Maintained

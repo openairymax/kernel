@@ -2,11 +2,15 @@
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd.
  *
- * airy_cap_check.c — Micro-Supervisor fastpath capability check wrappers.
+ * airy_cap_check_superv.c — Micro-Supervisor fastpath capability check wrappers.
  *
  * Provides airy_cap_has_perm() for permission bit checking, delegating
  * badge validation to the shared inline airy_cap_badge_ok() defined in
  * security/airy/airy_cap.h.
+ *
+ * Renamed from airy_cap_check.c to airy_cap_check_superv.c per OS-STD-001
+ * (global symbols must be descriptively named) to resolve the name clash
+ * with security/airy/airy_cap_check.c.
  */
 
 #include <linux/atomic.h>

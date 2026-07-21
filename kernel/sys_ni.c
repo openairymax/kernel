@@ -387,3 +387,9 @@ COND_SYSCALL(setuid16);
 
 /* restartable sequence */
 COND_SYSCALL(rseq);
+
+/* Airymax syscalls (453-456) — stub returns -ENOSYS when CONFIG_AIRY_SYSCALL=n */
+COND_SYSCALL(airy_sys_call);
+COND_SYSCALL(airy_sys_rovol_ctl);
+COND_SYSCALL(airy_sys_sched_ctl);
+COND_SYSCALL(airy_sys_clt_notify);

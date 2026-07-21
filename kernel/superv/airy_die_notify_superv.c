@@ -2,10 +2,13 @@
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd.
  *
- * airy_die_notify.c — Micro-Supervisor die notification delegator.
+ * airy_die_notify_superv.c — Micro-Supervisor die notification delegator.
  *
  * Registers a die notifier at INT_MAX priority that intercepts fatal
  * kernel events and delegates to the LSM's airy_security_fault().
+ *
+ * Renamed from airy_die_notify.c to airy_die_notify_superv.c per OS-STD-001
+ * to resolve the name clash with security/airy/airy_die_notify.c.
  */
 
 #include <linux/notifier.h>

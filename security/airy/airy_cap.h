@@ -111,4 +111,7 @@ struct io_uring_cmd;
 int airy_uring_cmd_check(struct io_uring_cmd *ioucmd);
 void airy_security_fault(__u32 agent_id, __u32 fault_code);
 
+/* ─── Micro-Supervisor Supplemental Hook Registration ─────────────────── */
+int __init airy_superv_register_hooks(void);
+
 #endif /* _SECURITY_AIRY_CAP_H */
