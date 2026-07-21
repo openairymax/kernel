@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Airymax core-kernel enhancements (ALK-6.6).
+#
+# Compiled into vmlinux when CONFIG_AIRY_COREKERN=y. Each subdirectory
+# is aggregated into corekern.o via obj-y.
+
+obj-y += api/
+obj-y += sched/
+obj-y += ipc/
+obj-y += taskflow/
+obj-y += memory/
+obj-y += time/
+obj-y += object/
+obj-y += locking/
+obj-y += irq/
+obj-$(CONFIG_BPF) += bpf/

@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
+obj-$(CONFIG_SECURITY_AIRY) += airy_superv.o
+airy_superv-y := airy_cap_check.o airy_die_notify.o airy_eventfd.o \
+                 airy_ipc_freeze.o

@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# ALK-6.6 default defconfig fragment
+# Use with: make defconfig && merge_config.sh -m configs/defconfig
+# Note: CONFIG_SECURITY must be enabled (SECURITY_AIRY depends on it).
+
+CONFIG_SECURITY=y
+CONFIG_SECURITY_AIRY=y
+CONFIG_AIRY_SYSCALL=y
+CONFIG_AIRY_COREKERN=y
+CONFIG_AIRY_LOG=y
+CONFIG_AIRY_IPC=y
+CONFIG_AIRY_CAP_TABLE_SIZE=1024
+CONFIG_IO_URING=y
+CONFIG_BPF=y
+CONFIG_BPF_SYSCALL=y

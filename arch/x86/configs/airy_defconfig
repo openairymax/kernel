@@ -1,0 +1,20 @@
+# Airymax x86_64 defconfig fragment
+# Requires: make ARCH=x86_64 airy_defconfig
+# This fragment is applied on top of the x86_64 base defconfig.
+# CONFIG_SECURITY must be enabled for SECURITY_AIRY to take effect
+# (SECURITY_AIRY depends on SECURITY && IO_URING).
+CONFIG_SECURITY=y
+CONFIG_SECURITY_AIRY=y
+CONFIG_AIRY_SYSCALL=y
+CONFIG_AIRY_COREKERN=y
+CONFIG_AIRY_LOG=y
+CONFIG_AIRY_IPC=y
+CONFIG_AIRY_CAP_TABLE_SIZE=1024
+# CONFIG_BPF_LSM is not set
+CONFIG_IO_URING=y
+CONFIG_SCHED_DEADLINE=y
+# CONFIG_SCHED_CLASS_EXT is not set
+CONFIG_LRU_GEN=y
+CONFIG_LRU_GEN_ENABLED=y
+CONFIG_EVENTFD=y
+CONFIG_DEBUG_INFO_BTF=n
