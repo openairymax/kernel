@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: GPL-2.0-only
-# Airymax x86_64 defconfig fragment
-# Requires: make ARCH=x86_64 airy_defconfig
-# This fragment is applied on top of the x86_64 base defconfig.
+# Airymax RISC-V 64-bit defconfig fragment
+# Requires: make ARCH=riscv defconfig && merge_config.sh -m .config arch/riscv/configs/airy_defconfig
+# This fragment is applied on top of the RISC-V 64-bit base defconfig.
 # CONFIG_SECURITY must be enabled for SECURITY_AIRY to take effect
 # (SECURITY_AIRY depends on SECURITY && IO_URING).
+#
+# RISC-V 64-bit support added in v1.0.1 per multi-architecture requirement
+# (aligned with openEuler multi-arch: x86_64/aarch64/riscv64/loongarch64).
 CONFIG_SECURITY=y
 CONFIG_SECURITY_AIRY=y
 CONFIG_AIRY_SYSCALL=y

@@ -2,10 +2,13 @@
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd.
  *
- * airy_ipc_freeze.c — Micro-Supervisor IPC ring freeze delegator.
+ * airy_ipc_freeze_superv.c — Micro-Supervisor IPC ring freeze delegator.
  *
  * Thin wrapper that delegates ring freeze / thaw operations to the
  * LSM module's airy_ipc_freeze_ring() and airy_ipc_thaw_ring().
+ *
+ * Renamed from airy_ipc_freeze.c to airy_ipc_freeze_superv.c per OS-STD-001
+ * to resolve the name clash with security/airy/airy_ipc_freeze.c.
  */
 
 #include <asm/barrier.h>

@@ -2,10 +2,13 @@
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd.
  *
- * airy_eventfd.c — Micro-Supervisor eventfd notification delegator.
+ * airy_eventfd_superv.c — Micro-Supervisor eventfd notification delegator.
  *
  * Thin wrapper that delegates eventfd-based fault signalling to the
  * LSM module's airy_eventfd_signal_fault().
+ *
+ * Renamed from airy_eventfd.c to airy_eventfd_superv.c per OS-STD-001
+ * to resolve the name clash with security/airy/airy_eventfd.c.
  */
 
 #include <linux/eventfd.h>

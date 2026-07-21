@@ -1,4 +1,15 @@
 # SPDX-License-Identifier: GPL-2.0-only
+#
+# Micro-Supervisor — kernel/superv/
+#
+# Files renamed with _superv suffix per OS-STD-001 to resolve name clashes
+# with security/airy/ (airy_cap_check.c, airy_die_notify.c,
+# airy_eventfd.c, airy_ipc_freeze.c).
+
 obj-$(CONFIG_SECURITY_AIRY) += airy_superv.o
-airy_superv-y := airy_cap_check.o airy_die_notify.o airy_eventfd.o \
-                 airy_ipc_freeze.o
+
+airy_superv-y := airy_superv_lsm.o \
+		 airy_cap_check_superv.o \
+		 airy_die_notify_superv.o \
+		 airy_eventfd_superv.o \
+		 airy_ipc_freeze_superv.o

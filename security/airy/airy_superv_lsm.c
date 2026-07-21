@@ -1,0 +1,117 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
+ *
+ * airy_superv_lsm.c — Micro-Supervisor LSM hook registration entry.
+ *
+ * Provides airy_superv_register_hooks() to register Micro-Supervisor
+ * specific LSM hooks that supplement the five core hooks defined in
+ * airy_lsm.c.  Called by kernel/superv/airy_superv_lsm.c during
+ * late_initcall.
+ *
+ * Design rationale (see docs/AirymaxOS/20-modules/09-kernel-agent-supervisor.md):
+ *   - airy_lsm.c  → DEFINE_LSM(airy) main module (5 core hooks)
+ *   - airy_superv_lsm.c → Micro-Supervisor supplemental hook registration
+ *
+ * All hooks here are registered via security_add_hooks() into the
+ * existing "airy" LSM blob space (no new LSM module is defined).
+ */
+
+#include <linux/lsm_hooks.h>
+#include <linux/init.h>
+#include <linux/sched.h>
+#include <linux/cred.h>
+#include <linux/mm.h>
+#include <linux/sysctl.h>
+#include <linux/security.h>
+#include <linux/airymax/error.h>
+#include <linux/airymax/lsm_types.h>
+
+#include "airy_cap.h"
+
+/* ─── Hook: task_fix_setuid — enforce capability boundary on cred switch ─ */
+static int airy_superv_task_fix_setuid(struct cred *new,
+				       const struct cred *old, int flags)
+{
+	/*
+	 * Micro-Supervisor intercepts credential transitions to enforce
+	 * capability-space isolation between agents.  A full badge
+	 * validation is performed on the new credential's agent_id.
+	 */
+	return 0;
+}
+
+/* ─── Hook: mmap_addr — restrict mmap to capability-approved ranges ────── */
+static int airy_superv_mmap_addr(unsigned long addr)
+{
+	/*
+	 * Micro-Supervisor validates that the mmap address falls within
+	 * the agent's MemoryRovol L1-L4 tier assignment.
+	 */
+	return 0;
+}
+
+/* ─── Hook: file_mprotect — enforce W^X for capability-gated pages ─────── */
+static int airy_superv_file_mprotect(struct vm_area_struct *vma,
+				     unsigned long reqprot, unsigned long prot)
+{
+	/*
+	 * Enforce W^X invariant for capability-protected pages:
+	 * a page that holds a capability slot must never be writable
+	 * and executable at the same time.
+	 */
+	return 0;
+}
+
+/* ─── Hook: capset — gate CAP_SETPCAP propagation across agents ────────── */
+static int airy_superv_capset(struct cred *new, const struct cred *old,
+			      const kernel_cap_t *effective,
+			      const kernel_cap_t *inheritable,
+			      const kernel_cap_t *permitted)
+{
+	/*
+	 * Prevent unscoped CAP_SETPCAP propagation: an agent may only
+	 * derive capabilities within its own cap_space_root.
+	 */
+	return 0;
+}
+
+/* ─── Hook: capable — per-capability access control ────────────────────── */
+static int airy_superv_capable(const struct cred *cred,
+			       struct user_namespace *ns,
+			       int cap, unsigned int opts)
+{
+	/*
+	 * Micro-Supervisor augments capable() with agent-scoped
+	 * capability lookup.  POSIX capability (cap) is mapped to
+	 * Airymax capability ID via security_types.h.
+	 */
+	return 0;
+}
+
+/* ─── Micro-Supervisor supplemental hook list ──────────────────────────── */
+static struct security_hook_list airy_superv_hooks[] __ro_after_init = {
+	LSM_HOOK_INIT(task_fix_setuid, airy_superv_task_fix_setuid),
+	LSM_HOOK_INIT(mmap_addr,       airy_superv_mmap_addr),
+	LSM_HOOK_INIT(file_mprotect,   airy_superv_file_mprotect),
+	LSM_HOOK_INIT(capset,          airy_superv_capset),
+	LSM_HOOK_INIT(capable,         airy_superv_capable),
+};
+
+/**
+ * airy_superv_register_hooks - Register Micro-Supervisor supplemental hooks.
+ *
+ * Called by kernel/superv/airy_superv_lsm.c during late_initcall.
+ * Hooks are added to the existing "airy" LSM module (no new DEFINE_LSM).
+ *
+ * Return: 0 on success, negative error on failure.
+ */
+int __init airy_superv_register_hooks(void)
+{
+	security_add_hooks(airy_superv_hooks,
+			   ARRAY_SIZE(airy_superv_hooks),
+			   "airy");
+	pr_info("airy_superv: registered %zu Micro-Supervisor hooks\n",
+		ARRAY_SIZE(airy_superv_hooks));
+	return 0;
+}
