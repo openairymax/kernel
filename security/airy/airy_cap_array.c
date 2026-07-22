@@ -9,7 +9,11 @@
  * slot state before returning a pointer or error.
  */
 
+#include <linux/spinlock.h>
+
 #include "airy_cap.h"
+
+static DEFINE_SPINLOCK(airy_cap_array_lock);
 
 /* ─── airy_cap_lookup ──────────────────────────────────────────────────── */
 /*
@@ -23,7 +27,7 @@ struct airy_cap_slot *airy_cap_lookup(__u32 agent_id)
 	if (agent_id >= AIRY_CAP_MAX_AGENTS)
 		return NULL;
 
-	if (agent_caps[agent_id].badge == AIRY_CAP_NULL)
+	if (READ_ONCE(agent_caps[agent_id].badge) == AIRY_CAP_NULL)
 		return NULL;
 
 	return &agent_caps[agent_id];
@@ -41,16 +45,24 @@ struct airy_cap_slot *airy_cap_lookup(__u32 agent_id)
  */
 int airy_cap_register(__u32 agent_id, __u64 badge)
 {
+	unsigned long flags;
+
 	if (agent_id >= AIRY_CAP_MAX_AGENTS)
 		return -AIRY_ECAP_OVERFLOW;
 
-	if (agent_caps[agent_id].badge != AIRY_CAP_NULL)
+	spin_lock_irqsave(&airy_cap_array_lock, flags);
+
+	if (agent_caps[agent_id].badge != AIRY_CAP_NULL) {
+		spin_unlock_irqrestore(&airy_cap_array_lock, flags);
 		return -AIRY_EEXIST;
+	}
 
 	agent_caps[agent_id].badge    = badge;
 	agent_caps[agent_id].agent_id = agent_id;
 	agent_caps[agent_id].perms    = (__u16)AIRY_BADGE_PERMS(badge);
 	agent_caps[agent_id].randtag  = (__u32)AIRY_BADGE_RANDTAG(badge);
+
+	spin_unlock_irqrestore(&airy_cap_array_lock, flags);
 
 	return 0;
 }

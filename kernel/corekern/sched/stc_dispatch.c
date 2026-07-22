@@ -6,8 +6,8 @@
  *
  * Maps an Airymax sched_tac policy onto a native Linux scheduling class
  * (SCHED_DEADLINE / SCHED_FIFO / SCHED_NORMAL(EEVDF) / SCHED_BATCH),
- * records the dispatch via stc_stats, and logs the mapping.  The actual
- * sched_set_scheduler() invocation is delegated to the integration layer.
+ * records the dispatch via stc_stats, logs the mapping, and applies the
+ * scheduling class via sched_set_scheduler().
  */
 
 #include <linux/printk.h>
@@ -55,7 +55,9 @@ int stc_dispatch_enqueue(struct task_struct *tsk, enum airy_sched_policy policy)
 {
 	unsigned int pol = (unsigned int)policy;
 	int linux_policy;
+	int ret;
 	const char *stc_name;
+	struct sched_param param = { .sched_priority = 0 };
 
 	if (!tsk)
 		return -EINVAL;
@@ -75,10 +77,20 @@ int stc_dispatch_enqueue(struct task_struct *tsk, enum airy_sched_policy policy)
 	stc_stats_record_dispatch(policy);
 
 	/*
-	 * Full dispatch (constructing sched_param/sched_attr and invoking
-	 * sched_set_scheduler(tsk, linux_policy, &param)) is intentionally
-	 * deferred to the integration layer — here we only resolve the
-	 * target scheduling class and record the decision.
+	 * Apply the resolved scheduling class via sched_set_scheduler().
+	 * SCHED_FIFO requires a non-zero RT priority in [1, MAX_RT_PRIO-1];
+	 * all other policies (SCHED_NORMAL, SCHED_BATCH, SCHED_DEADLINE)
+	 * expect sched_priority == 0.
 	 */
+	param.sched_priority = (linux_policy == SCHED_FIFO) ? 1 : 0;
+
+	ret = sched_set_scheduler(tsk, linux_policy, &param);
+	if (ret) {
+		pr_warn_ratelimited("stc_dispatch: sched_set_scheduler(%s) failed: %d (pid=%d)\n",
+				    stc_linux_policy_name(linux_policy),
+				    ret, tsk->pid);
+		return ret;
+	}
+
 	return 0;
 }

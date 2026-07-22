@@ -26,20 +26,26 @@ struct airy_ipc_ring {
 	u32	tail;		/* consumer cursor (next read slot)  */
 	u32	mask;		/* capacity-1 (ring size must be 2^N) */
 	u32	frozen;		/* non-zero when ring is quiesced    */
+	struct airy_ipc_msg_hdr *slots;	/* message storage array (entries) */
 };
 
 int airy_ipc_ring_init(struct airy_ipc_ring *ring, u32 entries);
+void airy_ipc_ring_destroy(struct airy_ipc_ring *ring);
 int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 		       const struct airy_ipc_msg_hdr *hdr);
+int airy_ipc_ring_consume(struct airy_ipc_ring *ring,
+			  struct airy_ipc_msg_hdr *out);
 
 /* ─── Fastpath ──────────────────────────────────────────────────────── */
 int airy_ipc_fastpath_send(struct airy_ipc_ring *ring,
 			   const struct airy_ipc_msg_hdr *hdr);
 
 /* ─── Zero-copy ─────────────────────────────────────────────────────── */
-int airy_ipc_zero_copy_register(unsigned long base, size_t len);
-int airy_ipc_zero_copy_map(struct vm_area_struct *vma, struct page **pages,
-			   unsigned long nr_pages);
+int airy_ipc_zero_copy_register(unsigned long base, size_t len,
+				__u32 agent_id, __u64 token);
+int airy_ipc_zero_copy_unregister(__u64 token);
+int airy_ipc_zero_copy_map(struct vm_area_struct *vma, __u64 token,
+			   struct page **pages, unsigned long nr_pages);
 
 /* ─── io_uring command entry ────────────────────────────────────────── */
 int airy_uring_cmd_handle(struct io_uring_cmd *ioucmd);

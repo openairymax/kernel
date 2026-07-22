@@ -51,10 +51,15 @@ static int airy_superv_die_cb(struct notifier_block *nb, unsigned long val,
 
 	/* Extract agent_id from the current task's LSM security blob */
 	if (task->security) {
-		struct airy_task_sec *sec = task->security;
+		struct airy_task_sec *sec = task->security +
+			airy_blob_sizes.lbs_task;
+		__u32 old, new;
 
 		agent_id = sec->agent_id;
-		sec->fault_count++;
+		do {
+			old = READ_ONCE(sec->fault_count);
+			new = old + 1;
+		} while (cmpxchg(&sec->fault_count, old, new) != old);
 		sec->frozen_reason = fault_code;
 	}
 

@@ -17,13 +17,17 @@
 #include <linux/sched.h>
 #include <linux/sched/signal.h>
 #include <linux/airymax/lsm_types.h>
+#include <linux/airymax/sched.h>
 #include <linux/airymax/error.h>
 
 #include "airy_cap.h"
 
+/* ─── Forward declarations ───────────────────────────────────────────── */
+void __init airy_die_notify_init(void);
+
 /* ─── Module parameter ─────────────────────────────────────────────────── */
 static bool airy_enabled __ro_after_init = true;
-module_param(airy_enabled, bool, 0644);
+module_param(airy_enabled, bool, 0444);
 MODULE_PARM_DESC(airy_enabled, "Enable Airy Pure-C LSM (default: true)");
 
 /* ─── LSM blob sizes ──────────────────────────────────────────────────── */
@@ -48,6 +52,7 @@ static int airy_task_alloc(struct task_struct *task, unsigned long clone_flags)
 	sec->last_heartbeat  = 0;
 	sec->frozen_reason   = 0;
 	sec->_reserved       = 0;
+	sec->ipc_ring        = NULL;
 
 	return 0;
 }
@@ -62,26 +67,44 @@ static void airy_task_free(struct task_struct *task)
 static int airy_task_kill(struct task_struct *p, struct kernel_siginfo *info,
 			  int sig, const struct cred *cred)
 {
+	struct airy_task_sec *sec;
+
 	if (!airy_enabled)
 		return 0;
 
 	/*
-	 * Future: check airy_cap_badge_ok(badge, agent_id, AIRY_CAP_KILL)
-	 * against the caller's capability space.
+	 * Deny signal delivery if the calling agent is frozen or dead.
+	 * A full badge check (airy_cap_badge_ok with AIRY_CAP_PERM_*)
+	 * is deferred until per-agent kill permission bits are defined
+	 * in the [SC] capability permission space.
 	 */
+	sec = current->security + airy_blob_sizes.lbs_task;
+	if (sec->agent_state == AIRY_AGENT_FROZEN ||
+	    sec->agent_state == AIRY_AGENT_DEAD)
+		return -EPERM;
+
 	return 0;
 }
 
 /* ─── Hook: file_open — capability-gated file access ──────────────────── */
 static int airy_file_open(struct file *file)
 {
+	struct airy_task_sec *sec;
+
 	if (!airy_enabled)
 		return 0;
 
 	/*
-	 * Future: enforce per-agent file access via capability lookups
-	 * on the owning task's capability space.
+	 * Deny file access if the calling agent is frozen or dead.
+	 * Per-agent file access via capability lookups on the owning
+	 * task's capability space is deferred until the inode security
+	 * blob (airy_inode_sec) is wired to VFS.
 	 */
+	sec = current->security + airy_blob_sizes.lbs_task;
+	if (sec->agent_state == AIRY_AGENT_FROZEN ||
+	    sec->agent_state == AIRY_AGENT_DEAD)
+		return -EACCES;
+
 	return 0;
 }
 
@@ -115,6 +138,9 @@ static int __init airy_init(void)
 	airy_cap_agent_caps_init();
 
 	security_add_hooks(airy_hooks, ARRAY_SIZE(airy_hooks), "airy");
+
+	/* Register die notifier at INT_MAX priority (airy_die_notify.c) */
+	airy_die_notify_init();
 
 	pr_info("airy: Airymax Pure-C LSM initialised\n");
 	return 0;

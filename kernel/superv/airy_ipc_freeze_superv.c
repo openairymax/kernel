@@ -16,20 +16,22 @@
 
 #include "../../security/airy/airy_cap.h"
 
-/* struct airy_ipc_ring is defined in airy_cap.h (single-host). */
+/* struct airy_ipc_ring_freeze_state is defined in airy_cap.h (single-host). */
 
 /* ─── Delegates (declared in security/airy/) ──────────────────────────── */
-extern void airy_ipc_freeze_ring(struct airy_ipc_ring *ring, __u32 reason);
-extern void airy_ipc_thaw_ring(struct airy_ipc_ring *ring);
+extern void airy_ipc_freeze_ring(struct airy_ipc_ring_freeze_state *ring,
+				__u32 reason);
+extern void airy_ipc_thaw_ring(struct airy_ipc_ring_freeze_state *ring);
 
 /* ─── Superv-side Wrappers ────────────────────────────────────────────── */
 
-void airy_superv_ipc_freeze_ring(struct airy_ipc_ring *ring, __u32 reason)
+void airy_superv_ipc_freeze_ring(struct airy_ipc_ring_freeze_state *ring,
+				 __u32 reason)
 {
 	airy_ipc_freeze_ring(ring, reason);
 }
 
-void airy_superv_ipc_thaw_ring(struct airy_ipc_ring *ring)
+void airy_superv_ipc_thaw_ring(struct airy_ipc_ring_freeze_state *ring)
 {
 	airy_ipc_thaw_ring(ring);
 }

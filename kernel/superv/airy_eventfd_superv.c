@@ -12,6 +12,7 @@
  */
 
 #include <linux/eventfd.h>
+#include <linux/printk.h>
 #include <linux/airymax/error.h>
 
 #include "../../security/airy/airy_cap.h"
@@ -22,11 +23,15 @@ extern void airy_eventfd_signal_fault(__u32 fault_code, __u32 agent_id,
 
 /* ─── Superv-side Wrappers ────────────────────────────────────────────── */
 
-void airy_superv_eventfd_register(struct eventfd_ctx *ctx)
+int airy_superv_eventfd_register(struct eventfd_ctx *ctx)
 {
 	/* Delegates to LSM airy_eventfd_register() */
 	extern int airy_eventfd_register(struct eventfd_ctx *ctx);
-	airy_eventfd_register(ctx);
+	int ret = airy_eventfd_register(ctx);
+
+	if (ret)
+		pr_warn_ratelimited("airy_superv: eventfd register failed: %d\n", ret);
+	return ret;
 }
 
 void airy_superv_eventfd_signal_fault(__u32 fault_code, __u32 agent_id,

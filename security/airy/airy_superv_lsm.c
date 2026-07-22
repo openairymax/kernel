@@ -25,6 +25,7 @@
 #include <linux/sysctl.h>
 #include <linux/security.h>
 #include <linux/airymax/error.h>
+#include <linux/airymax/sched.h>
 #include <linux/airymax/lsm_types.h>
 
 #include "airy_cap.h"
@@ -33,11 +34,12 @@
 static int airy_superv_task_fix_setuid(struct cred *new,
 				       const struct cred *old, int flags)
 {
-	/*
-	 * Micro-Supervisor intercepts credential transitions to enforce
-	 * capability-space isolation between agents.  A full badge
-	 * validation is performed on the new credential's agent_id.
-	 */
+	struct airy_task_sec *sec;
+
+	sec = current->security + airy_blob_sizes.lbs_task;
+	if (sec->agent_state == AIRY_AGENT_FROZEN)
+		return -EPERM;
+
 	return 0;
 }
 
@@ -45,9 +47,12 @@ static int airy_superv_task_fix_setuid(struct cred *new,
 static int airy_superv_mmap_addr(unsigned long addr)
 {
 	/*
-	 * Micro-Supervisor validates that the mmap address falls within
-	 * the agent's MemoryRovol L1-L4 tier assignment.
+	 * Reject addresses in kernel space to prevent an agent from
+	 * mapping kernel memory into its address space.
 	 */
+	if (addr >= TASK_SIZE)
+		return -EACCES;
+
 	return 0;
 }
 
@@ -56,10 +61,13 @@ static int airy_superv_file_mprotect(struct vm_area_struct *vma,
 				     unsigned long reqprot, unsigned long prot)
 {
 	/*
-	 * Enforce W^X invariant for capability-protected pages:
-	 * a page that holds a capability slot must never be writable
-	 * and executable at the same time.
+	 * Enforce W^X invariant: a page must never be simultaneously
+	 * writable and executable, as this enables code injection from
+	 * a compromised agent.
 	 */
+	if ((prot & (PROT_WRITE | PROT_EXEC)) == (PROT_WRITE | PROT_EXEC))
+		return -EACCES;
+
 	return 0;
 }
 
@@ -69,10 +77,12 @@ static int airy_superv_capset(struct cred *new, const struct cred *old,
 			      const kernel_cap_t *inheritable,
 			      const kernel_cap_t *permitted)
 {
-	/*
-	 * Prevent unscoped CAP_SETPCAP propagation: an agent may only
-	 * derive capabilities within its own cap_space_root.
-	 */
+	struct airy_task_sec *sec;
+
+	sec = current->security + airy_blob_sizes.lbs_task;
+	if (sec->agent_state == AIRY_AGENT_FROZEN)
+		return -EPERM;
+
 	return 0;
 }
 
@@ -81,11 +91,12 @@ static int airy_superv_capable(const struct cred *cred,
 			       struct user_namespace *ns,
 			       int cap, unsigned int opts)
 {
-	/*
-	 * Micro-Supervisor augments capable() with agent-scoped
-	 * capability lookup.  POSIX capability (cap) is mapped to
-	 * Airymax capability ID via security_types.h.
-	 */
+	struct airy_task_sec *sec;
+
+	sec = current->security + airy_blob_sizes.lbs_task;
+	if (sec->agent_state == AIRY_AGENT_FROZEN)
+		return -EPERM;
+
 	return 0;
 }
 

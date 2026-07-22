@@ -33,6 +33,7 @@ struct airy_task_sec {
 	__u64   last_heartbeat;   /* Monotonic timestamp of last heartbeat */
 	__u32   frozen_reason;    /* Reason code if frozen by Supervisor */
 	__u32   _reserved;        /* Alignment */
+	void   *ipc_ring;         /* Per-agent IPC ring freeze-state (M1: per-agent) */
 };
 
 /* ─── Inode Security Context ──────────────────────────────────────────── */

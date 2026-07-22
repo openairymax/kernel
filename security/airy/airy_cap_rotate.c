@@ -65,11 +65,16 @@ int airy_cap_rotate(__u32 agent_id)
 
 	/*
 	 * C-S5.5: Write back the new badge and random tag to the slot.
-	 * Ordering: write randtag first so that any concurrent
-	 * airy_cap_badge_ok() reader sees a consistent pair.
+	 * Ordering: write badge first, then randtag. A concurrent
+	 * airy_cap_badge_ok() reader that observes the new badge
+	 * (containing the new randtag) while slot->randtag is still
+	 * old will see a mismatch and reject (safe-fail). Once
+	 * slot->randtag is updated, both fields are consistent and
+	 * readers pass. This avoids false-positive FORGED reports
+	 * for legitimate old-badge callers during the transition.
 	 */
-	WRITE_ONCE(agent_caps[agent_id].randtag, new_randtag);
 	WRITE_ONCE(agent_caps[agent_id].badge, new_badge);
+	WRITE_ONCE(agent_caps[agent_id].randtag, new_randtag);
 
 	return 0;
 }
