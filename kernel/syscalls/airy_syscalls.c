@@ -36,15 +36,54 @@
 SYSCALL_DEFINE2(airy_sys_call, cap_t, cap,
 		const struct airy_ipc_msg_hdr __user *, msg)
 {
+	struct airy_ipc_msg_hdr hdr;
+	int ret;
+
 	if (!msg)
 		return -EFAULT;
 
 	/*
-	 * M0 stage: capability validation and IPC dispatch are not
-	 * yet wired to the io_uring fastpath. Return -ENOSYS rather
-	 * than silently accepting or rejecting.
+	 * A null capability badge is only valid for CAP_REQUEST
+	 * bootstrap, which uses the io_uring_cmd path — not this
+	 * syscall.  Reject it here.
 	 */
-	return -ENOSYS;
+	if (cap == AIRY_CAP_NULL)
+		return -EINVAL;
+
+	/* Copy and validate the IPC message header. */
+	ret = copy_from_user(&hdr, msg, sizeof(hdr));
+	if (ret)
+		return -EFAULT;
+
+	if (hdr.magic != AIRY_IPC_MAGIC)
+		return -EINVAL;
+
+	/*
+	 * Dispatch based on opcode.  M0 returns -ENOSYS for all
+	 * opcodes pending io_uring fastpath integration, but the
+	 * dispatch path is walked to validate the opcode contract.
+	 */
+	switch (hdr.opcode) {
+	case AIRY_IPC_OP_SEND:
+	case AIRY_IPC_OP_SEND_BATCH:
+		/* IPC send path — deferred to io_uring fastpath */
+		return -ENOSYS;
+	case AIRY_IPC_OP_RECV:
+		/* IPC receive path — deferred to io_uring fastpath */
+		return -ENOSYS;
+	case AIRY_IPC_OP_CANCEL:
+		/* Cancel pending IPC operation */
+		return -ENOSYS;
+	case AIRY_IPC_OP_FREEZE:
+		/* Freeze IPC ring — supervisor-only */
+		return -ENOSYS;
+	case AIRY_IPC_OP_CAP_REQUEST:
+	case AIRY_IPC_OP_CAP_RESPONSE:
+		/* Capability bootstrap — handled via io_uring_cmd */
+		return -ENOSYS;
+	default:
+		return -EINVAL;
+	}
 }
 
 /*
@@ -58,6 +97,11 @@ SYSCALL_DEFINE2(airy_sys_call, cap_t, cap,
  */
 SYSCALL_DEFINE3(airy_sys_rovol_ctl, __u32, op, __u32, pid, __u64, arg)
 {
+	/* Basic parameter validation — op must be non-zero. */
+	if (op == 0)
+		return -EINVAL;
+
+	/* M0 stage: memory tiering not yet wired. */
 	return -ENOSYS;
 }
 
@@ -74,6 +118,13 @@ SYSCALL_DEFINE3(airy_sys_sched_ctl, __u32, op,
 		const char __user *, cgroup_path,
 		const char __user *, policy)
 {
+	/* Basic parameter validation. */
+	if (op == 0)
+		return -EINVAL;
+	if (!cgroup_path || !policy)
+		return -EINVAL;
+
+	/* M0 stage: sched_tac dispatch not yet wired. */
 	return -ENOSYS;
 }
 
@@ -90,6 +141,9 @@ SYSCALL_DEFINE2(airy_sys_clt_notify, int, task_id, __u32, phase)
 {
 	if (phase >= AIRY_COG_PHASE_MAX)
 		return -EINVAL;
+	if (task_id < 0)
+		return -EINVAL;
 
+	/* M0 stage: cognition subsystem not yet integrated. */
 	return -ENOSYS;
 }

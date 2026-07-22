@@ -17,12 +17,39 @@
 #include <linux/errno.h>
 #include <linux/log2.h>
 #include <linux/page_ref.h>
+#include <linux/list.h>
+#include <linux/spinlock.h>
+#include <linux/slab.h>
+#include <linux/types.h>
 
 #include "airy_ipc_internal.h"
 
+/* ─── Registered-buffer tracking ────────────────────────────────────── */
+
+/**
+ * struct airy_zero_copy_region - A registered user buffer for zero-copy IPC.
+ * @list:     Linkage in the global airy_zero_copy_regions list.
+ * @uaddr:    User-space base address (page-aligned).
+ * @size:     Buffer length in bytes (page-aligned).
+ * @agent_id: Owning agent identifier.
+ * @token:    Unique lookup token returned to userspace at registration time.
+ */
+struct airy_zero_copy_region {
+	struct list_head list;
+	void           *uaddr;
+	size_t          size;
+	__u32           agent_id;
+	__u64           token;
+};
+
+static LIST_HEAD(airy_zero_copy_regions);
+static DEFINE_SPINLOCK(airy_zero_copy_lock);
+
 /* ─── Register a user buffer range for zero-copy ─────────────────────── */
-int airy_ipc_zero_copy_register(unsigned long base, size_t len)
+int airy_ipc_zero_copy_register(unsigned long base, size_t len,
+				__u32 agent_id, __u64 token)
 {
+	struct airy_zero_copy_region *reg;
 	size_t nr_pages;
 
 	if (!base || !len)
@@ -34,20 +61,70 @@ int airy_ipc_zero_copy_register(unsigned long base, size_t len)
 
 	nr_pages = len >> PAGE_SHIFT;
 
-	pr_info("airy_ipc_zero_copy: registered buffer @%#lx len=%zu (%zu pages)\n",
-		base, len, nr_pages);
+	reg = kzalloc(sizeof(*reg), GFP_KERNEL);
+	if (!reg)
+		return -ENOMEM;
+
+	reg->uaddr    = (void *)base;
+	reg->size     = len;
+	reg->agent_id = agent_id;
+	reg->token    = token;
+
+	spin_lock(&airy_zero_copy_lock);
+	list_add_tail(&reg->list, &airy_zero_copy_regions);
+	spin_unlock(&airy_zero_copy_lock);
+
+	pr_info("airy_ipc_zero_copy: registered buffer @%#lx len=%zu (%zu pages) agent=%u token=%#llx\n",
+		base, len, nr_pages, agent_id, token);
 	return 0;
 }
 
-/* ─── Map registered pages into a VMA ────────────────────────────────── */
-int airy_ipc_zero_copy_map(struct vm_area_struct *vma, struct page **pages,
-			   unsigned long nr_pages)
+/* ─── Unregister a buffer by token ──────────────────────────────────── */
+int airy_ipc_zero_copy_unregister(__u64 token)
 {
+	struct airy_zero_copy_region *reg, *tmp;
+
+	spin_lock(&airy_zero_copy_lock);
+	list_for_each_entry_safe(reg, tmp, &airy_zero_copy_regions, list) {
+		if (reg->token == token) {
+			list_del(&reg->list);
+			spin_unlock(&airy_zero_copy_lock);
+			kfree(reg);
+			return 0;
+		}
+	}
+	spin_unlock(&airy_zero_copy_lock);
+
+	return -ENOENT;
+}
+
+/* ─── Map registered pages into a VMA ────────────────────────────────── */
+int airy_ipc_zero_copy_map(struct vm_area_struct *vma, __u64 token,
+			   struct page **pages, unsigned long nr_pages)
+{
+	struct airy_zero_copy_region *reg;
+	bool found = false;
 	unsigned long inserted;
 	int ret;
 
 	if (!vma || !pages || !nr_pages)
 		return -EINVAL;
+
+	/* Look up the registered region by token. */
+	spin_lock(&airy_zero_copy_lock);
+	list_for_each_entry(reg, &airy_zero_copy_regions, list) {
+		if (reg->token == token) {
+			found = true;
+			break;
+		}
+	}
+	spin_unlock(&airy_zero_copy_lock);
+
+	if (!found) {
+		pr_warn_ratelimited("airy_ipc_zero_copy: no region for token=%#llx\n",
+				    token);
+		return -ENOENT;
+	}
 
 	/*
 	 * vm_insert_pages() inserts as many of the requested pages as

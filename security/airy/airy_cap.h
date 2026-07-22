@@ -88,19 +88,28 @@ int airy_cap_register(__u32 agent_id, __u64 badge);
 int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		    enum airy_cap_op op, __u16 new_perms);
 
-/* ─── IPC Ring Structure (single-host for security/airy + kernel/superv) ─ */
+/* ─── IPC Ring Freeze State (single-host for security/airy + kernel/superv) ─ */
 /**
- * struct airy_ipc_ring - An IPC ring buffer between two agents.
+ * struct airy_ipc_ring_freeze_state - Freeze metadata for an IPC ring.
  * @frozen:           Whether the ring is currently frozen.
  * @freeze_reason:    Reason code for the freeze (0 if not frozen).
  * @freeze_timestamp: Monotonic timestamp (ns) when the ring was frozen.
  *
- * Defined here (not in a [SC] header) because it is an internal
- * kernel implementation type, not a UAPI contract. Both
- * security/airy/airy_ipc_freeze.c and kernel/superv/airy_ipc_freeze.c
+ * This structure holds only the freeze/unfreeze metadata consumed by the
+ * Micro-Supervisor quarantine path.  It is deliberately separate from
+ * struct airy_ipc_ring (defined in corekern/ipc/airy_ipc_internal.h) which
+ * holds the ring-buffer cursors {head, tail, mask, frozen}.  Renamed from
+ * struct airy_ipc_ring to resolve a dual-definition conflict with
+ * airy_ipc_internal.h — both headers previously defined a type of the same
+ * name with incompatible layouts, causing silent memory corruption when a
+ * translation unit included both.
+ *
+ * Defined here (not in a [SC] header) because it is an internal kernel
+ * implementation type, not a UAPI contract. Both
+ * security/airy/airy_ipc_freeze.c and kernel/superv/airy_ipc_freeze_superv.c
  * include this header to obtain the single definition.
  */
-struct airy_ipc_ring {
+struct airy_ipc_ring_freeze_state {
 	bool    frozen;
 	__u32   freeze_reason;
 	__u64   freeze_timestamp;

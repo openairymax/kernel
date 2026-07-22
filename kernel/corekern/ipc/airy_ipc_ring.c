@@ -6,8 +6,8 @@
  *
  * Implements a power-of-2 single-producer/single-consumer ring with a
  * frozen flag for quiescing.  The cursor state lives in struct
- * airy_ipc_ring (defined in airy_ipc_internal.h); message payload
- * storage is owned by the caller.
+ * airy_ipc_ring (defined in airy_ipc_internal.h); message headers are
+ * stored in the slots[] array allocated by airy_ipc_ring_init().
  */
 
 #include <linux/printk.h>
@@ -15,6 +15,7 @@
 #include <linux/log2.h>
 #include <linux/errno.h>
 #include <linux/string.h>
+#include <linux/slab.h>
 #include <linux/airymax/ipc.h>
 
 #include "airy_ipc_internal.h"
@@ -34,8 +35,23 @@ int airy_ipc_ring_init(struct airy_ipc_ring *ring, u32 entries)
 	ring->mask   = entries - 1;
 	ring->frozen = 0;
 
+	/* Allocate the message header storage array (one slot per entry). */
+	ring->slots = kcalloc(entries, sizeof(*ring->slots), GFP_KERNEL);
+	if (!ring->slots)
+		return -ENOMEM;
+
 	pr_info("airy_ipc_ring: initialised ring with %u entries\n", entries);
 	return 0;
+}
+
+/* ─── Tear down a ring and free its message storage ──────────────────── */
+void airy_ipc_ring_destroy(struct airy_ipc_ring *ring)
+{
+	if (!ring)
+		return;
+
+	kfree(ring->slots);
+	ring->slots = NULL;
 }
 
 /* ─── Post a message header to the ring ──────────────────────────────── */
@@ -44,7 +60,7 @@ int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 {
 	u32 next;
 
-	if (!ring || !hdr)
+	if (!ring || !hdr || !ring->slots)
 		return -EINVAL;
 
 	if (READ_ONCE(ring->frozen))
@@ -64,6 +80,32 @@ int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 		return -ENOSPC;
 	}
 
+	/* Store the message header into the current slot before advancing. */
+	memcpy(&ring->slots[ring->head], hdr, sizeof(*hdr));
 	ring->head = next;
+	return 0;
+}
+
+/* ─── Consume a message header from the ring ────────────────────────── */
+int airy_ipc_ring_consume(struct airy_ipc_ring *ring,
+			  struct airy_ipc_msg_hdr *out)
+{
+	u32 next;
+
+	if (!ring || !out || !ring->slots)
+		return -EINVAL;
+
+	/* Ring empty: head == tail. */
+	if (ring->head == ring->tail)
+		return -ENOMSG;
+
+	if (READ_ONCE(ring->frozen))
+		return -EAGAIN;
+
+	/* Single-consumer advance: tail only moves forward by one slot. */
+	memcpy(out, &ring->slots[ring->tail], sizeof(*out));
+	next = (ring->tail + 1) & ring->mask;
+	ring->tail = next;
+
 	return 0;
 }

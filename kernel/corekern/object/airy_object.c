@@ -33,11 +33,22 @@ static LIST_HEAD(airy_object_list);
 int airy_object_register(struct airy_object *obj)
 {
 	unsigned long flags;
+	struct airy_object *iter;
 
 	if (!obj || !obj->name)
 		return -EINVAL;
 
 	spin_lock_irqsave(&airy_object_lock, flags);
+
+	/* Check for duplicate ID before inserting. */
+	list_for_each_entry(iter, &airy_object_list, list) {
+		if (iter->id == obj->id) {
+			spin_unlock_irqrestore(&airy_object_lock, flags);
+			pr_warn_ratelimited("airy_object: duplicate id=%u\n", obj->id);
+			return -EEXIST;
+		}
+	}
+
 	list_add_tail(&obj->list, &airy_object_list);
 	spin_unlock_irqrestore(&airy_object_lock, flags);
 

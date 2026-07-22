@@ -16,11 +16,14 @@
 #include <linux/random.h>
 #include <linux/atomic.h>
 #include <linux/compiler.h>
+#include <linux/spinlock.h>
 
 #include <linux/airymax/security_types.h>
 #include <linux/airymax/error.h>
 
 #include "airy_cap.h"
+
+static DEFINE_SPINLOCK(airy_cap_derive_lock);
 
 /* ─── airy_cap_derive ──────────────────────────────────────────────────── */
 /*
@@ -32,6 +35,11 @@
  * new_perms  — new permission mask (used by copy, mint, mutate)
  *
  * Returns 0 on success, negative airy_err_t on failure.
+ *
+ * The entire operation runs under airy_cap_derive_lock to close the
+ * TOCTOU window between slot-state checks (empty/valid) and the
+ * subsequent writes. get_random_u32() and atomic_inc() are
+ * non-sleeping and safe under the spinlock.
  */
 int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		    enum airy_cap_op op, __u16 new_perms)
@@ -39,22 +47,32 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 	struct airy_cap_slot *src, *dst;
 	__u64 epoch, randtag;
 	__u16 perms;
+	unsigned long flags;
+	int ret = 0;
+
+	spin_lock_irqsave(&airy_cap_derive_lock, flags);
 
 	/* Validate source for all operations except revoke (global) */
 	if (op != AIRY_CAP_OP_REVOKE) {
 		src = airy_cap_lookup(src_agent);
-		if (!src)
-			return -AIRY_ECAP_MISSING;
+		if (!src) {
+			ret = -AIRY_ECAP_MISSING;
+			goto out;
+		}
 	}
 
 	switch (op) {
 	/* ─── COPY ──────────────────────────────────────────────────── */
 	case AIRY_CAP_OP_COPY:
-		if (dst_agent >= AIRY_CAP_MAX_AGENTS)
-			return -AIRY_ECAP_OVERFLOW;
+		if (dst_agent >= AIRY_CAP_MAX_AGENTS) {
+			ret = -AIRY_ECAP_OVERFLOW;
+			goto out;
+		}
 		dst = &agent_caps[dst_agent];
-		if (dst->badge != AIRY_CAP_NULL)
-			return -AIRY_EEXIST;
+		if (dst->badge != AIRY_CAP_NULL) {
+			ret = -AIRY_EEXIST;
+			goto out;
+		}
 
 		/* Copy badge unchanged (no demotion) */
 		dst->badge    = src->badge;
@@ -66,11 +84,15 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 
 	/* ─── MINT ──────────────────────────────────────────────────── */
 	case AIRY_CAP_OP_MINT:
-		if (dst_agent >= AIRY_CAP_MAX_AGENTS)
-			return -AIRY_ECAP_OVERFLOW;
+		if (dst_agent >= AIRY_CAP_MAX_AGENTS) {
+			ret = -AIRY_ECAP_OVERFLOW;
+			goto out;
+		}
 		dst = &agent_caps[dst_agent];
-		if (dst->badge != AIRY_CAP_NULL)
-			return -AIRY_EEXIST;
+		if (dst->badge != AIRY_CAP_NULL) {
+			ret = -AIRY_EEXIST;
+			goto out;
+		}
 
 		/* Mint new badge with potentially reduced permissions */
 		epoch   = AIRY_BADGE_EPOCH(src->badge);
@@ -86,11 +108,15 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 
 	/* ─── MOVE ──────────────────────────────────────────────────── */
 	case AIRY_CAP_OP_MOVE:
-		if (dst_agent >= AIRY_CAP_MAX_AGENTS)
-			return -AIRY_ECAP_OVERFLOW;
+		if (dst_agent >= AIRY_CAP_MAX_AGENTS) {
+			ret = -AIRY_ECAP_OVERFLOW;
+			goto out;
+		}
 		dst = &agent_caps[dst_agent];
-		if (dst->badge != AIRY_CAP_NULL)
-			return -AIRY_EEXIST;
+		if (dst->badge != AIRY_CAP_NULL) {
+			ret = -AIRY_EEXIST;
+			goto out;
+		}
 
 		/* Transfer badge, invalidate source */
 		dst->badge    = src->badge;
@@ -155,8 +181,11 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 	}
 
 	default:
-		return -AIRY_EINVAL;
+		ret = -AIRY_EINVAL;
+		break;
 	}
 
-	return 0;
+out:
+	spin_unlock_irqrestore(&airy_cap_derive_lock, flags);
+	return ret;
 }

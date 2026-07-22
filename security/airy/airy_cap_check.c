@@ -23,12 +23,18 @@
 #include <linux/cred.h>
 #include <linux/delay.h>
 #include <linux/printk.h>
+#include <linux/notifier.h>
+#include <asm/unaligned.h>
 
 #include <linux/airymax/error.h>
 #include <linux/airymax/security_types.h>
 #include <linux/airymax/lsm_types.h>
+#include <linux/airymax/sched.h>
 
 #include "airy_cap.h"
+
+/* Airy security fault notifier chain (defined in airy_die_notify.c) */
+extern struct atomic_notifier_head airy_die_chain;
 
 /* ─── Phase 1: C-S0 Ring Frozen Check ──────────────────────────────────── */
 /*
@@ -160,12 +166,14 @@ int airy_uring_cmd_check(struct io_uring_cmd *ioucmd)
 	/*
 	 * Phase 2: CAP_REQUEST bootstrap path
 	 *
-	 * badge and required_perms would be extracted from the
-	 * io_uring_cmd payload via a shared-memory ring descriptor.
-	 * For now we use placeholder values.
+	 * Extract badge (64-bit) and required_perms (16-bit) from the
+	 * io_uring_cmd inline pdu buffer.  The pdu layout is:
+	 *   bytes [0..7]   — capability badge (u64, little-endian)
+	 *   bytes [8..9]   — required permission bits (u16, little-endian)
+	 *   bytes [10..31] — reserved for future extension
 	 */
-	badge = 0;           /* extracted from ioucmd payload */
-	required_perms = 0;  /* extracted from ioucmd payload */
+	badge = get_unaligned_le64(&ioucmd->pdu[0]);
+	required_perms = get_unaligned_le16(&ioucmd->pdu[8]);
 
 	if (required_perms == 0) {
 		/* CAP_REQUEST bootstrap: no perms required */
@@ -175,7 +183,7 @@ int airy_uring_cmd_check(struct io_uring_cmd *ioucmd)
 	/*
 	 * Phase 3: [DSL]/agentrt degradation
 	 */
-	if (sec->agent_state == 0 /* AGENT_STATE_DEGRADED */) {
+	if (sec->agent_state == AIRY_AGENT_FROZEN) {
 		return phase3_dsl_degradation(agent_id);
 	}
 
@@ -220,16 +228,24 @@ void airy_security_fault(__u32 agent_id, __u32 fault_code)
 	       agent_id, fault_code);
 
 	if (agent_id < AIRY_CAP_MAX_AGENTS) {
+		__u32 old, new;
+
 		sec = current->security + airy_blob_sizes.lbs_task;
 		/* Increment per-task fault counter if agent matches */
-		WRITE_ONCE(sec->fault_count, sec->fault_count + 1);
+		do {
+			old = READ_ONCE(sec->fault_count);
+			new = old + 1;
+		} while (cmpxchg(&sec->fault_count, old, new) != old);
 
 		/* Freeze the agent ring */
 		WRITE_ONCE(sec->frozen_reason, fault_code);
 	}
 
 	/*
-	 * TODO: Invoke die_notifier chain to notify Supervisor.
-	 *   atomic_notifier_call_chain(&airy_die_chain, fault_code, ...);
+	 * Notify the Airy security fault chain so the Supervisor can
+	 * take out-of-band action (e.g., terminate or quarantine the
+	 * offending agent).  This is separate from the kernel die_chain
+	 * which handles hardware/kernel faults.
 	 */
+	atomic_notifier_call_chain(&airy_die_chain, fault_code, current);
 }

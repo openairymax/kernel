@@ -17,14 +17,26 @@
 
 #include "airy_cap.h"
 
+/* ─── Airy Security Fault Notifier Chain ──────────────────────────────── */
+/*
+ * Separate from the kernel die_chain: this chain is invoked from
+ * airy_security_fault() to notify the Supervisor of unrecoverable
+ * Airy security violations (badge forgery, capability leaks, etc.).
+ * The kernel die_chain handles hardware/kernel faults (OOPS, NMI);
+ * airy_die_chain handles Airy capability-space faults.
+ */
+ATOMIC_NOTIFIER_HEAD(airy_die_chain);
+
 /* ─── External Declarations ───────────────────────────────────────────── */
 
 /*
  * Functions provided by airy_ipc_freeze.c
  */
-struct airy_ipc_ring;
-extern void airy_ipc_freeze_ring(struct airy_ipc_ring *ring, __u32 reason);
-extern struct airy_ipc_ring *airy_ipc_ring_for_task(struct task_struct *task);
+struct airy_ipc_ring_freeze_state;
+extern void airy_ipc_freeze_ring(struct airy_ipc_ring_freeze_state *ring,
+				__u32 reason);
+extern struct airy_ipc_ring_freeze_state *
+			airy_ipc_ring_for_task(struct task_struct *task);
 
 /*
  * Functions provided by airy_eventfd.c
@@ -80,7 +92,7 @@ static int airy_die_notifier(struct notifier_block *nb, unsigned long val,
 	__u32 agent_id;
 	__u64 timestamp;
 	struct task_struct *task = current;
-	struct airy_ipc_ring *ring;
+	struct airy_ipc_ring_freeze_state *ring;
 
 	fault_code = airy_die_map_fault(val);
 	if (fault_code == 0)
@@ -91,10 +103,15 @@ static int airy_die_notifier(struct notifier_block *nb, unsigned long val,
 	 */
 	agent_id = 0;
 	if (task->security) {
-		struct airy_task_sec *sec = task->security;
+		struct airy_task_sec *sec = task->security +
+			airy_blob_sizes.lbs_task;
+		__u32 old, new;
 
 		agent_id = sec->agent_id;
-		sec->fault_count++;
+		do {
+			old = READ_ONCE(sec->fault_count);
+			new = old + 1;
+		} while (cmpxchg(&sec->fault_count, old, new) != old);
 	}
 
 	timestamp = (__u64)ktime_get_mono_fast_ns();
