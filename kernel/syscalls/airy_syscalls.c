@@ -2,13 +2,13 @@
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd.
  *
- * airy_syscalls.c — Airymax System Calls (454-457).
+ * airy_syscalls.c — Airymax System Calls (548-551).
  *
  * Implements the four ALK syscalls for agent IPC, memory rotation
  * control, scheduler control, and cognition lifecycle notification.
  * Syscall numbers are defined in the [SC] <linux/airymax/syscalls.h>
- * header (AIRY_SYS_CALL=454 .. AIRY_SYS_CLT_NOTIFY=457), avoiding the
- * x32 historical range 512-547.
+ * header (AIRY_SYS_CALL=548 .. AIRY_SYS_CLT_NOTIFY=551), avoiding the
+ * x32 historical range 512-547. SSoT: 07-syscall-registry.md.
  */
 
 #include <linux/syscalls.h>
@@ -22,7 +22,7 @@
 #include <linux/airymax/error.h>
 
 /*
- * SYSCALL 454: airy_sys_call — IPC send/recv entry point.
+ * SYSCALL 548: airy_sys_call — IPC send/recv entry point.
  * @cap: Capability badge for authentication.
  * @msg: User-space pointer to a struct airy_ipc_msg_hdr.
  *
@@ -87,7 +87,7 @@ SYSCALL_DEFINE2(airy_sys_call, cap_t, cap,
 }
 
 /*
- * SYSCALL 455: airy_sys_rovol_ctl — Memory RoVol (rotation/volume) control.
+ * SYSCALL 549: airy_sys_rovol_ctl — Memory RoVol (rotation/volume) control.
  * @op:  Operation code.
  * @pid: Target process/task ID.
  * @arg: Operation-specific argument.
@@ -106,7 +106,7 @@ SYSCALL_DEFINE3(airy_sys_rovol_ctl, __u32, op, __u32, pid, __u64, arg)
 }
 
 /*
- * SYSCALL 456: airy_sys_sched_ctl — Scheduler control.
+ * SYSCALL 550: airy_sys_sched_ctl — Scheduler control.
  * @op:          Operation code.
  * @cgroup_path: User-space path to the target cgroup.
  * @policy:      User-space scheduling policy string.
@@ -129,7 +129,7 @@ SYSCALL_DEFINE3(airy_sys_sched_ctl, __u32, op,
 }
 
 /*
- * SYSCALL 457: airy_sys_clt_notify — Cognition Lifecycle notification.
+ * SYSCALL 551: airy_sys_clt_notify — Cognition Lifecycle notification.
  * @task_id: Task identifier for the cognition agent.
  * @phase:   Cognition phase (AIRY_COG_PERCEPT / THINK / ACT).
  *

@@ -79,7 +79,7 @@ static int airy_task_kill(struct task_struct *p, struct kernel_siginfo *info,
 	 * in the [SC] capability permission space.
 	 */
 	sec = current->security + airy_blob_sizes.lbs_task;
-	if (sec->agent_state == AIRY_AGENT_FROZEN ||
+	if (sec->agent_state == AIRY_AGENT_STOPPED ||
 	    sec->agent_state == AIRY_AGENT_DEAD)
 		return -EPERM;
 
@@ -95,13 +95,13 @@ static int airy_file_open(struct file *file)
 		return 0;
 
 	/*
-	 * Deny file access if the calling agent is frozen or dead.
+	 * Deny file access if the calling agent is stopped or dead.
 	 * Per-agent file access via capability lookups on the owning
 	 * task's capability space is deferred until the inode security
 	 * blob (airy_inode_sec) is wired to VFS.
 	 */
 	sec = current->security + airy_blob_sizes.lbs_task;
-	if (sec->agent_state == AIRY_AGENT_FROZEN ||
+	if (sec->agent_state == AIRY_AGENT_STOPPED ||
 	    sec->agent_state == AIRY_AGENT_DEAD)
 		return -EACCES;
 

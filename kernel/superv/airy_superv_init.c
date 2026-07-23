@@ -2,7 +2,7 @@
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
- * airy_superv_lsm.c — Micro-Supervisor initialization entry point.
+ * airy_superv_init.c — Micro-Supervisor initialization entry point.
  *
  * Provides late_initcall() to bring up the Micro-Supervisor subsystem:
  *   1. Register Micro-Supervisor supplemental LSM hooks via
@@ -47,7 +47,7 @@ static int __init airy_superv_init(void)
 
 	/* 3. Eventfd context and IPC ring freeze are initialised lazily:
 	 *    - eventfd context is registered by userspace via
-	 *      airy_sys_clt_notify() syscall (airy_sys_call number 457)
+	 *      airy_sys_clt_notify() syscall (AIRY_SYS_CLT_NOTIFY, number 551)
 	 *    - IPC ring freeze is triggered on first ring creation
 	 *      via airy_superv_ipc_freeze_ring() */
 

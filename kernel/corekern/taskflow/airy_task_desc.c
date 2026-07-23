@@ -39,7 +39,7 @@ int airy_task_desc_init(struct airy_task_desc *desc)
 	desc->vtime        = 0;			/* Q16.16, starts at zero    */
 	desc->sched_policy = AIRY_SCHED_POLICY_EEVDF;
 	desc->weight       = AIRY_WEIGHT_MIN;
-	desc->state        = AIRY_AGENT_INIT;
+	desc->state        = AIRY_AGENT_INACTIVE;
 
 	return 0;
 }

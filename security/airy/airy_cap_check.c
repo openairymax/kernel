@@ -183,7 +183,7 @@ int airy_uring_cmd_check(struct io_uring_cmd *ioucmd)
 	/*
 	 * Phase 3: [DSL]/agentrt degradation
 	 */
-	if (sec->agent_state == AIRY_AGENT_FROZEN) {
+	if (sec->agent_state == AIRY_AGENT_STOPPED) {
 		return phase3_dsl_degradation(agent_id);
 	}
 

@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  syscall.xml — agentrt-linux 系统调用契约源（R-01 SSoT）
+  物理宿主: include/uapi/linux/airymax/syscall.xml
+  生成器:   tools/codegen/syscall_gen.py
+  禁止手工修改生成产物: include/uapi/linux/airymax/syscall.h 等
+
+  SPDX-License-Identifier: GPL-2.0
+  Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
+
+  v1.0.1 Capability Folding 后的权威 syscall.xml 内容：
+    - 4 核心 syscall + 20 预留 = 24 槽位
+    - 编号起点 548（避开 x86_64 x32 历史遗留区域 512-547）
+-->
+<syscalls version="0x0100"
+          core_count="4"
+          reserved_count="20"
+          total_slots="24"
+          linux_base="548">
+
+  <!-- 元数据：生成器与模板版本锁定 -->
+  <meta>
+    <generator>syscall_gen.py</generator>
+    <generator_version>1.0.1</generator_version>
+    <schema_version>1.0</schema_version>
+    <prefix_symbol>AIRY_SYS_</prefix_symbol>
+    <prefix_function>airy_sys_</prefix_function>
+  </meta>
+
+  <!--
+    单个 syscall 定义。
+    字段：
+      name                 小写函数名（airy_sys_call）
+      number               内部编号（0-23），Linux 注册号 = number + linux_base
+      signature            C 函数签名（参数列表）
+      capability_required  调用所需 capability ID（可选，0 表示无）
+      flags                标志位（blocking / nonblocking / control / notify）
+      since                引入版本
+      stability            ABI 稳定性（stable / experimental / deprecated）
+  -->
+  <syscall>
+    <name>airy_sys_call</name>
+    <number>0</number>
+    <signature>cap_t cap, const struct airy_ipc_msg_hdr *msg</signature>
+    <capability_required>AIRY_CAP_INVOKE</capability_required>
+    <flags>blocking</flags>
+    <category>ipc_primitive</category>
+    <since>1.0.1</since>
+    <stability>stable</stability>
+    <doc>Unified capability invocation (sec_d 专属管理入口).</doc>
+  </syscall>
+
+  <syscall>
+    <name>airy_sys_rovol_ctl</name>
+    <number>1</number>
+    <signature>uint32_t op, uint32_t pid, uint64_t arg</signature>
+    <flags>control</flags>
+    <category>control_primitive</category>
+    <since>1.0.1</since>
+    <stability>stable</stability>
+    <doc>Reverse-of-volatility (rovol) control operations.</doc>
+  </syscall>
+
+  <syscall>
+    <name>airy_sys_sched_ctl</name>
+    <number>2</number>
+    <signature>uint32_t op, uint32_t agent_id, uint64_t arg</signature>
+    <flags>control</flags>
+    <category>control_primitive</category>
+    <since>1.0.1</since>
+    <stability>stable</stability>
+    <doc>Scheduler control operations.</doc>
+  </syscall>
+
+  <syscall>
+    <name>airy_sys_clt_notify</name>
+    <number>3</number>
+    <signature>int task_id, uint32_t op</signature>
+    <flags>control</flags>
+    <category>control_primitive</category>
+    <since>1.0.1</since>
+    <stability>stable</stability>
+    <doc>Cross-layer task notification control.</doc>
+  </syscall>
+
+  <!-- 4-23: 预留槽位，不生成实现，仅占用编号 -->
+  <reserved from="4" to="23" reason="future extension"/>
+
+</syscalls>

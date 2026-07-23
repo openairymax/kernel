@@ -375,10 +375,16 @@
 451	common	cachestat		sys_cachestat
 452	common	fchmodat2		sys_fchmodat2
 453	64	map_shadow_stack	sys_map_shadow_stack
-454	common	airy_sys_call		sys_airy_sys_call
-455	common	airy_sys_rovol_ctl		sys_airy_sys_rovol_ctl
-456	common	airy_sys_sched_ctl		sys_airy_sys_sched_ctl
-457	common	airy_sys_clt_notify	sys_airy_sys_clt_notify
+#
+# Airymax syscalls (548-551)
+# v1.0.1: 统一使用 548 起始，避开 x86_64 x32 历史遗留区域（512-547）。
+# 确保在 x86_64/arm64/riscv 所有架构上编号一致，实现跨架构二进制兼容。
+# 设计文档：docs/AirymaxOS/30-interfaces/01-syscalls.md §2.2
+#
+548	common	airy_sys_call		sys_airy_sys_call
+549	common	airy_sys_rovol_ctl		sys_airy_sys_rovol_ctl
+550	common	airy_sys_sched_ctl		sys_airy_sys_sched_ctl
+551	common	airy_sys_clt_notify	sys_airy_sys_clt_notify
 
 #
 # Due to a historical design error, certain syscalls are numbered differently
