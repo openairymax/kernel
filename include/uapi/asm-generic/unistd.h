@@ -823,18 +823,24 @@ __SYSCALL(__NR_cachestat, sys_cachestat)
 #define __NR_fchmodat2 452
 __SYSCALL(__NR_fchmodat2, sys_fchmodat2)
 
-/* Airymax syscalls (453-456) */
-#define __NR_airy_sys_call 453
+/* Airymax syscalls (548-551)
+ *
+ * v1.0.1: 统一使用 548 起始，避开 x86_64 x32 历史遗留区域（512-547）。
+ * 确保在 x86_64/arm64/riscv 所有架构上编号一致，实现跨架构二进制兼容。
+ * 设计文档：docs/AirymaxOS/30-interfaces/01-syscalls.md §2.2
+ * SSoT 注册表：docs/AirymaxOS/140-application-development/07-syscall-registry.md
+ */
+#define __NR_airy_sys_call 548
 __SYSCALL(__NR_airy_sys_call, sys_airy_sys_call)
-#define __NR_airy_sys_rovol_ctl 454
+#define __NR_airy_sys_rovol_ctl 549
 __SYSCALL(__NR_airy_sys_rovol_ctl, sys_airy_sys_rovol_ctl)
-#define __NR_airy_sys_sched_ctl 455
+#define __NR_airy_sys_sched_ctl 550
 __SYSCALL(__NR_airy_sys_sched_ctl, sys_airy_sys_sched_ctl)
-#define __NR_airy_sys_clt_notify 456
+#define __NR_airy_sys_clt_notify 551
 __SYSCALL(__NR_airy_sys_clt_notify, sys_airy_sys_clt_notify)
 
 #undef __NR_syscalls
-#define __NR_syscalls 457
+#define __NR_syscalls 552
 
 /*
  * 32 bit systems traditionally used different

@@ -6,7 +6,7 @@
  *
  * Provides airy_superv_register_hooks() to register Micro-Supervisor
  * specific LSM hooks that supplement the five core hooks defined in
- * airy_lsm.c.  Called by kernel/superv/airy_superv_lsm.c during
+ * airy_lsm.c.  Called by kernel/superv/airy_superv_init.c during
  * late_initcall.
  *
  * Design rationale (see docs/AirymaxOS/20-modules/09-kernel-agent-supervisor.md):
@@ -37,7 +37,7 @@ static int airy_superv_task_fix_setuid(struct cred *new,
 	struct airy_task_sec *sec;
 
 	sec = current->security + airy_blob_sizes.lbs_task;
-	if (sec->agent_state == AIRY_AGENT_FROZEN)
+	if (sec->agent_state == AIRY_AGENT_STOPPED)
 		return -EPERM;
 
 	return 0;
@@ -80,7 +80,7 @@ static int airy_superv_capset(struct cred *new, const struct cred *old,
 	struct airy_task_sec *sec;
 
 	sec = current->security + airy_blob_sizes.lbs_task;
-	if (sec->agent_state == AIRY_AGENT_FROZEN)
+	if (sec->agent_state == AIRY_AGENT_STOPPED)
 		return -EPERM;
 
 	return 0;
@@ -94,7 +94,7 @@ static int airy_superv_capable(const struct cred *cred,
 	struct airy_task_sec *sec;
 
 	sec = current->security + airy_blob_sizes.lbs_task;
-	if (sec->agent_state == AIRY_AGENT_FROZEN)
+	if (sec->agent_state == AIRY_AGENT_STOPPED)
 		return -EPERM;
 
 	return 0;
@@ -112,7 +112,7 @@ static struct security_hook_list airy_superv_hooks[] __ro_after_init = {
 /**
  * airy_superv_register_hooks - Register Micro-Supervisor supplemental hooks.
  *
- * Called by kernel/superv/airy_superv_lsm.c during late_initcall.
+ * Called by kernel/superv/airy_superv_init.c during late_initcall.
  * Hooks are added to the existing "airy" LSM module (no new DEFINE_LSM).
  *
  * Return: 0 on success, negative error on failure.

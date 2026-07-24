@@ -73,16 +73,23 @@ struct airy_task_desc {
 _Static_assert(sizeof(struct airy_task_desc) == 64,
 	       "airy_task_desc must be exactly 64 bytes");
 
-/* ─── Agent Lifecycle States (8 states) ──────────────────────────────── */
+/* ─── Agent Lifecycle States (8 states, SSoT-aligned) ──────────────────
+ * SSoT: docs/AirymaxOS/30-interfaces/10-sc-sched-extension.md §2.1
+ *
+ * sched_tac 核心成果：8 态与 Linux 进程状态天然映射，无需新增内核
+ * 调度器状态，仅复用 SCHED_DEADLINE/SCHED_FIFO/EEVDF。状态迁移由
+ * Macro-Supervisor 驱动，Micro-Supervisor 仅在检测到异常时触发
+ * RUNNING -> STOPPING 的强制迁移。
+ */
 enum airy_agent_state {
-	AIRY_AGENT_INIT        = 0,  /* Initializing */
-	AIRY_AGENT_RUNNING     = 1,  /* Running */
-	AIRY_AGENT_SLEEPING    = 2,  /* Sleeping (voluntary) */
-	AIRY_AGENT_BLOCKED     = 3,  /* Blocked (I/O or IPC wait) */
-	AIRY_AGENT_FROZEN      = 4,  /* Frozen by Supervisor */
-	AIRY_AGENT_TERMINATING = 5,  /* Graceful termination */
-	AIRY_AGENT_DEAD        = 6,  /* Terminated */
-	AIRY_AGENT_ZOMBIE      = 7,  /* Zombie (awaiting reaping) */
+	AIRY_AGENT_INACTIVE = 0,   /* 进程不存在，等待 fork */
+	AIRY_AGENT_SPAWNING = 1,   /* fork/exec 中，未就绪 */
+	AIRY_AGENT_READY    = 2,   /* TASK_RUNNING，在运行队列等待 */
+	AIRY_AGENT_RUNNING  = 3,   /* TASK_RUNNING，正在 CPU 执行 */
+	AIRY_AGENT_BLOCKED  = 4,   /* TASK_INTERRUPTIBLE，等待 IPC/IO */
+	AIRY_AGENT_STOPPING = 5,   /* SIGSTOP 发送中，正在冻结 IPC */
+	AIRY_AGENT_STOPPED  = 6,   /* TASK_STOPPED，已冻结，待裁决 */
+	AIRY_AGENT_DEAD     = 7,   /* EXIT_ZOMBIE，等待 waitpid 回收 */
 	AIRY_AGENT_STATE_MAX
 };
 
