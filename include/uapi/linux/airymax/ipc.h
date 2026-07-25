@@ -27,12 +27,22 @@
 #define AIRY_IPC_OP_CAP_REQUEST 0x0010  /* Capability request (bootstrap) */
 #define AIRY_IPC_OP_CAP_RESPONSE 0x0011 /* Capability response */
 
-/* ─── IPC Flags ──────────────────────────────────────────────────────── */
-#define AIRY_IPC_FLAG_ZEROCOPY  0x0001  /* Zero-copy path enabled */
-#define AIRY_IPC_FLAG_CAP_CARRY 0x0002  /* Carrying a capability */
-#define AIRY_IPC_FLAG_ENCRYPT   0x0004  /* Payload is encrypted */
-#define AIRY_IPC_FLAG_COMPRESS  0x0008  /* Payload is compressed */
-#define AIRY_IPC_FLAG_BATCH_TAIL 0x0010 /* This is the last in a batch */
+/* ─── IPC Flags ────────────────────────────────────────────────────────
+ * SSoT: docs/AirymaxOS/30-interfaces/02-ipc-protocol.md §3.1
+ *
+ * Bit assignment (16-bit __u16 flags field at offset 6):
+ *   bits 0-4:   active flags (5 defined)
+ *   bits 5-15:  reserved, must be zero (C-S10 validates via RESERVED mask)
+ *
+ * v1.0.1: NOWAIT/SIGNAL removed — superseded by io_uring IOSQE_ASYNC and
+ * IORING_CQE_F_NOTIF (see 20-modules/01-kernel.md §6.3).
+ */
+#define AIRY_IPC_FLAG_ZEROCOPY   0x0001  /* Zero-copy path enabled */
+#define AIRY_IPC_FLAG_CAP_CARRY  0x0002  /* Carrying a capability */
+#define AIRY_IPC_FLAG_ENCRYPT    0x0004  /* Payload is encrypted (reserved, 0.1.1 inactive) */
+#define AIRY_IPC_FLAG_COMPRESS   0x0008  /* Payload is compressed (reserved, 0.1.1 inactive) */
+#define AIRY_IPC_FLAG_BATCH_TAIL 0x0010  /* Last SQE in a batch */
+#define AIRY_IPC_FLAG_RESERVED   0xFFE0  /* Bits 5-15: must be zero (C-S10 check) */
 
 /* ─── Badge 64-bit Native Word Bit Layout ────────────────────────────── */
 #define AIRY_BADGE_EPOCH_SHIFT  48

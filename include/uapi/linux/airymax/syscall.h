@@ -13,8 +13,8 @@
  *   - 废弃编号保留，返回 -AIRY_ENOSYS
  */
 
-#ifndef AIRY_SYSCALLS_H
-#define AIRY_SYSCALLS_H
+#ifndef AIRY_SYSCALL_GEN_H
+#define AIRY_SYSCALL_GEN_H
 
 #include <stdint.h>
 
@@ -24,11 +24,15 @@
 #define AIRY_SYS_NR_RESERVED	20   /* 预留槽位数 */
 #define AIRY_SYS_NR_TOTAL	24   /* 总槽位数（548-571） */
 
-/* ===== 系统调用号（内部编号 0-3） ===== */
-#define AIRY_SYS_CALL	0  /* airy_sys_call */
-#define AIRY_SYS_ROVOL_CTL	1  /* airy_sys_rovol_ctl */
-#define AIRY_SYS_SCHED_CTL	2  /* airy_sys_sched_ctl */
-#define AIRY_SYS_CLT_NOTIFY	3  /* airy_sys_clt_notify */
+/* ===== 内部索引编号（0-3，仅 codegen 内部使用） =====
+ * 注意：这些是 codegen 内部索引，与 [SC] syscalls.h 中的
+ * AIRY_SYS_CALL=548 等实际系统调用号不同。为避免命名冲突，
+ * 内部索引使用 AIRY_SYS_IDX_* 前缀。
+ */
+#define AIRY_SYS_IDX_CALL	0  /* airy_sys_call */
+#define AIRY_SYS_IDX_ROVOL_CTL	1  /* airy_sys_rovol_ctl */
+#define AIRY_SYS_IDX_SCHED_CTL	2  /* airy_sys_sched_ctl */
+#define AIRY_SYS_IDX_CLT_NOTIFY	3  /* airy_sys_clt_notify */
 
 /* ===== Linux 注册号（内部编号 + 548） ===== */
 #define __NR_airy_sys_call	548
@@ -108,4 +112,4 @@ AIRY_API int airy_sys_clt_notify(int task_id, uint32_t op);
 }
 #endif
 
-#endif /* AIRY_SYSCALLS_H */
+#endif /* AIRY_SYSCALL_GEN_H */
