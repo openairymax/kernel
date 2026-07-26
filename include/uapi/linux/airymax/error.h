@@ -52,6 +52,7 @@ typedef __s32 airy_err_t;
 #define AIRY_EIPC_HDRSIZE     (-44)    /* C-S4:  Header size != 128 bytes */
 #define AIRY_EIPC_RESERVED    (-45)    /* C-S4:  reserved[72] not all zero */
 #define AIRY_EIPC_FLAGS       (-46)    /* C-S10: flags invalid (reserved bits nonzero) */
+#define AIRY_EIPC_FROZEN      (-46)    /* C-S0:  Ring frozen (alias of FLAGS for fastpath freeze check) */
 #define AIRY_EIPC_NOTSUPP     (-47)    /* C-S10: opcode/flag not supported (e.g. ENCRYPT/COMPRESS) */
 #define AIRY_EIPC_KFIFO       (-48)    /* C-S6:  kfifo enqueue failed */
 #define AIRY_EIPC_RECLAIM     (-49)    /* C-S7:  reclaim flag set */
