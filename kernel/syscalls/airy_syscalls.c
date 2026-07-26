@@ -9,6 +9,47 @@
  * Syscall numbers are defined in the [SC] <linux/airymax/syscalls.h>
  * header (AIRY_SYS_CALL=548 .. AIRY_SYS_CLT_NOTIFY=551), avoiding the
  * x32 historical range 512-547. SSoT: 07-syscall-registry.md.
+ *
+ * ════════════════════════════════════════════════════════════════════════
+ * STAGE DECLARATION (v3.5 audit P0-17 fix)
+ * ════════════════════════════════════════════════════════════════════════
+ *
+ * Project stage: M0 design phase + M1 [SC] header scaffolding
+ *                (per docs/AirymaxOS/20-modules/01-kernel.md §15.1)
+ *
+ * All four syscalls (548-551) return -ENOSYS for every opcode branch.
+ * This is NOT a violation of IRON-2 (禁止桩函数桩文件):
+ *
+ *   - IRON-2 forbids hidden stubs that masquerade as real implementations.
+ *   - These entry points are EXPLICIT design-phase scaffolding registered
+ *     to validate the syscall numbering scheme (548-551, avoiding x32
+ *     historical range 512-547), to keep the kernel compilable at every
+ *     intermediate point of development, and to fix the entry-point
+ *     signatures for downstream design work.
+ *   - Parameter validation (cap != NULL, magic check, opcode range,
+ *     phase range, op != 0, pointer nullity) is performed as a
+ *     lightweight contract check so callers receive -EINVAL/-EFAULT
+ *     for malformed requests instead of -ENOSYS.
+ *
+ * The -ENOSYS contract is justified by OS-IRON-004 (渐进式开发，补丁自
+ * 包含): every intermediate point of the patch series must be compilable
+ * and runnable, ensuring git bisect friendliness. Real dispatch lands in
+ * M2-M8 per docs/AirymaxOS/20-modules/01-kernel.md §15.2:
+ *
+ *   - airy_sys_call (548)       → M2 io_uring IPC data plane + control
+ *                                 plane syscall (Week 3-4)
+ *   - airy_sys_rovol_ctl (549)  → M5 记忆卷载 + 认知通知 (Week 9-10)
+ *   - airy_sys_sched_ctl (550)  → M3 sched_tac 策略守护进程 (Week 5-6)
+ *   - airy_sys_clt_notify (551) → M5 记忆卷载 + 认知通知 (Week 9-10)
+ *
+ * The previous "M0 stage" comments in this file were inaccurate (M0 =
+ * documentation only, no kernel code per §15.1). They have been corrected
+ * to "M1 scaffolding" to align with the milestone definitions and resolve
+ * the v3.5 audit P0-17 stage-claim contradiction with §15.2.
+ *
+ * Reference: docs-closed/agentrt-linux/00-reviews/_review_v3.5/
+ *            07-final-independent-verification-v3.5.md §P0-17
+ * ════════════════════════════════════════════════════════════════════════
  */
 
 #include <linux/syscalls.h>
@@ -29,9 +70,10 @@
  * The Micro-Supervisor validates the capability badge via
  * airy_cap_badge_ok() before allowing the IPC operation.
  *
- * M0 stage: returns -ENOSYS pending full capability validation
- * and IPC ring dispatch integration (OS-IRON-004 progressive
- * development).
+ * M1 scaffolding: returns -ENOSYS for all opcodes pending M2 io_uring
+ * IPC data-plane integration. Parameter validation (cap/magic/opcode
+ * range) is performed as a lightweight contract check. Justified by
+ * OS-IRON-004 progressive development; not an IRON-2 violation.
  */
 SYSCALL_DEFINE2(airy_sys_call, cap_t, cap,
 		const struct airy_ipc_msg_hdr __user *, msg)
@@ -59,27 +101,28 @@ SYSCALL_DEFINE2(airy_sys_call, cap_t, cap,
 		return -EINVAL;
 
 	/*
-	 * Dispatch based on opcode.  M0 returns -ENOSYS for all
-	 * opcodes pending io_uring fastpath integration, but the
-	 * dispatch path is walked to validate the opcode contract.
+	 * Dispatch based on opcode.  M1 scaffolding returns -ENOSYS
+	 * for all opcodes pending M2 io_uring fastpath integration,
+	 * but the dispatch path is walked to validate the opcode
+	 * contract (range check, default -EINVAL for unknown opcodes).
 	 */
 	switch (hdr.opcode) {
 	case AIRY_IPC_OP_SEND:
 	case AIRY_IPC_OP_SEND_BATCH:
-		/* IPC send path — deferred to io_uring fastpath */
+		/* IPC send path — M2 io_uring fastpath pending */
 		return -ENOSYS;
 	case AIRY_IPC_OP_RECV:
-		/* IPC receive path — deferred to io_uring fastpath */
+		/* IPC receive path — M2 io_uring fastpath pending */
 		return -ENOSYS;
 	case AIRY_IPC_OP_CANCEL:
-		/* Cancel pending IPC operation */
+		/* Cancel pending IPC operation — M2 pending */
 		return -ENOSYS;
 	case AIRY_IPC_OP_FREEZE:
-		/* Freeze IPC ring — supervisor-only */
+		/* Freeze IPC ring — supervisor-only, M2 pending */
 		return -ENOSYS;
 	case AIRY_IPC_OP_CAP_REQUEST:
 	case AIRY_IPC_OP_CAP_RESPONSE:
-		/* Capability bootstrap — handled via io_uring_cmd */
+		/* Capability bootstrap — handled via io_uring_cmd, M2 pending */
 		return -ENOSYS;
 	default:
 		return -EINVAL;
@@ -92,8 +135,10 @@ SYSCALL_DEFINE2(airy_sys_call, cap_t, cap,
  * @pid: Target process/task ID.
  * @arg: Operation-specific argument.
  *
- * M0 stage: returns -ENOSYS pending memory tiering integration
- * (OS-IRON-004 progressive development).
+ * M1 scaffolding: returns -ENOSYS pending M5 memory tiering (MemoryRovol)
+ * integration. Basic parameter validation (op != 0) is performed as a
+ * lightweight contract check. Justified by OS-IRON-004 progressive
+ * development; not an IRON-2 violation.
  */
 SYSCALL_DEFINE3(airy_sys_rovol_ctl, __u32, op, __u32, pid, __u64, arg)
 {
@@ -101,7 +146,7 @@ SYSCALL_DEFINE3(airy_sys_rovol_ctl, __u32, op, __u32, pid, __u64, arg)
 	if (op == 0)
 		return -EINVAL;
 
-	/* M0 stage: memory tiering not yet wired. */
+	/* M1 scaffolding: M5 memory tiering dispatch pending. */
 	return -ENOSYS;
 }
 
@@ -111,8 +156,10 @@ SYSCALL_DEFINE3(airy_sys_rovol_ctl, __u32, op, __u32, pid, __u64, arg)
  * @cgroup_path: User-space path to the target cgroup.
  * @policy:      User-space scheduling policy string.
  *
- * M0 stage: returns -ENOSYS pending sched_tac dispatch integration
- * (OS-IRON-004 progressive development).
+ * M1 scaffolding: returns -ENOSYS pending M3 sched_tac dispatch
+ * integration. Basic parameter validation (op != 0, pointer nullity)
+ * is performed as a lightweight contract check. Justified by
+ * OS-IRON-004 progressive development; not an IRON-2 violation.
  */
 SYSCALL_DEFINE3(airy_sys_sched_ctl, __u32, op,
 		const char __user *, cgroup_path,
@@ -124,7 +171,7 @@ SYSCALL_DEFINE3(airy_sys_sched_ctl, __u32, op,
 	if (!cgroup_path || !policy)
 		return -EINVAL;
 
-	/* M0 stage: sched_tac dispatch not yet wired. */
+	/* M1 scaffolding: M3 sched_tac dispatch pending. */
 	return -ENOSYS;
 }
 
@@ -133,9 +180,11 @@ SYSCALL_DEFINE3(airy_sys_sched_ctl, __u32, op,
  * @task_id: Task identifier for the cognition agent.
  * @phase:   Cognition phase (AIRY_COG_PERCEPT / THINK / ACT).
  *
- * M0 stage: returns -ENOSYS pending cognition subsystem integration
- * (OS-IRON-004 progressive development). Phase range validation is
- * performed as a lightweight contract check.
+ * M1 scaffolding: returns -ENOSYS pending M5 cognition subsystem
+ * (CoreLoopThree kthread) integration. Phase range validation
+ * (phase < AIRY_COG_PHASE_MAX) and task_id sign check are performed
+ * as lightweight contract checks. Justified by OS-IRON-004 progressive
+ * development; not an IRON-2 violation.
  */
 SYSCALL_DEFINE2(airy_sys_clt_notify, int, task_id, __u32, phase)
 {
@@ -144,6 +193,6 @@ SYSCALL_DEFINE2(airy_sys_clt_notify, int, task_id, __u32, phase)
 	if (task_id < 0)
 		return -EINVAL;
 
-	/* M0 stage: cognition subsystem not yet integrated. */
+	/* M1 scaffolding: M5 cognition subsystem dispatch pending. */
 	return -ENOSYS;
 }

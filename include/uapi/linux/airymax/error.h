@@ -52,14 +52,14 @@ typedef __s32 airy_err_t;
 #define AIRY_EIPC_HDRSIZE     (-44)    /* C-S4:  Header size != 128 bytes */
 #define AIRY_EIPC_RESERVED    (-45)    /* C-S4:  reserved[72] not all zero */
 #define AIRY_EIPC_FLAGS       (-46)    /* C-S10: flags invalid (reserved bits nonzero) */
-#define AIRY_EIPC_FROZEN      (-46)    /* C-S0:  Ring frozen (alias of FLAGS for fastpath freeze check) */
 #define AIRY_EIPC_NOTSUPP     (-47)    /* C-S10: opcode/flag not supported (e.g. ENCRYPT/COMPRESS) */
 #define AIRY_EIPC_KFIFO       (-48)    /* C-S6:  kfifo enqueue failed */
 #define AIRY_EIPC_RECLAIM     (-49)    /* C-S7:  reclaim flag set */
 #define AIRY_EIPC_CONTEXT     (-50)    /* C-S8:  context check failed (!in_task) */
 #define AIRY_EIPC_CRC32       (-51)    /* C-S12: CRC32 check failed (header[0:52) + payload) */
 #define AIRY_EIPC_TIMEOUT     (-52)    /* SLOW_SEND timeout */
-/* [-53, -70] reserved */
+#define AIRY_EIPC_FROZEN      (-53)    /* C-S0:  Ring frozen (fastpath freeze check, A-ULS controlled) */
+/* [-54, -70] reserved */
 
 /* ─── Capability Error Codes (sub-space: -71 to -100) ──────────────────
  * See 08-sc-error-contract.md §2.4 — SSoT authority.
@@ -77,7 +77,7 @@ typedef __s32 airy_err_t;
 #define AIRY_ECAP_EPOCH       (-79)    /* Badge Epoch mismatch (revoked or expired) */
 #define AIRY_ECAP_FORGED      (-80)    /* Badge forgery detected (also triggers AIRY_FAULT_CAP_FORGED) */
 #define AIRY_ECAP_PERM        (-81)    /* Badge permissions insufficient for opcode */
-#define AIRY_ECAP_FROZEN      (-82)    /* Ring frozen (C-S0 check, A-ULS controlled) */
+#define AIRY_ECAP_FROZEN      (-82)    /* Capability badge frozen (badge revocation, A-ULS controlled) */
 #define AIRY_ESEC_D_THROTTLED (-83)    /* sec_d throttle rejected (queue full) */
 /* [-84, -100] reserved */
 

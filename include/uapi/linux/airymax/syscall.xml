@@ -64,23 +64,23 @@
   <syscall>
     <name>airy_sys_sched_ctl</name>
     <number>2</number>
-    <signature>uint32_t op, uint32_t agent_id, uint64_t arg</signature>
+    <signature>uint32_t op, const char *cgroup_path, const char *policy</signature>
     <flags>control</flags>
     <category>control_primitive</category>
     <since>1.0.1</since>
     <stability>stable</stability>
-    <doc>Scheduler control operations.</doc>
+    <doc>Scheduler control operations (sched_tac policy via cgroup path + policy string).</doc>
   </syscall>
 
   <syscall>
     <name>airy_sys_clt_notify</name>
     <number>3</number>
-    <signature>int task_id, uint32_t op</signature>
+    <signature>int task_id, uint32_t phase</signature>
     <flags>control</flags>
     <category>control_primitive</category>
     <since>1.0.1</since>
     <stability>stable</stability>
-    <doc>Cross-layer task notification control.</doc>
+    <doc>CoreLoopThree phase notification + kthread control (phase: PERCEPT/THINK/ACT).</doc>
   </syscall>
 
   <!-- 4-23: 预留槽位，不生成实现，仅占用编号 -->

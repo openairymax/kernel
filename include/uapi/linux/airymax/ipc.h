@@ -70,6 +70,8 @@
 #define AIRY_CAP_PERM_REVOKE    0x0010  /* Revoke capabilities */
 #define AIRY_CAP_PERM_FREEZE    0x0020  /* Freeze agent */
 #define AIRY_CAP_PERM_BATCH     0x0040  /* Batch operations */
+#define AIRY_CAP_PERM_ALL       (0x007Fu) /* all 7 perms */
+#define AIRY_CAP_PERM_RESERVED  0xFF80  /* must be zero */
 
 /* ─── IPC Message Header Layout C v4 ─────────────────────────────────── */
 struct airy_ipc_msg_hdr {
@@ -89,8 +91,18 @@ struct airy_ipc_msg_hdr {
 _Static_assert(sizeof(struct airy_ipc_msg_hdr) == AIRY_IPC_HDR_SIZE,
 	       "airy_ipc_msg_hdr must be exactly 128 bytes");
 
+_Static_assert(offsetof(struct airy_ipc_msg_hdr, magic) == 0,
+	       "airy_ipc_msg_hdr.magic must be at offset 0");
+_Static_assert(offsetof(struct airy_ipc_msg_hdr, opcode) == 4,
+	       "airy_ipc_msg_hdr.opcode must be at offset 4");
 _Static_assert(offsetof(struct airy_ipc_msg_hdr, capability_badge) == 40,
-	       "capability_badge must be at offset 40");
+	       "capability_badge must be at offset 40 (8-byte aligned, D-9 fix)");
+_Static_assert(offsetof(struct airy_ipc_msg_hdr, payload_len) == 48,
+	       "payload_len must be at offset 48");
+_Static_assert(offsetof(struct airy_ipc_msg_hdr, crc32) == 52,
+	       "crc32 must be at offset 52");
+_Static_assert(offsetof(struct airy_ipc_msg_hdr, reserved) == 56,
+	       "reserved must be at offset 56");
 
 /* ─── [DSL] Degraded Survival Layer Fallback Block ──────────────────────
  * When AIRY_SC_FALLBACK is defined, IPC degrades to a minimal 128-byte

@@ -89,24 +89,27 @@ AIRY_API int airy_sys_call(cap_t cap, const struct airy_ipc_msg_hdr *msg);
 AIRY_API int airy_sys_rovol_ctl(uint32_t op, uint32_t pid, uint64_t arg);
 
 /**
- * airy_sys_sched_ctl - Scheduler control operations.
+ * airy_sys_sched_ctl - Scheduler control operations (sched_tac policy via
+ * cgroup path + policy string).
  *
  * Return: 0 on success, negative errno on failure.
  *
  * @since 1.0.1
  * @stability stable
  */
-AIRY_API int airy_sys_sched_ctl(uint32_t op, uint32_t agent_id, uint64_t arg);
+AIRY_API int airy_sys_sched_ctl(uint32_t op, const char *cgroup_path,
+				const char *policy);
 
 /**
- * airy_sys_clt_notify - Cross-layer task notification control.
+ * airy_sys_clt_notify - CoreLoopThree phase notification + kthread control
+ * (phase: PERCEPT/THINK/ACT).
  *
  * Return: 0 on success, negative errno on failure.
  *
  * @since 1.0.1
  * @stability stable
  */
-AIRY_API int airy_sys_clt_notify(int task_id, uint32_t op);
+AIRY_API int airy_sys_clt_notify(int task_id, uint32_t phase);
 
 #ifdef __cplusplus
 }
