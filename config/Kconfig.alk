@@ -4,14 +4,14 @@
 menu "Airymax Kernel (ALK)"
 
 config AIRY_SYSCALL
-	bool "Enable Airymax syscalls (454-457)"
+	bool "Enable Airymax syscalls (548-551)"
 	depends on SECURITY_AIRY
 	default y
 	help
-	  Enables the 4 Airymax system calls (numbers 454-457, avoiding
+	  Enables the 4 Airymax system calls (numbers 548-551, avoiding
 	  the x32 historical range 512-547) for agent capability
 	  invocation, memory rotation control, scheduler control, and
-	  cognition lifecycle notification. 20 reserved slots (458-477)
+	  cognition lifecycle notification. 20 reserved slots (552-571)
 	  are kept for future extension.
 
 config AIRY_COREKERN

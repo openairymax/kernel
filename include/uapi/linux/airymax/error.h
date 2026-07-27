@@ -42,28 +42,44 @@ typedef __s32 airy_err_t;
 #define AIRY_ECANCELED       (-19)    /* Operation canceled */
 #define AIRY_EAGAIN          (-35)    /* Try again */
 
-/* ─── IPC Error Codes (sub-space: -41 to -59) ────────────────────────── */
-#define AIRY_EIPC_MAGIC       (-41)    /* Invalid IPC magic */
-#define AIRY_EIPC_CHECKSUM    (-42)    /* CRC32 mismatch */
-#define AIRY_EIPC_SIZE        (-43)    /* Payload size out of bounds */
-#define AIRY_EIPC_RING_FULL   (-44)    /* Ring buffer full */
-#define AIRY_EIPC_RING_EMPTY  (-45)    /* Ring buffer empty */
-#define AIRY_EIPC_FROZEN      (-46)    /* IPC ring is frozen */
-#define AIRY_EIPC_BADGE       (-47)    /* Badge validation failed */
-#define AIRY_EIPC_PERM        (-48)    /* Permission denied */
-#define AIRY_EIPC_OPCODE      (-49)    /* Unknown IPC opcode */
-#define AIRY_EIPC_TIMEOUT     (-52)    /* IPC operation timed out */
+/* ─── IPC Error Codes (sub-space: -41 to -70) ──────────────────────────
+ * Aligned with fastpath C-S0~C-S12 check chain (see 07-ipc-fastpath.md §5.2
+ * and 08-sc-error-contract.md §2.3 — SSoT authority).
+ */
+#define AIRY_EIPC_MAGIC       (-41)    /* C-S1:  Invalid IPC magic */
+#define AIRY_EIPC_OPCODE      (-42)    /* C-S2:  Unknown IPC opcode */
+#define AIRY_EIPC_PAYLOAD     (-43)    /* C-S3:  payload_len out of bounds */
+#define AIRY_EIPC_HDRSIZE     (-44)    /* C-S4:  Header size != 128 bytes */
+#define AIRY_EIPC_RESERVED    (-45)    /* C-S4:  reserved[72] not all zero */
+#define AIRY_EIPC_FLAGS       (-46)    /* C-S10: flags invalid (reserved bits nonzero) */
+#define AIRY_EIPC_NOTSUPP     (-47)    /* C-S10: opcode/flag not supported (e.g. ENCRYPT/COMPRESS) */
+#define AIRY_EIPC_KFIFO       (-48)    /* C-S6:  kfifo enqueue failed */
+#define AIRY_EIPC_RECLAIM     (-49)    /* C-S7:  reclaim flag set */
+#define AIRY_EIPC_CONTEXT     (-50)    /* C-S8:  context check failed (!in_task) */
+#define AIRY_EIPC_CRC32       (-51)    /* C-S12: CRC32 check failed (header[0:52) + payload) */
+#define AIRY_EIPC_TIMEOUT     (-52)    /* SLOW_SEND timeout */
+#define AIRY_EIPC_FROZEN      (-53)    /* C-S0:  Ring frozen (fastpath freeze check, A-ULS controlled) */
+/* [-54, -70] reserved */
 
-/* ─── Capability Error Codes (sub-space: -71 to -89) ─────────────────── */
+/* ─── Capability Error Codes (sub-space: -71 to -100) ──────────────────
+ * See 08-sc-error-contract.md §2.4 — SSoT authority.
+ */
 #define AIRY_ECAP_MISSING     (-71)    /* Capability not found */
-#define AIRY_ECAP_EPOCH       (-72)    /* Epoch mismatch (revoked) */
-#define AIRY_ECAP_FORGED      (-73)    /* Badge forgery detected */
-#define AIRY_ECAP_PERM        (-74)    /* Insufficient capability permissions */
-#define AIRY_ECAP_FROZEN      (-75)    /* Agent capability is frozen */
-#define AIRY_ECAP_CORRUPT     (-76)    /* Capability slot corrupted */
-#define AIRY_ECAP_OVERFLOW    (-77)    /* Capability table overflow */
-#define AIRY_ECAP_SYS         (-82)    /* System capability required */
-#define AIRY_ECAP_BADGE       (-78)    /* Badge compilation failed (H6) */
+#define AIRY_ECAP_REVOKED     (-72)    /* Capability revoked */
+#define AIRY_ECAP_EXPIRED     (-73)    /* Capability expired */
+#define AIRY_ECAP_MISMATCH    (-74)    /* Capability mismatch */
+#define AIRY_ECAP_LSM_DENIED  (-75)    /* Pure-C LSM denied */
+#define AIRY_ECAP_RADIX_MISS  (-76)    /* [DSL] radix tree lookup miss */
+#define AIRY_ECAP_STATIC_KEY  (-77)    /* [DSL] static_key disabled */
+
+/* Capability Folding Badge validation codes (v1.0.1, C-S9 fastpath) */
+#define AIRY_ECAP_BADGE       (-78)    /* Badge invalid / RandomTag mismatch / CAP_CARRY but badge=0 */
+#define AIRY_ECAP_EPOCH       (-79)    /* Badge Epoch mismatch (revoked or expired) */
+#define AIRY_ECAP_FORGED      (-80)    /* Badge forgery detected (also triggers AIRY_FAULT_CAP_FORGED) */
+#define AIRY_ECAP_PERM        (-81)    /* Badge permissions insufficient for opcode */
+#define AIRY_ECAP_FROZEN      (-82)    /* Capability badge frozen (badge revocation, A-ULS controlled) */
+#define AIRY_ESEC_D_THROTTLED (-83)    /* sec_d throttle rejected (queue full) */
+/* [-84, -100] reserved */
 
 /* ─── Config/Version Error Codes (sub-space: -101 to -120) ─────────────
  * Cross-cutting: configuration version mismatch and schema errors.

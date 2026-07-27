@@ -9,34 +9,27 @@
  * The actual bpf_struct_ops registration with the BPF subsystem is
  * deferred to the integration layer; here we provide the state
  * management that the integration layer builds upon.
+ *
+ * SSoT: the struct_ops state machine and common_value layout are
+ * defined in <linux/airymax/bpf_struct_ops.h> (supplementary shared
+ * contract header). This file MUST NOT redefine those types.
  */
 
 #include <linux/printk.h>
 #include <linux/bpf.h>
 #include <linux/errno.h>
 #include <linux/types.h>
+#include <linux/airymax/bpf_struct_ops.h>
 
-/* ─── struct_ops state machine ───────────────────────────────────────── */
-enum airy_struct_ops_state {
-	AIRY_STRUCT_OPS_STATE_INACTIVE		= 0,
-	AIRY_STRUCT_OPS_STATE_REGISTERED	= 1,
-	AIRY_STRUCT_OPS_STATE_ACTIVE		= 2,
-	AIRY_STRUCT_OPS_STATE_MAX
-};
-
-/* ─── struct_ops value ───────────────────────────────────────────────── */
-struct airy_struct_ops_value {
-	enum airy_struct_ops_state	state;
-	u32				refcount;
-	const char			*name;
-	void				*data;
-};
-
-/* ─── State name lookup ──────────────────────────────────────────────── */
+/* ─── State name lookup ────────────────────────────────────────────────
+ * Maps SSoT enum airy_struct_ops_state values (INIT/REGISTERED/ACTIVE/
+ * DRAINING) to human-readable strings for diagnostics.
+ */
 static const char * const airy_struct_ops_state_names[] = {
-	[AIRY_STRUCT_OPS_STATE_INACTIVE]	= "inactive",
-	[AIRY_STRUCT_OPS_STATE_REGISTERED]	= "registered",
-	[AIRY_STRUCT_OPS_STATE_ACTIVE]		= "active",
+	[AIRY_STRUCT_OPS_INIT]       = "init",
+	[AIRY_STRUCT_OPS_REGISTERED] = "registered",
+	[AIRY_STRUCT_OPS_ACTIVE]     = "active",
+	[AIRY_STRUCT_OPS_DRAINING]   = "draining",
 };
 
 static const char *
@@ -53,16 +46,16 @@ int airy_struct_ops_register(struct airy_struct_ops_value *val)
 	if (!val)
 		return -EINVAL;
 
-	if (val->state != AIRY_STRUCT_OPS_STATE_INACTIVE) {
+	if (val->common.state != AIRY_STRUCT_OPS_INIT) {
 		pr_warn("airy_struct_ops: cannot register from state '%s'\n",
-			airy_struct_ops_state_name(val->state));
+			airy_struct_ops_state_name(val->common.state));
 		return -EBUSY;
 	}
 
-	val->state    = AIRY_STRUCT_OPS_STATE_REGISTERED;
-	val->refcount = 0;
+	val->common.state       = AIRY_STRUCT_OPS_REGISTERED;
+	val->common.refcount    = 0;
 
 	pr_info("airy_struct_ops: registered value (name=%s)\n",
-		val->name ? val->name : "(null)");
+		val->name[0] ? (const char *)val->name : "(null)");
 	return 0;
 }

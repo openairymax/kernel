@@ -1,2 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-only
-obj-y += airy_log_kern.o airy_log_ring.o airy_log_persist.o
+#
+# Airy Log — Kernel Build
+#
+
+obj-$(CONFIG_AIRY_LOG) += airy_log.o
+
+airy_log-y := airy_log_kern.o airy_log_ring.o airy_log_persist.o

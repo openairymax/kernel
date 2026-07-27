@@ -1,4 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0
+#
+# Airymax [SC] headers under linux/airymax/ are auto-exported by
+# scripts/Makefile.headersinst (no no-export-headers entries needed).
+# See linux/airymax/Kbuild for the [SC] header inventory.
+
 ifeq ($(wildcard $(srctree)/arch/$(SRCARCH)/include/uapi/asm/a.out.h),)
 no-export-headers += linux/a.out.h
 endif

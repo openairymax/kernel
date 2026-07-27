@@ -1,3 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
-obj-y += airy_struct_ops.o airy_bpf_probe.o
+obj-y += airy_ck_bpf.o
+
+airy_ck_bpf-y := airy_struct_ops.o airy_bpf_probe.o

@@ -457,3 +457,8 @@
 450	i386	set_mempolicy_home_node		sys_set_mempolicy_home_node
 451	i386	cachestat		sys_cachestat
 452	i386	fchmodat2		sys_fchmodat2
+# 453-547 reserved for future upstream Linux syscalls (do not reuse)
+548	i386	airy_sys_call		sys_airy_sys_call
+549	i386	airy_sys_rovol_ctl	sys_airy_sys_rovol_ctl
+550	i386	airy_sys_sched_ctl	sys_airy_sys_sched_ctl
+551	i386	airy_sys_clt_notify	sys_airy_sys_clt_notify
