@@ -42,7 +42,6 @@
     <name>airy_sys_call</name>
     <number>0</number>
     <signature>cap_t cap, const struct airy_ipc_msg_hdr *msg</signature>
-    <capability_required>AIRY_CAP_INVOKE</capability_required>
     <flags>blocking</flags>
     <category>ipc_primitive</category>
     <since>1.0.1</since>

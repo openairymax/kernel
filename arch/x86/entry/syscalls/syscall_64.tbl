@@ -384,7 +384,7 @@
 548	common	airy_sys_call		sys_airy_sys_call
 549	common	airy_sys_rovol_ctl		sys_airy_sys_rovol_ctl
 550	common	airy_sys_sched_ctl		sys_airy_sys_sched_ctl
-551	common	airy_sys_clt_notify	sys_airy_sys_clt_notify
+551	common	airy_sys_clt_notify		sys_airy_sys_clt_notify
 
 #
 # Due to a historical design error, certain syscalls are numbered differently

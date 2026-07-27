@@ -4,6 +4,7 @@
  *
  * Syscall numbering — [SC] shared contract header.
  *
+ * v1.1 唯一基线，v4.3 锁定（IRON-8：禁止双轨制）。
  * 4 core syscalls (548-551) + 20 reserved (552-571), avoiding the
  * x32 historical range 512-547. v1.0.1 起始编号统一为 548，对齐
  * SSoT docs/AirymaxOS/140-application-development/07-syscall-registry.md

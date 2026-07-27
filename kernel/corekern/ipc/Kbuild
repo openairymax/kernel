@@ -1,3 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
-obj-y += airy_uring_cmd.o airy_ipc_ring.o airy_ipc_fastpath.o airy_ipc_zero_copy.o
+obj-y += airy_ck_ipc.o
+
+airy_ck_ipc-y := airy_uring_cmd.o airy_ipc_ring.o airy_ipc_fastpath.o airy_ipc_zero_copy.o

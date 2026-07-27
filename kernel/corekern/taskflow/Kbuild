@@ -1,3 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
-obj-y += airy_task_lifecycle.o airy_task_desc.o
+obj-y += airy_ck_taskflow.o
+
+airy_ck_taskflow-y := airy_task_lifecycle.o airy_task_desc.o

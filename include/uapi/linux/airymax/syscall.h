@@ -74,7 +74,6 @@ extern "C" {
  *
  * @since 1.0.1
  * @stability stable
- * @capability AIRY_CAP_INVOKE
  */
 AIRY_API int airy_sys_call(cap_t cap, const struct airy_ipc_msg_hdr *msg);
 

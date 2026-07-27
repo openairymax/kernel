@@ -1,3 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
-obj-y += stc_policy.o stc_dispatch.o stc_mcs_map.o stc_stats.o
+obj-y += airy_ck_sched.o
+
+airy_ck_sched-y := stc_policy.o stc_dispatch.o stc_mcs_map.o stc_stats.o
