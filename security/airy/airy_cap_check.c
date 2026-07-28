@@ -45,8 +45,11 @@ extern struct atomic_notifier_head airy_die_chain;
 static int phase1_ring_frozen(struct airy_task_sec *sec)
 {
 	/* Ring is frozen if frozen_reason != 0 */
-	if (READ_ONCE(sec->frozen_reason) != 0)
+	if (READ_ONCE(sec->frozen_reason) != 0) {
+		pr_info("airy_cap_check: phase1 agent=%u ring FROZEN reason=0x%x\n",
+			sec->agent_id, READ_ONCE(sec->frozen_reason));
 		return -AIRY_EIPC_FROZEN;
+	}
 
 	return 0;
 }
@@ -64,13 +67,24 @@ static int phase2_cap_request(struct io_uring_cmd *ioucmd,
 	 * CAP_REQUEST is only valid when the agent has no existing
 	 * capabilities (freshly spawned, empty slot).
 	 */
-	if (READ_ONCE(agent_caps[agent_id].badge) != AIRY_CAP_NULL)
+	if (READ_ONCE(agent_caps[agent_id].badge) != AIRY_CAP_NULL) {
+		pr_info("airy_cap_check: phase2 agent=%u CAP_REQUEST rejected - slot occupied\n",
+			agent_id);
 		return -AIRY_ECAP_OVERFLOW;
+	}
 
 	/* Validate the bootstrap badge against the per-agent epoch */
 	if (AIRY_BADGE_EPOCH(badge) !=
-	    (__u64)READ_ONCE(agent_caps[agent_id].epoch))
+	    (__u64)READ_ONCE(agent_caps[agent_id].epoch)) {
+		pr_info("airy_cap_check: phase2 agent=%u CAP_REQUEST rejected - epoch mismatch badge_epoch=%llu slot_epoch=%u\n",
+			agent_id,
+			(unsigned long long)AIRY_BADGE_EPOCH(badge),
+			READ_ONCE(agent_caps[agent_id].epoch));
 		return -AIRY_ECAP_EPOCH;
+	}
+
+	pr_info("airy_cap_check: phase2 agent=%u CAP_REQUEST bootstrap badge=0x%016llx\n",
+		agent_id, (unsigned long long)badge);
 
 	/* Register the initial capability */
 	return airy_cap_register(agent_id, badge);
@@ -102,7 +116,11 @@ static int phase3_dsl_degradation(__u32 agent_id)
 static int phase4_fastpath_recheck(__u64 badge, __u32 agent_id,
 				   __u16 required_perms)
 {
-	return airy_cap_badge_ok(badge, agent_id, required_perms);
+	int ret = airy_cap_badge_ok(badge, agent_id, required_perms);
+
+	pr_info("airy_cap_check: phase4 agent=%u fastpath recheck ret=%d badge=0x%016llx perms=0x%04x\n",
+		agent_id, ret, (unsigned long long)badge, required_perms);
+	return ret;
 }
 
 /* ─── Phase 5: Slowpath Enforcement ────────────────────────────────────── */
@@ -116,19 +134,46 @@ static int phase5_slowpath_enforce(__u32 agent_id, __u64 badge,
 				   __u16 required_perms)
 {
 	struct airy_cap_slot *slot;
+	__u64 slot_badge;
+	__u16 slot_perms;
+
+	pr_info("airy_cap_check: phase5 ENTER agent=%u badge=0x%016llx required_perms=0x%04x\n",
+		agent_id, (unsigned long long)badge, required_perms);
 
 	slot = airy_cap_lookup(agent_id);
-	if (!slot)
+	if (!slot) {
+		pr_info("airy_cap_check: phase5 agent=%u FAIL - slot not found (CAP_MISSING)\n",
+			agent_id);
 		return -AIRY_ECAP_MISSING;
+	}
 
-	/* Full badge comparison (not just fastpath fields) */
-	if (slot->badge != badge)
+	/* Full badge comparison (not just fastpath fields).
+	 * READ_ONCE prevents torn reads on weakly-ordered architectures
+	 * (ARM64) when airy_cap_derive() concurrently writes slot->badge
+	 * under airy_cap_derive_lock (e.g. ROTATE/MUTATE/MOVE/DELETE).
+	 * This mirrors Linux 6.6 io_uring's defensive READ_ONCE pattern
+	 * for shared-memory reads (see io_uring.c io_get_sqe). */
+	slot_badge = READ_ONCE(slot->badge);
+	if (slot_badge != badge) {
+		pr_info("airy_cap_check: phase5 agent=%u FAIL - badge FORGED slot_badge=0x%016llx != req_badge=0x%016llx\n",
+			agent_id,
+			(unsigned long long)slot_badge,
+			(unsigned long long)badge);
 		return -AIRY_ECAP_FORGED;
+	}
 
-	/* Full permission check */
-	if ((slot->perms & required_perms) != required_perms)
+	/* Full permission check (same READ_ONCE rationale as badge) */
+	slot_perms = READ_ONCE(slot->perms);
+	if ((slot_perms & required_perms) != required_perms) {
+		pr_info("airy_cap_check: phase5 agent=%u FAIL - perm denied slot_perms=0x%04x required=0x%04x missing=0x%04x\n",
+			agent_id, slot_perms, required_perms,
+			(__u16)(required_perms & ~slot_perms));
 		return -AIRY_ECAP_PERM;
+	}
 
+	pr_info("airy_cap_check: phase5 agent=%u PASS - badge=0x%016llx perms=0x%04x epoch=%u\n",
+		agent_id, (unsigned long long)slot_badge, slot_perms,
+		READ_ONCE(slot->epoch));
 	return 0;
 }
 
@@ -155,6 +200,9 @@ int airy_uring_cmd_check(struct io_uring_cmd *ioucmd)
 	/* Retrieve agent security context from current task */
 	sec = task->security + airy_blob_sizes.lbs_task;
 	agent_id = READ_ONCE(sec->agent_id);
+
+	pr_info("airy_cap_check: ENTER agent=%u cmd_op=%u state=%d\n",
+		agent_id, ioucmd->cmd_op, sec->agent_state);
 
 	/*
 	 * Phase 1: C-S0 — ring frozen check
@@ -201,13 +249,12 @@ int airy_uring_cmd_check(struct io_uring_cmd *ioucmd)
 	if (ret < 0)
 		goto fault;
 
+	pr_info("airy_cap_check: agent=%u ALL PHASES PASSED\n", agent_id);
 	return 0;
 
 fault:
-	/*
-	 * All phases exhausted — report security fault.
-	 * The die_notifier chain will freeze/terminate the agent.
-	 */
+	pr_warn("airy_cap_check: agent=%u SECURITY FAULT ret=%d — triggering die_notifier\n",
+		agent_id, ret);
 	airy_security_fault(agent_id, AIRY_FAULT_CAP_FORGED);
 	return ret;
 }
