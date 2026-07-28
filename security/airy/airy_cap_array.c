@@ -10,6 +10,7 @@
  */
 
 #include <linux/spinlock.h>
+#include <linux/printk.h>
 
 #include "airy_cap.h"
 
@@ -24,11 +25,17 @@ static DEFINE_SPINLOCK(airy_cap_array_lock);
  */
 struct airy_cap_slot *airy_cap_lookup(__u32 agent_id)
 {
-	if (agent_id >= AIRY_CAP_MAX_AGENTS)
+	if (agent_id >= AIRY_CAP_MAX_AGENTS) {
+		pr_info("airy_cap_lookup: agent=%u out of range (MAX=%u)\n",
+			agent_id, AIRY_CAP_MAX_AGENTS);
 		return NULL;
+	}
 
-	if (READ_ONCE(agent_caps[agent_id].badge) == AIRY_CAP_NULL)
+	if (READ_ONCE(agent_caps[agent_id].badge) == AIRY_CAP_NULL) {
+		pr_info("airy_cap_lookup: agent=%u slot empty (badge=NULL)\n",
+			agent_id);
 		return NULL;
+	}
 
 	return &agent_caps[agent_id];
 }
@@ -47,12 +54,17 @@ int airy_cap_register(__u32 agent_id, __u64 badge)
 {
 	unsigned long flags;
 
-	if (agent_id >= AIRY_CAP_MAX_AGENTS)
+	if (agent_id >= AIRY_CAP_MAX_AGENTS) {
+		pr_info("airy_cap_register: agent=%u out of range (MAX=%u)\n",
+			agent_id, AIRY_CAP_MAX_AGENTS);
 		return -AIRY_ECAP_OVERFLOW;
+	}
 
 	spin_lock_irqsave(&airy_cap_array_lock, flags);
 
 	if (agent_caps[agent_id].badge != AIRY_CAP_NULL) {
+		pr_info("airy_cap_register: agent=%u FAIL - slot occupied badge=0x%016llx\n",
+			agent_id, (unsigned long long)agent_caps[agent_id].badge);
 		spin_unlock_irqrestore(&airy_cap_array_lock, flags);
 		return -AIRY_EEXIST;
 	}
@@ -62,6 +74,12 @@ int airy_cap_register(__u32 agent_id, __u64 badge)
 	agent_caps[agent_id].perms    = (__u16)AIRY_BADGE_PERMS(badge);
 	agent_caps[agent_id].randtag  = (__u32)AIRY_BADGE_RANDTAG(badge);
 	agent_caps[agent_id].epoch    = (__u16)AIRY_BADGE_EPOCH(badge);
+
+	pr_info("airy_cap_register: agent=%u OK badge=0x%016llx epoch=%u perms=0x%04x randtag=0x%08x\n",
+		agent_id, (unsigned long long)badge,
+		agent_caps[agent_id].epoch,
+		agent_caps[agent_id].perms,
+		agent_caps[agent_id].randtag);
 
 	spin_unlock_irqrestore(&airy_cap_array_lock, flags);
 

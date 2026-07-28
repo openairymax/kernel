@@ -14,6 +14,7 @@
 
 #include <linux/airymax/security_types.h>
 #include <linux/airymax/error.h>
+#include <linux/printk.h>
 
 #include "airy_cap.h"
 
@@ -31,5 +32,7 @@
  */
 int airy_cap_rotate(__u32 agent_id)
 {
+	pr_info("airy_cap_rotate: agent=%u delegating to airy_cap_derive(ROTATE)\n",
+		agent_id);
 	return airy_cap_derive(agent_id, agent_id, AIRY_CAP_OP_ROTATE, 0);
 }
