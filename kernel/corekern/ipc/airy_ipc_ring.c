@@ -16,6 +16,7 @@
 #include <linux/errno.h>
 #include <linux/string.h>
 #include <linux/slab.h>
+#include <linux/atomic.h>
 #include <linux/airymax/ipc.h>
 
 #include "airy_ipc_internal.h"
@@ -80,9 +81,17 @@ int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 		return -ENOSPC;
 	}
 
-	/* Store the message header into the current slot before advancing. */
+	/* Store the message header into the current slot before advancing.
+	 *
+	 * smp_store_release() pairs with smp_load_acquire() in
+	 * airy_ipc_ring_consume().  It ensures the memcpy (data store)
+	 * is visible before the head advance (index store) on
+	 * weakly-ordered architectures (ARM64, etc.).  Without this
+	 * barrier, the consumer could see the new head before the data,
+	 * reading stale/uninitialised memory.
+	 */
 	memcpy(&ring->slots[ring->head], hdr, sizeof(*hdr));
-	ring->head = next;
+	smp_store_release(&ring->head, next);
 	return 0;
 }
 
@@ -95,8 +104,15 @@ int airy_ipc_ring_consume(struct airy_ipc_ring *ring,
 	if (!ring || !out || !ring->slots)
 		return -EINVAL;
 
-	/* Ring empty: head == tail. */
-	if (ring->head == ring->tail)
+	/* Ring empty: head == tail.
+	 *
+	 * smp_load_acquire() pairs with smp_store_release() in
+	 * airy_ipc_ring_post().  It ensures the head read is ordered
+	 * before the subsequent memcpy (data read), preventing the
+	 * consumer from reading stale/uninitialised slot data on
+	 * weakly-ordered architectures (ARM64, etc.).
+	 */
+	if (smp_load_acquire(&ring->head) == ring->tail)
 		return -ENOMSG;
 
 	if (READ_ONCE(ring->frozen))

@@ -61,6 +61,7 @@ int airy_cap_register(__u32 agent_id, __u64 badge)
 	agent_caps[agent_id].agent_id = agent_id;
 	agent_caps[agent_id].perms    = (__u16)AIRY_BADGE_PERMS(badge);
 	agent_caps[agent_id].randtag  = (__u32)AIRY_BADGE_RANDTAG(badge);
+	agent_caps[agent_id].epoch    = (__u16)AIRY_BADGE_EPOCH(badge);
 
 	spin_unlock_irqrestore(&airy_cap_array_lock, flags);
 

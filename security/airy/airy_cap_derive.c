@@ -52,13 +52,13 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 
 	spin_lock_irqsave(&airy_cap_derive_lock, flags);
 
-	/* Validate source for all operations except revoke (global) */
-	if (op != AIRY_CAP_OP_REVOKE) {
-		src = airy_cap_lookup(src_agent);
-		if (!src) {
-			ret = -AIRY_ECAP_MISSING;
-			goto out;
-		}
+	/* Validate source slot for all operations.  REVOKE needs the
+	 * slot to increment its per-agent epoch (K9-1 changed REVOKE
+	 * from global epoch to per-agent epoch, making src mandatory). */
+	src = airy_cap_lookup(src_agent);
+	if (!src) {
+		ret = -AIRY_ECAP_MISSING;
+		goto out;
 	}
 
 	switch (op) {
@@ -80,6 +80,7 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		dst->flags    = src->flags;
 		dst->randtag  = src->randtag;
 		dst->perms    = src->perms;
+		dst->epoch    = src->epoch;
 		break;
 
 	/* ─── MINT ──────────────────────────────────────────────────── */
@@ -104,6 +105,7 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		dst->flags    = src->flags;
 		dst->randtag  = src->randtag;
 		dst->perms    = perms;
+		dst->epoch    = src->epoch;
 		break;
 
 	/* ─── MOVE ──────────────────────────────────────────────────── */
@@ -124,6 +126,7 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		dst->flags    = src->flags;
 		dst->randtag  = src->randtag;
 		dst->perms    = src->perms;
+		dst->epoch    = src->epoch;
 
 		/* Invalidate source slot */
 		WRITE_ONCE(src->badge, AIRY_CAP_NULL);
@@ -131,6 +134,7 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		WRITE_ONCE(src->flags, 0);
 		WRITE_ONCE(src->randtag, 0);
 		WRITE_ONCE(src->perms, 0);
+		WRITE_ONCE(src->epoch, 0);
 		break;
 
 	/* ─── MUTATE ────────────────────────────────────────────────── */
@@ -162,12 +166,13 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 
 	/* ─── DELETE ────────────────────────────────────────────────── */
 	case AIRY_CAP_OP_DELETE:
-		/* Clear the source slot */
+		/* Clear the source slot entirely, including epoch */
 		WRITE_ONCE(src->badge, AIRY_CAP_NULL);
 		WRITE_ONCE(src->agent_id, 0);
 		WRITE_ONCE(src->flags, 0);
 		WRITE_ONCE(src->randtag, 0);
 		WRITE_ONCE(src->perms, 0);
+		WRITE_ONCE(src->epoch, 0);
 		break;
 
 	/* ─── ROTATE ────────────────────────────────────────────────── */
