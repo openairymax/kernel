@@ -49,7 +49,7 @@ struct airy_cap_slot {
 	__u32   flags;            /* Slot flags */
 	__u32   randtag;          /* Random tag for forgery prevention */
 	__u16   perms;            /* Permission bits */
-	__u16   _pad;             /* Alignment */
+	__u16   epoch;            /* Per-agent epoch for O(1) targeted revocation */
 	__u8    _reserved[56];    /* Cacheline padding */
 } __attribute__((aligned(64)));
 

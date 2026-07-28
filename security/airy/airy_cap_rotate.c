@@ -64,17 +64,22 @@ int airy_cap_rotate(__u32 agent_id)
 	new_badge = AIRY_BADGE_COMPILE(epoch, new_randtag, perms);
 
 	/*
-	 * C-S5.5: Write back the new badge and random tag to the slot.
-	 * Ordering: write badge first, then randtag. A concurrent
-	 * airy_cap_badge_ok() reader that observes the new badge
-	 * (containing the new randtag) while slot->randtag is still
-	 * old will see a mismatch and reject (safe-fail). Once
-	 * slot->randtag is updated, both fields are consistent and
-	 * readers pass. This avoids false-positive FORGED reports
-	 * for legitimate old-badge callers during the transition.
+	 * C-S5.5: Write back the new random tag first, then the new badge.
+	 *
+	 * Ordering rationale: the fastpath (airy_cap_badge_ok) reads
+	 * slot->randtag but NOT slot->badge — it extracts randtag from
+	 * the caller-supplied badge argument. Therefore:
+	 *   - If we write badge first: old badge's randtag matches old
+	 *     slot->randtag → old badge PASSES fastpath (BUG).
+	 *   - If we write randtag first: old badge's randtag != new
+	 *     slot->randtag → old badge FAILS fastpath (CORRECT).
+	 *
+	 * smp_store_release() ensures the randtag store is visible before
+	 * the badge store on weakly-ordered architectures (ARM64, etc.),
+	 * preventing the CPU from reordering the two stores.
 	 */
-	WRITE_ONCE(agent_caps[agent_id].badge, new_badge);
-	WRITE_ONCE(agent_caps[agent_id].randtag, new_randtag);
+	smp_store_release(&agent_caps[agent_id].randtag, new_randtag);
+	smp_store_release(&agent_caps[agent_id].badge, new_badge);
 
 	return 0;
 }

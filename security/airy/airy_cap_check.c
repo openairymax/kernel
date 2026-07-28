@@ -67,9 +67,9 @@ static int phase2_cap_request(struct io_uring_cmd *ioucmd,
 	if (READ_ONCE(agent_caps[agent_id].badge) != AIRY_CAP_NULL)
 		return -AIRY_ECAP_OVERFLOW;
 
-	/* Validate the bootstrap badge against the global epoch */
+	/* Validate the bootstrap badge against the per-agent epoch */
 	if (AIRY_BADGE_EPOCH(badge) !=
-	    (__u64)atomic_read(&airy_cap_global_epoch))
+	    (__u64)READ_ONCE(agent_caps[agent_id].epoch))
 		return -AIRY_ECAP_EPOCH;
 
 	/* Register the initial capability */

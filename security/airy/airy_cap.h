@@ -53,20 +53,20 @@ static __always_inline int airy_cap_badge_ok(__u64 badge, __u32 agent_id,
 	__u64 epoch = AIRY_BADGE_EPOCH(badge);
 	__u64 perms = AIRY_BADGE_PERMS(badge);
 	__u64 randtag = AIRY_BADGE_RANDTAG(badge);
-	__u64 global_epoch;
-	__u64 slot_randtag;
+	__u16 slot_epoch;
+	__u32 slot_randtag;
 
 	if (unlikely(agent_id >= AIRY_CAP_MAX_AGENTS))
 		return -AIRY_ECAP_MISSING;
 
-	/* C-S9.1: Epoch check — 1 atomic read */
-	global_epoch = (__u64)atomic_read(&airy_cap_global_epoch);
-	if (unlikely(epoch != global_epoch))
+	/* C-S9.1: Per-agent epoch check — 1 READ_ONCE (same cacheline as randtag) */
+	slot_epoch = READ_ONCE(agent_caps[agent_id].epoch);
+	if (unlikely(epoch != (__u64)slot_epoch))
 		return -AIRY_ECAP_EPOCH;
 
-	/* C-S9.2: RandomTag check — 1 READ_ONCE from cacheline-aligned slot */
-	slot_randtag = (__u64)READ_ONCE(agent_caps[agent_id].randtag);
-	if (unlikely(randtag != slot_randtag))
+	/* C-S9.2: RandomTag check — 1 READ_ONCE from same cacheline */
+	slot_randtag = READ_ONCE(agent_caps[agent_id].randtag);
+	if (unlikely(randtag != (__u64)slot_randtag))
 		return -AIRY_ECAP_FORGED;
 
 	/* C-S9.3: Permission check */

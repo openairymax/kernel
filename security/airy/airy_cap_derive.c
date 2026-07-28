@@ -147,12 +147,17 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 	/* ─── REVOKE ────────────────────────────────────────────────── */
 	case AIRY_CAP_OP_REVOKE:
 		/*
-		 * Global epoch invalidation: incrementing the epoch
-		 * instantly invalidates all existing badges.
+		 * Per-agent epoch invalidation: incrementing only the
+		 * target slot's epoch instantly invalidates that agent's
+		 * existing badges without affecting other agents.
 		 * The fastpath C-S9.1 will reject any badge whose
-		 * epoch != global_epoch.
+		 * epoch != slot epoch.
 		 */
-		atomic_inc(&airy_cap_global_epoch);
+		{
+			__u16 new_epoch = READ_ONCE(src->epoch) + 1;
+			WRITE_ONCE(src->epoch, new_epoch);
+			WRITE_ONCE(src->randtag, 0);
+		}
 		break;
 
 	/* ─── DELETE ────────────────────────────────────────────────── */
@@ -174,9 +179,12 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		epoch   = AIRY_BADGE_EPOCH(src->badge);
 		perms   = src->perms;
 
-		WRITE_ONCE(src->badge, AIRY_BADGE_COMPILE(epoch, new_tag,
-						       perms));
-		WRITE_ONCE(src->randtag, new_tag);
+		/* Write randtag first, then badge — see airy_cap_rotate.c
+		 * C-S5.5 for ordering rationale. smp_store_release prevents
+		 * store-store reordering on weakly-ordered architectures. */
+		smp_store_release(&src->randtag, new_tag);
+		smp_store_release(&src->badge,
+				  AIRY_BADGE_COMPILE(epoch, new_tag, perms));
 		break;
 	}
 
