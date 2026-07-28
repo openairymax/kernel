@@ -22,7 +22,7 @@ config AIRY_COREKERN
 	  Enables the Airymax core-kernel enhancement subsystem under
 	  kernel/corekern/. This hosts the sched_tac kernel side
 	  (stc_policy/dispatch/mcs_map/stats), io_uring IPC kernel side
-	  (airy_uring_cmd/ring/fastpath/zero_copy), agent 8-state
+	  (airy_ipc_ring/fastpath/zero_copy), agent 8-state
 	  lifecycle (taskflow), kernel memory tiering, time/object/
 	  locking/irq helpers, and eBPF struct_ops probes.
 

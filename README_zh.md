@@ -167,14 +167,13 @@ agentrt-linux/kernel/                              # Linux 6.6.144 LTS fork
 │   │   ├── build_types.h                          #   构建派生类型
 │   │   └── kconfig_types.h                        #   Kconfig 派生类型
 │   │
-│   ├── security/airy/                             # ★ 纯 C LSM 模块（13 文件）
+│   ├── security/airy/                             # ★ 纯 C LSM 模块（12 文件）
 │   │   ├── Kbuild                                 #   构建配置
 │   │   ├── Kconfig                                #   CONFIG_SECURITY_AIRY 定义
 │   │   ├── airy_lsm.c                             #   DEFINE_LSM(airy) + 5 核心钩子 + airy_cap_agent_caps_init()
 │   │   ├── airy_cap_array.c                       #   静态数组管理（v1.0.1 替代 radix_tree）
-│   │   ├── airy_cap_derive.c                      #   seL4 CNode 7 派生操作
+│   │   ├── airy_cap_derive.c                      #   seL4 CNode 7 派生操作（含 REVOKE/ROTATE）
 │   │   ├── airy_cap_check.c                       #   slowpath 校验
-│   │   ├── airy_cap_revoke.c                      #   atomic_inc(&global_epoch) O(1) 撤销
 │   │   ├── airy_cap_rotate.c                      #   per-Agent Epoch 轮换
 │   │   ├── airy_superv_lsm.c                      #   Micro-Supervisor 5 supplemental 钩子
 │   │   ├── airy_ipc_freeze.c                      #   IPC Ring 冻结
@@ -182,14 +181,14 @@ agentrt-linux/kernel/                              # Linux 6.6.144 LTS fork
 │   │   ├── airy_eventfd.c                         #   eventfd 通知 Macro-Supervisor
 │   │   └── airy_cap.h                             #   capability 内部头文件（fastpath 内联 + extern 声明）
 │   │
-│   ├── kernel/superv/                             # ★ Micro-Supervisor（6 文件）
+│   ├── kernel/superv/                             # ★ Micro-Supervisor（5 文件）
 │   │   ├── Kbuild                                 #   构建配置
-│   │   ├── airy_superv_lsm.c                      #   Micro-Supervisor 初始化入口（late_initcall）
+│   │   ├── airy_superv_init.c                     #   Micro-Supervisor 初始化入口（late_initcall）
 │   │   ├── airy_cap_check_superv.c                #   fastpath C-S9 Badge 校验（~10ns）
-│   │   ├── airy_die_notify_superv.c               #   die_notifier 注册
 │   │   ├── airy_eventfd_superv.c                  #   eventfd 通知 Macro-Supervisor
 │   │   └── airy_ipc_freeze_superv.c               #   IPC Ring 冻结
-│   │      # 注：4 个文件加 _superv 后缀，避免与 security/airy/ 同名冲突（OS-STD-001）
+│   │      # 注：3 个文件加 _superv 后缀，避免与 security/airy/ 同名冲突（OS-STD-001）
+│   │      # 注：die_notifier 由 security/airy/airy_die_notify.c 统一注册
 │   │
 │   ├── kernel/corekern/                           # ★ 微核心抽象层（10 子目录，22 文件）
 │   │   ├── Kbuild                                 #   顶层聚合（obj-y += api/ sched/ ...）
@@ -203,7 +202,6 @@ agentrt-linux/kernel/                              # Linux 6.6.144 LTS fork
 │   │   │   ├── stc_stats.c                        #     atomic_t 统计
 │   │   │   └── stc_policy.h
 │   │   ├── ipc/                                   #   IPC 内核原语（独立于 kernel/ipc/）
-│   │   │   ├── airy_uring_cmd.c                   #     IORING_OP_URING_CMD 处理
 │   │   │   ├── airy_ipc_ring.c                    #     Ring Buffer 管理
 │   │   │   ├── airy_ipc_fastpath.c                #     unlikely(READ_ONCE(ring->frozen)) 快速路径
 │   │   │   ├── airy_ipc_zero_copy.c               #     vm_insert_pages 零拷贝
@@ -317,7 +315,7 @@ agentrt-linux/kernel/                              # Linux 6.6.144 LTS fork
 - **sec\_d 唯一写者**：用户态串行化，消除内核并发同步
 - Badge 64-bit 编码：`Epoch<<48 | RandomTag<<16 | Perms`
 - 7 种 CNode 操作：Copy / Mint / Move / Mutate / Revoke / Delete / Rotate
-- O(1) 全局撤销：`atomic_inc(&airy_cap_global_epoch)` 使所有旧 Badge 自动失效
+- O(1) 定向撤销：`agent_caps[agent_id].epoch++`（per-agent epoch，仅影响目标 Agent）
 - fastpath C-S9 三阶段内联校验（Epoch → RandomTag → Perms）+ 令牌桶限流
 
 **纯 C LSM（airy\_lsm）**：

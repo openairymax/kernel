@@ -7,7 +7,7 @@
  *
  * Defines struct airy_ipc_ring and declares the ring/fastpath/zero-copy
  * entry points shared across airy_ipc_ring.c, airy_ipc_fastpath.c,
- * airy_ipc_zero_copy.c and airy_uring_cmd.c.
+ * airy_ipc_zero_copy.c.
  */
 
 #ifndef _AIRY_IPC_INTERNAL_H
@@ -18,7 +18,6 @@
 
 struct vm_area_struct;
 struct page;
-struct io_uring_cmd;
 
 /* ─── Ring Buffer ────────────────────────────────────────────────────── */
 struct airy_ipc_ring {
@@ -46,8 +45,5 @@ int airy_ipc_zero_copy_register(unsigned long base, size_t len,
 int airy_ipc_zero_copy_unregister(__u64 token);
 int airy_ipc_zero_copy_map(struct vm_area_struct *vma, __u64 token,
 			   struct page **pages, unsigned long nr_pages);
-
-/* ─── io_uring command entry ────────────────────────────────────────── */
-int airy_uring_cmd_handle(struct io_uring_cmd *ioucmd);
 
 #endif /* _AIRY_IPC_INTERNAL_H */

@@ -7,7 +7,10 @@
  * Provides late_initcall() to bring up the Micro-Supervisor subsystem:
  *   1. Register Micro-Supervisor supplemental LSM hooks via
  *      airy_superv_register_hooks() (defined in security/airy/).
- *   2. Initialize die_notifier (airy_superv_die_notify_init()).
+ *
+ * The die_notifier is registered by the "airy" LSM itself during
+ * security_initcall (airy_die_notify_init in security/airy/airy_die_notify.c),
+ * so no redundant registration is needed here.
  *
  * Eventfd context and IPC ring freeze are initialised lazily on demand:
  *   - eventfd context is registered by userspace via airy_sys_clt_notify()
@@ -24,9 +27,6 @@
 
 #include "../../security/airy/airy_cap.h"
 
-/* ─── Forward declarations (defined in sibling files) ─────────────────── */
-void __init airy_superv_die_notify_init(void);
-
 /* ─── Micro-Supervisor late_initcall ──────────────────────────────────── */
 static int __init airy_superv_init(void)
 {
@@ -42,14 +42,14 @@ static int __init airy_superv_init(void)
 		return ret;
 	}
 
-	/* 2. Initialise die_notifier at INT_MAX priority. */
-	airy_superv_die_notify_init();
-
-	/* 3. Eventfd context and IPC ring freeze are initialised lazily:
+	/* 2. Eventfd context and IPC ring freeze are initialised lazily:
 	 *    - eventfd context is registered by userspace via
 	 *      airy_sys_clt_notify() syscall (AIRY_SYS_CLT_NOTIFY, number 551)
 	 *    - IPC ring freeze is triggered on first ring creation
-	 *      via airy_superv_ipc_freeze_ring() */
+	 *      via airy_superv_ipc_freeze_ring()
+	 *
+	 *    die_notifier is registered by the "airy" LSM during
+	 *    security_initcall, not here. */
 
 	pr_info("airy_superv: Micro-Supervisor initialised\n");
 	return 0;
