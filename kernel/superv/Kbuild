@@ -10,6 +10,5 @@ obj-$(CONFIG_SECURITY_AIRY) += airy_superv.o
 
 airy_superv-y := airy_superv_init.o \
 		 airy_cap_check_superv.o \
-		 airy_die_notify_superv.o \
 		 airy_eventfd_superv.o \
 		 airy_ipc_freeze_superv.o

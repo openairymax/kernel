@@ -45,7 +45,7 @@ void airy_cap_agent_caps_init(void)
 		agent_caps[i].flags    = 0;
 		agent_caps[i].randtag  = 0;
 		agent_caps[i].perms    = 0;
-		agent_caps[i]._pad     = 0;
+		agent_caps[i].epoch    = 1;
 	}
 
 	atomic_set(&airy_cap_global_epoch, 1);
@@ -57,9 +57,28 @@ int airy_cap_badge_verify(u64 badge, u32 agent_id, __u16 expected_perms)
 	return airy_cap_badge_ok(badge, agent_id, expected_perms);
 }
 
-/* ─── O(1) revocation: bump the global epoch ────────────────────────── */
-u64 airy_cap_epoch_bump(void)
+/* ─── O(1) targeted revocation: bump per-agent epoch ────────────────── */
+u64 airy_cap_epoch_bump(u32 agent_id)
 {
+	__u16 new_epoch;
+
+	if (unlikely(agent_id >= AIRY_CAP_MAX_AGENTS))
+		return 0;
+
+	new_epoch = READ_ONCE(agent_caps[agent_id].epoch) + 1;
+	WRITE_ONCE(agent_caps[agent_id].epoch, new_epoch);
+	return (__u64)new_epoch;
+}
+
+/* ─── O(N) global revocation: bump all per-agent epochs (UNFREEZE) ──── */
+void airy_cap_epoch_bump_all(void)
+{
+	int i;
+
+	for (i = 0; i < AIRY_CAP_MAX_AGENTS; i++) {
+		__u16 e = READ_ONCE(agent_caps[i].epoch) + 1;
+		WRITE_ONCE(agent_caps[i].epoch, e);
+	}
+
 	atomic_inc(&airy_cap_global_epoch);
-	return (__u64)atomic_read(&airy_cap_global_epoch);
 }

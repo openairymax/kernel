@@ -6,7 +6,7 @@
  *
  * Implements the hot-path send: a single unlikely() check on the ring's
  * frozen flag, then delegation to airy_ipc_ring_post().  This is the
- * entry point used by airy_uring_cmd_handle() for AIRY_IPC_OP_SEND.
+ * fast-path entry point for AIRY_IPC_OP_SEND.
  */
 
 #include <linux/printk.h>

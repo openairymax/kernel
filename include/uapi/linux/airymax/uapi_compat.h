@@ -9,7 +9,7 @@
  * non-Linux platforms (macOS, Windows agentrt).
  *
  *   #ifdef __KERNEL__      -> #include <linux/types.h>   (provides __u32 etc.)
- *   #elif defined(__linux__) -> typedef from <stdint.h>  (glibc/musl)
+ *   #elif defined(__linux__) -> #include <linux/types.h>  (same UAPI types)
  *   #else                  -> typedef from <stdint.h>    (macOS/Windows)
  */
 
@@ -20,16 +20,11 @@
 	/* Kernel-space: use Linux kernel UAPI types */
 	#include <linux/types.h>
 #elif defined(__linux__)
-	/* Linux user-space: map stdint to kernel UAPI names */
-	#include <stdint.h>
-	typedef int32_t   __s32;
-	typedef uint32_t  __u32;
-	typedef int64_t   __s64;
-	typedef uint64_t  __u64;
-	typedef int16_t   __s16;
-	typedef uint16_t  __u16;
-	typedef int8_t    __s8;
-	typedef uint8_t   __u8;
+	/* Linux user-space: <linux/types.h> is the authoritative source of
+	 * __u32/__u64/... types. Include it directly rather than redefining
+	 * with <stdint.h> types, which may differ in type identity (e.g. on
+	 * 64-bit, uint64_t = unsigned long vs __u64 = unsigned long long). */
+	#include <linux/types.h>
 #else
 	/* Non-Linux user-space (macOS, Windows): same mapping */
 	#include <stdint.h>

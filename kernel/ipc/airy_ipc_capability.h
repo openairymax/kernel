@@ -21,6 +21,7 @@
 
 /* ─── Slowpath wrappers (defined in airy_ipc_capability.c) ───────────── */
 int  airy_cap_badge_verify(u64 badge, u32 agent_id, __u16 expected_perms);
-u64  airy_cap_epoch_bump(void);
+u64  airy_cap_epoch_bump(u32 agent_id);
+void airy_cap_epoch_bump_all(void);
 
 #endif /* _AIRY_IPC_CAPABILITY_H */
