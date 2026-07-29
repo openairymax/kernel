@@ -13,6 +13,7 @@
 #include <linux/compiler.h>
 #include <linux/errno.h>
 #include <linux/airymax/ipc.h>
+#include <linux/airymax/error.h>
 
 #include "airy_ipc_internal.h"
 
@@ -23,9 +24,12 @@ int airy_ipc_fastpath_send(struct airy_ipc_ring *ring,
 	if (!ring || !hdr)
 		return -EINVAL;
 
-	/* Fast path: bail out immediately if the ring is quiesced. */
+	/* Fast path: bail out immediately if the ring is quiesced.
+	 * Return -AIRY_EIPC_FROZEN (not generic -EAGAIN) so userland can
+	 * distinguish "ring administratively frozen" from "transient retry".
+	 */
 	if (unlikely(READ_ONCE(ring->frozen)))
-		return -EAGAIN;
+		return -AIRY_EIPC_FROZEN;
 
 	return airy_ipc_ring_post(ring, hdr);
 }

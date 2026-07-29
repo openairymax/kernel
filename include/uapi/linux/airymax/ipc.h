@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0 */
+/* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
@@ -86,7 +86,7 @@ struct airy_ipc_msg_hdr {
 	__u32   payload_len;       /* offset 48: payload length in bytes */
 	__u32   crc32;             /* offset 52: CRC32 of payload */
 	__u8    reserved[72];      /* offset 56: reserved for future use */
-} __attribute__((aligned(64)));
+} AIRY_ALIGNED(64);
 
 _Static_assert(sizeof(struct airy_ipc_msg_hdr) == AIRY_IPC_HDR_SIZE,
 	       "airy_ipc_msg_hdr must be exactly 128 bytes");
@@ -134,7 +134,7 @@ _Static_assert(offsetof(struct airy_ipc_msg_hdr, reserved) == 56,
 		__u32   payload_len;       /* offset 48 */
 		__u32   crc32;             /* offset 52 */
 		__u8    _pad1[72];         /* offset 56-127: zeroed reserved */
-	} __attribute__((aligned(64)));
+	} AIRY_ALIGNED(64);
 
 	_Static_assert(offsetof(struct airy_ipc_msg_hdr_min, capability_badge) == 40,
 		       "H1: [DSL] capability_badge offset must be 40");

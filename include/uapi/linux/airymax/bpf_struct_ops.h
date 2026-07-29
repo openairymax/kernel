@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0 */
+/* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
@@ -67,7 +67,7 @@ struct bpf_struct_ops_common_val {
 	__u64   registered_ns;  /* monotonic time of REGISTERED transition */
 	__u64   activated_ns;   /* monotonic time of ACTIVE transition */
 	__u8    _reserved[32];  /* reserved for future kernel fields */
-} __attribute__((aligned(64)));
+} AIRY_ALIGNED(64);
 
 _Static_assert(offsetof(struct bpf_struct_ops_common_val, state) == 0,
 	       "state must be at offset 0 for BTF read compatibility");
@@ -89,7 +89,7 @@ struct airy_struct_ops_value {
 	__u32   flags;                            /* reserved for future use */
 	__u8    name[48];                         /* human-readable identifier */
 	__u8    _reserved[8];                     /* padding to 128 bytes */
-} __attribute__((aligned(64)));
+} AIRY_ALIGNED(64);
 
 _Static_assert(offsetof(struct airy_struct_ops_value, common) == 0,
 	       "common must be first field for bpf_struct_ops framework");

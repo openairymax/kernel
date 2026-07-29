@@ -18,6 +18,7 @@
 #include <linux/slab.h>
 #include <linux/atomic.h>
 #include <linux/airymax/ipc.h>
+#include <linux/airymax/error.h>
 
 #include "airy_ipc_internal.h"
 
@@ -65,7 +66,7 @@ int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 		return -EINVAL;
 
 	if (READ_ONCE(ring->frozen))
-		return -EAGAIN;
+		return -AIRY_EIPC_FROZEN;
 
 	if (hdr->magic != AIRY_IPC_MAGIC) {
 		pr_warn_ratelimited("airy_ipc_ring: bad magic 0x%08x\n",
@@ -116,7 +117,7 @@ int airy_ipc_ring_consume(struct airy_ipc_ring *ring,
 		return -ENOMSG;
 
 	if (READ_ONCE(ring->frozen))
-		return -EAGAIN;
+		return -AIRY_EIPC_FROZEN;
 
 	/* Single-consumer advance: tail only moves forward by one slot. */
 	memcpy(out, &ring->slots[ring->tail], sizeof(*out));

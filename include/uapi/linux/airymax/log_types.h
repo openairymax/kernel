@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0 */
+/* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
@@ -28,7 +28,7 @@ struct airy_log_record {
 	__u32   payload_len;        /* offset 20: actual payload length (<=96) */
 	__u8    payload[96];        /* offset 24: log message payload */
 	__u8    reserved[8];        /* offset 120: reserved for future use */
-} __attribute__((aligned(64)));
+} AIRY_ALIGNED(64);
 
 _Static_assert(sizeof(struct airy_log_record) == AIRY_LOG_RECORD_SIZE,
 	       "airy_log_record must be exactly 128 bytes");

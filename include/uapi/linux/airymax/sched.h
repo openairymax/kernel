@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0 */
+/* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
@@ -68,7 +68,7 @@ struct airy_task_desc {
 	__u32       weight;         /* offset 44: EEVDF weight */
 	__u32       state;          /* offset 48: agent lifecycle state */
 	__u8        reserved[12];   /* offset 52: reserved */
-} __attribute__((aligned(64)));
+} AIRY_ALIGNED(64);
 
 _Static_assert(sizeof(struct airy_task_desc) == 64,
 	       "airy_task_desc must be exactly 64 bytes");

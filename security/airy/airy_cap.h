@@ -47,7 +47,7 @@ extern struct lsm_blob_sizes airy_blob_sizes;
  *
  * Returns 0 (AIRY_EOK) if valid, negative error otherwise.
  */
-static __always_inline int airy_cap_badge_ok(__u64 badge, __u32 agent_id,
+static __always_inline __must_check int airy_cap_badge_ok(__u64 badge, __u32 agent_id,
 					     __u16 required_perms)
 {
 	__u64 epoch = AIRY_BADGE_EPOCH(badge);
@@ -81,13 +81,13 @@ void airy_cap_agent_caps_init(void);
 
 /* ─── Capability Array Operations ─────────────────────────────────────── */
 struct airy_cap_slot *airy_cap_lookup(__u32 agent_id);
-int airy_cap_register(__u32 agent_id, __u64 badge);
+__must_check int airy_cap_register(__u32 agent_id, __u64 badge);
 
 /* ─── Capability Derivation ───────────────────────────────────────────── */
 #include <linux/airymax/security_types.h>
-int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
-		    enum airy_cap_op op, __u16 new_perms);
-int airy_cap_rotate(__u32 agent_id);
+__must_check int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
+				 enum airy_cap_op op, __u16 new_perms);
+__must_check int airy_cap_rotate(__u32 agent_id);
 
 /* ─── IPC Ring Freeze State (single-host for security/airy + kernel/superv) ─ */
 /**
@@ -118,7 +118,7 @@ struct airy_ipc_ring_freeze_state {
 
 /* ─── Slowpath Capability Check ───────────────────────────────────────── */
 struct io_uring_cmd;
-int airy_uring_cmd_check(struct io_uring_cmd *ioucmd);
+__must_check int airy_uring_cmd_check(struct io_uring_cmd *ioucmd);
 void airy_security_fault(__u32 agent_id, __u32 fault_code);
 
 /* ─── Micro-Supervisor Supplemental Hook Registration ─────────────────── */

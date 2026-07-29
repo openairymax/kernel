@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0 */
+/* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
@@ -79,7 +79,8 @@ typedef __s32 airy_err_t;
 #define AIRY_ECAP_PERM        (-81)    /* Badge permissions insufficient for opcode */
 #define AIRY_ECAP_FROZEN      (-82)    /* Capability badge frozen (badge revocation, A-ULS controlled) */
 #define AIRY_ESEC_D_THROTTLED (-83)    /* sec_d throttle rejected (queue full) */
-/* [-84, -100] reserved */
+#define AIRY_ECAP_OVERFLOW    (-84)    /* Capability slot table overflow (agent_id >= AIRY_CAP_MAX_AGENTS) */
+/* [-85, -100] reserved */
 
 /* ─── Config/Version Error Codes (sub-space: -101 to -120) ─────────────
  * Cross-cutting: configuration version mismatch and schema errors.

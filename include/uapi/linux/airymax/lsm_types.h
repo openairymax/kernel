@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0 */
+/* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
@@ -51,7 +51,7 @@ struct airy_cap_slot {
 	__u16   perms;            /* Permission bits */
 	__u16   epoch;            /* Per-agent epoch for O(1) targeted revocation */
 	__u8    _reserved[56];    /* Cacheline padding */
-} __attribute__((aligned(64)));
+} AIRY_ALIGNED(64);
 
 #define AIRY_CAP_MAX_AGENTS     1024
 

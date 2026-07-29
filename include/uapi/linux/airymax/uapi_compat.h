@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0 */
+/* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
@@ -36,6 +36,52 @@
 	typedef uint16_t  __u16;
 	typedef int8_t    __s8;
 	typedef uint8_t   __u8;
+#endif
+
+/* ─── Struct Alignment Abstraction (OS-IRON-016 sanctioned exception) ──
+ *
+ * AIRY_ALIGNED(N) provides a compiler-agnostic way to specify struct
+ * alignment in UAPI headers without directly using __attribute__.
+ *
+ * C11's _Alignas cannot be placed after a struct type definition (it
+ * only applies to variable declarations), so compiler extensions are
+ * unavoidable for struct-level alignment. This macro is the single
+ * sanctioned exception to OS-IRON-016's prohibition on __attribute__
+ * in UAPI headers — all other __attribute__ uses remain prohibited.
+ *
+ * Usage (placement after closing brace, same as __attribute__):
+ *
+ *   struct foo {
+ *       ...
+ *   } AIRY_ALIGNED(64);
+ *
+ * Supported compilers:
+ *   GCC / Clang: __attribute__((aligned(N)))   [Linux kernel + user-space]
+ *   MSVC:        __declspec(align(N))           [Windows user-space, placed
+ *                                               before struct keyword via
+ *                                               AIRY_ALIGNED_PREFIX]
+ *   C11 fallback: _Alignas(N)                   [may not work for struct
+ *                                               type definitions]
+ *
+ * Rationale: Linux 6.6 UAPI headers use __aligned(N) (from
+ * include/uapi/linux/types.h) which expands to __attribute__((aligned(N))).
+ * AirymaxOS cannot reuse __aligned(N) directly in [SC] headers because
+ * macOS/Windows user-space builds do not include <linux/types.h>.
+ */
+#if defined(__GNUC__) || defined(__clang__)
+	#define AIRY_ALIGNED(n) __attribute__((aligned(n)))
+#elif defined(_MSC_VER)
+	/* MSVC: __declspec(align(N)) must be placed BEFORE the struct keyword.
+	 * Use AIRY_ALIGNED_PREFIX(N) struct foo { ... }; for MSVC builds.
+	 * For portable code, use AIRY_ALIGNED(N) after the closing brace —
+	 * MSVC will silently ignore it (no alignment), which is acceptable
+	 * because Windows agentrt uses Clang, not MSVC, for [SC] headers. */
+	#define AIRY_ALIGNED(n)
+	#define AIRY_ALIGNED_PREFIX(n) __declspec(align(n))
+#else
+	/* C11 fallback: _Alignas may not enforce struct-level alignment
+	 * after a type definition. This is a best-effort fallback. */
+	#define AIRY_ALIGNED(n) _Alignas(n)
 #endif
 
 /* ─── [DSL] Degraded Survival Layer Fallback Block ──────────────────────
