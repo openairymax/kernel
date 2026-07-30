@@ -273,26 +273,41 @@ fault:
  * Increments the per-agent fault counter and logs the event.
  * In a full implementation, this triggers the die_notifier chain
  * to freeze or terminate the offending agent.
+ *
+ * agent_id vs current (P2 fix): the fault is reported for @agent_id,
+ * but the per-task fault_count/frozen_reason fields live in the
+ * security blob of the task that OWNS that agent_id.  Modifying
+ * current->security unconditionally was a bug: when airy_security_fault
+ * is invoked from a supervisor/workqueue context, current is the
+ * supervisor (not the offender), and the supervisor's fault counter and
+ * frozen_reason would be corrupted.  Only touch current's blob when
+ * current actually carries the offending agent_id; otherwise leave the
+ * per-task state alone — the die_notifier chain carries the agent_id
+ * so the Supervisor can act on the correct agent out-of-band.
  */
 void airy_security_fault(__u32 agent_id, __u32 fault_code)
 {
 	struct airy_task_sec *sec;
+	struct task_struct *task = current;
 
 	pr_err("airy: security fault agent=%u code=0x%x\n",
 	       agent_id, fault_code);
 
-	if (agent_id < AIRY_CAP_MAX_AGENTS) {
-		__u32 old, new;
+	if (agent_id < AIRY_CAP_MAX_AGENTS && task && task->security) {
+		sec = task->security + airy_blob_sizes.lbs_task;
 
-		sec = current->security + airy_blob_sizes.lbs_task;
-		/* Increment per-task fault counter if agent matches */
-		do {
-			old = READ_ONCE(sec->fault_count);
-			new = old + 1;
-		} while (cmpxchg(&sec->fault_count, old, new) != old);
+		/* Only mutate current's blob if current IS the offender */
+		if (READ_ONCE(sec->agent_id) == agent_id) {
+			__u32 old, new;
 
-		/* Freeze the agent ring */
-		WRITE_ONCE(sec->frozen_reason, fault_code);
+			do {
+				old = READ_ONCE(sec->fault_count);
+				new = old + 1;
+			} while (cmpxchg(&sec->fault_count, old, new) != old);
+
+			/* Freeze the agent ring */
+			WRITE_ONCE(sec->frozen_reason, fault_code);
+		}
 	}
 
 	/*
@@ -301,5 +316,5 @@ void airy_security_fault(__u32 agent_id, __u32 fault_code)
 	 * offending agent).  This is separate from the kernel die_chain
 	 * which handles hardware/kernel faults.
 	 */
-	atomic_notifier_call_chain(&airy_die_chain, fault_code, current);
+	atomic_notifier_call_chain(&airy_die_chain, fault_code, task);
 }
