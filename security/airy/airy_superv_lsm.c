@@ -22,6 +22,7 @@
 #include <linux/sched.h>
 #include <linux/cred.h>
 #include <linux/mm.h>
+#include <linux/mman.h>
 #include <linux/sysctl.h>
 #include <linux/security.h>
 #include <linux/airymax/error.h>

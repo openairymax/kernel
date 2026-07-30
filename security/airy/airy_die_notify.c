@@ -12,6 +12,7 @@
 
 #include <linux/notifier.h>
 #include <linux/kdebug.h>
+#include <linux/lsm_hooks.h>
 #include <linux/sched.h>
 #include <linux/airymax/error.h>
 
