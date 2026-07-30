@@ -36,30 +36,22 @@
 #include "airy_cap.h"
 
 /*
- * Fine-grained per-bucket lock array (P1-11 fix).
+ * Fine-grained per-bucket lock array (P1-11 fix, P2 shared with register).
  *
- * Replaces the former global spinlock with 64 hash buckets, each
- * guarding a subset of capability slots.  Agent IDs are mapped to
- * buckets via a bitmask, so operations on disjoint agent sets proceed
- * concurrently.  Multi-slot derivation ops (COPY/MINT/MOVE/DELETE)
- * acquire 1–3 bucket locks in canonical ascending order to avoid
- * deadlock.  REVOKE cascades through the MDB subtree which may span
- * arbitrary buckets, so it acquires all 64 locks (acceptable since
- * epoch changes are rare).
+ * The lock array airy_cap_bucket_locks[] and airy_cap_bucket() are now
+ * defined in airy_cap_array.c and shared via airy_cap.h so that BOTH
+ * airy_cap_register() and airy_cap_derive() acquire the same per-bucket
+ * locks.  This closes the TOCTOU window across the register/derive
+ * boundary (P2 fix): previously register used a separate global
+ * spinlock that did not intersect with these bucket locks.
+ *
+ * Agent IDs are mapped to buckets via a bitmask, so operations on
+ * disjoint agent sets proceed concurrently.  Multi-slot derivation ops
+ * (COPY/MINT/MOVE/DELETE) acquire 1–3 bucket locks in canonical
+ * ascending order to avoid deadlock.  REVOKE cascades through the MDB
+ * subtree which may span arbitrary buckets, so it acquires all 64 locks
+ * (acceptable since epoch changes are rare).
  */
-#define AIRY_CAP_DERIVE_LOCK_BITS	6
-#define AIRY_CAP_DERIVE_LOCK_NR		(1U << AIRY_CAP_DERIVE_LOCK_BITS)
-#define AIRY_CAP_DERIVE_LOCK_MASK	(AIRY_CAP_DERIVE_LOCK_NR - 1)
-
-static spinlock_t airy_cap_derive_locks[AIRY_CAP_DERIVE_LOCK_NR] = {
-	[0 ... AIRY_CAP_DERIVE_LOCK_NR - 1] =
-		__SPIN_LOCK_UNLOCKED(airy_cap_derive_locks)
-};
-
-static inline unsigned int airy_cap_bucket(__u32 agent_id)
-{
-	return agent_id & AIRY_CAP_DERIVE_LOCK_MASK;
-}
 
 /*
  * Lock context for multi-bucket acquisition.  Acquires up to 3 bucket
@@ -82,7 +74,7 @@ static void cap_derive_lock_begin(struct cap_derive_lock_ctx *ctx)
 static void cap_derive_lock_add(struct cap_derive_lock_ctx *ctx,
 				__u32 agent_id)
 {
-	spinlock_t *lock = &airy_cap_derive_locks[airy_cap_bucket(agent_id)];
+	spinlock_t *lock = &airy_cap_bucket_locks[airy_cap_bucket(agent_id)];
 	int i, pos;
 
 	/* Skip if this bucket is already held */
@@ -134,9 +126,9 @@ static unsigned long cap_derive_lock_all(void)
 	unsigned long flags;
 	int i;
 
-	spin_lock_irqsave(&airy_cap_derive_locks[0], flags);
-	for (i = 1; i < AIRY_CAP_DERIVE_LOCK_NR; i++)
-		spin_lock(&airy_cap_derive_locks[i]);
+	spin_lock_irqsave(&airy_cap_bucket_locks[0], flags);
+	for (i = 1; i < AIRY_CAP_BUCKET_NR; i++)
+		spin_lock(&airy_cap_bucket_locks[i]);
 	return flags;
 }
 
@@ -144,9 +136,9 @@ static void cap_derive_unlock_all(unsigned long flags)
 {
 	int i;
 
-	for (i = AIRY_CAP_DERIVE_LOCK_NR - 1; i > 0; i--)
-		spin_unlock(&airy_cap_derive_locks[i]);
-	spin_unlock_irqrestore(&airy_cap_derive_locks[0], flags);
+	for (i = AIRY_CAP_BUCKET_NR - 1; i > 0; i--)
+		spin_unlock(&airy_cap_bucket_locks[i]);
+	spin_unlock_irqrestore(&airy_cap_bucket_locks[0], flags);
 }
 
 /* Operation names for logging */

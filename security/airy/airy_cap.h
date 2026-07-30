@@ -15,6 +15,7 @@
 #include <linux/atomic.h>
 #include <linux/cache.h>
 #include <linux/compiler.h>
+#include <linux/spinlock.h>
 #include <linux/airymax/lsm_types.h>
 #include <linux/airymax/error.h>
 #include <linux/airymax/ipc.h>
@@ -34,6 +35,30 @@
  * 本头文件通过 #include <linux/airymax/lsm_types.h> 引入这些类型。 */
 extern struct airy_cap_slot *agent_caps;
 extern atomic_t              airy_cap_global_epoch;
+
+/* ─── Per-Bucket Hashed Spinlock Array ───────────────────────────────────
+ * Shared lock array protecting agent_caps[].  Both airy_cap_register()
+ * (single-slot writes) and airy_cap_derive() (multi-slot derivation)
+ * MUST acquire the bucket lock(s) covering the slots they touch.
+ * Sharing one lock array across both paths closes the TOCTOU window
+ * that existed when register used a separate global spinlock and
+ * derive used this bucket array — the two did not mutually exclude,
+ * so concurrent register+derive on the same dst slot could double-write.
+ *
+ * Non-REVOKE derive ops acquire 1–3 bucket locks in canonical ascending
+ * pointer order; REVOKE acquires all AIRY_CAP_BUCKET_NR locks because
+ * its MDB subtree cascade may touch arbitrary buckets.
+ */
+#define AIRY_CAP_BUCKET_BITS	6
+#define AIRY_CAP_BUCKET_NR	(1U << AIRY_CAP_BUCKET_BITS)
+#define AIRY_CAP_BUCKET_MASK	(AIRY_CAP_BUCKET_NR - 1)
+
+extern spinlock_t airy_cap_bucket_locks[AIRY_CAP_BUCKET_NR];
+
+static inline unsigned int airy_cap_bucket(__u32 agent_id)
+{
+	return agent_id & AIRY_CAP_BUCKET_MASK;
+}
 
 /* ─── LSM Blob Sizes ──────────────────────────────────────────────────── */
 extern struct lsm_blob_sizes airy_blob_sizes;

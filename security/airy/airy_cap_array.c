@@ -14,7 +14,20 @@
 
 #include "airy_cap.h"
 
-static DEFINE_SPINLOCK(airy_cap_array_lock);
+/*
+ * Per-bucket hashed spinlock array (P2 lock-hierarchy fix).
+ *
+ * Defined here — the module that owns agent_caps[] also owns its locks —
+ * and shared with airy_cap_derive.c via airy_cap.h.  Both register and
+ * derive paths acquire the bucket lock(s) covering the slots they touch,
+ * closing the TOCTOU window that existed when these two paths used
+ * non-intersecting locks (register: global spinlock; derive: this bucket
+ * array) and could double-write the same dst slot concurrently.
+ */
+spinlock_t airy_cap_bucket_locks[AIRY_CAP_BUCKET_NR] = {
+	[0 ... AIRY_CAP_BUCKET_NR - 1] =
+		__SPIN_LOCK_UNLOCKED(airy_cap_bucket_locks)
+};
 
 /* ─── airy_cap_lookup ──────────────────────────────────────────────────── */
 /*
@@ -49,10 +62,19 @@ struct airy_cap_slot *airy_cap_lookup(__u32 agent_id)
  *
  * Returns 0 on success, -AIRY_ECAP_OVERFLOW if out of range,
  * -AIRY_EEXIST if the slot is already occupied.
+ *
+ * Locking (P2 fix): acquires the per-bucket spinlock for agent_id — the
+ * SAME lock array used by airy_cap_derive().  The former global
+ * airy_cap_array_lock did not intersect with derive's bucket locks, so
+ * concurrent register+derive(COPY/MINT/MOVE) on the same dst slot raced
+ * on the "badge == NULL then write" TOCTOU and could double-write the
+ * slot.  Sharing the bucket array closes that window: both writers now
+ * hold the same lock before checking+writing the slot.
  */
 int airy_cap_register(__u32 agent_id, __u64 badge)
 {
 	unsigned long flags;
+	spinlock_t *lock;
 
 	if (agent_id >= AIRY_CAP_MAX_AGENTS) {
 		pr_debug_ratelimited("airy_cap_register: agent=%u out of range (MAX=%u)\n",
@@ -60,12 +82,13 @@ int airy_cap_register(__u32 agent_id, __u64 badge)
 		return -AIRY_ECAP_OVERFLOW;
 	}
 
-	spin_lock_irqsave(&airy_cap_array_lock, flags);
+	lock = &airy_cap_bucket_locks[airy_cap_bucket(agent_id)];
+	spin_lock_irqsave(lock, flags);
 
 	if (agent_caps[agent_id].badge != AIRY_CAP_NULL) {
 		pr_debug_ratelimited("airy_cap_register: agent=%u FAIL - slot occupied badge=0x%016llx\n",
 			agent_id, (unsigned long long)agent_caps[agent_id].badge);
-		spin_unlock_irqrestore(&airy_cap_array_lock, flags);
+		spin_unlock_irqrestore(lock, flags);
 		return -AIRY_EEXIST;
 	}
 
@@ -81,7 +104,7 @@ int airy_cap_register(__u32 agent_id, __u64 badge)
 		agent_caps[agent_id].perms,
 		agent_caps[agent_id].randtag);
 
-	spin_unlock_irqrestore(&airy_cap_array_lock, flags);
+	spin_unlock_irqrestore(lock, flags);
 
 	return 0;
 }
