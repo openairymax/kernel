@@ -14,6 +14,11 @@
  * seL4-aligned recursive revocation semantics.  COPY supports
  * optional permission demotion when new_perms != 0 (P1-10 fix).
  *
+ * Locking (P1-11 fix): a 64-bucket hashed spinlock array replaces
+ * the former global spinlock.  Non-REVOKE ops acquire 1–3 bucket
+ * locks; REVOKE acquires all 64.  This allows concurrent derivation
+ * on disjoint agent sets.
+ *
  * All operations are performed under the assumption that the caller
  * holds the appropriate authority (validated by the fastpath or
  * slowpath before reaching this point).
@@ -30,7 +35,119 @@
 
 #include "airy_cap.h"
 
-static DEFINE_SPINLOCK(airy_cap_derive_lock);
+/*
+ * Fine-grained per-bucket lock array (P1-11 fix).
+ *
+ * Replaces the former global spinlock with 64 hash buckets, each
+ * guarding a subset of capability slots.  Agent IDs are mapped to
+ * buckets via a bitmask, so operations on disjoint agent sets proceed
+ * concurrently.  Multi-slot derivation ops (COPY/MINT/MOVE/DELETE)
+ * acquire 1–3 bucket locks in canonical ascending order to avoid
+ * deadlock.  REVOKE cascades through the MDB subtree which may span
+ * arbitrary buckets, so it acquires all 64 locks (acceptable since
+ * epoch changes are rare).
+ */
+#define AIRY_CAP_DERIVE_LOCK_BITS	6
+#define AIRY_CAP_DERIVE_LOCK_NR		(1U << AIRY_CAP_DERIVE_LOCK_BITS)
+#define AIRY_CAP_DERIVE_LOCK_MASK	(AIRY_CAP_DERIVE_LOCK_NR - 1)
+
+static spinlock_t airy_cap_derive_locks[AIRY_CAP_DERIVE_LOCK_NR] = {
+	[0 ... AIRY_CAP_DERIVE_LOCK_NR - 1] =
+		__SPIN_LOCK_UNLOCKED(airy_cap_derive_locks)
+};
+
+static inline unsigned int airy_cap_bucket(__u32 agent_id)
+{
+	return agent_id & AIRY_CAP_DERIVE_LOCK_MASK;
+}
+
+/*
+ * Lock context for multi-bucket acquisition.  Acquires up to 3 bucket
+ * locks in canonical (ascending pointer) order.  The first (outermost)
+ * lock saves+disables IRQs via spin_lock_irqsave; inner locks use
+ * plain spin_lock since IRQs are already disabled.  Duplicate buckets
+ * (two agents hashing to the same bucket) are acquired only once.
+ */
+struct cap_derive_lock_ctx {
+	spinlock_t	*locks[3];
+	unsigned long	flags;
+	int		n;
+};
+
+static void cap_derive_lock_begin(struct cap_derive_lock_ctx *ctx)
+{
+	ctx->n = 0;
+}
+
+static void cap_derive_lock_add(struct cap_derive_lock_ctx *ctx,
+				__u32 agent_id)
+{
+	spinlock_t *lock = &airy_cap_derive_locks[airy_cap_bucket(agent_id)];
+	int i, pos;
+
+	/* Skip if this bucket is already held */
+	for (i = 0; i < ctx->n; i++)
+		if (ctx->locks[i] == lock)
+			return;
+
+	/* Find sorted insertion position (ascending lock address) */
+	pos = ctx->n;
+	for (i = 0; i < ctx->n; i++) {
+		if (ctx->locks[i] > lock) {
+			pos = i;
+			break;
+		}
+	}
+
+	/* Shift entries right to make room */
+	for (i = ctx->n; i > pos; i--)
+		ctx->locks[i] = ctx->locks[i - 1];
+
+	if (ctx->n == 0)
+		spin_lock_irqsave(lock, ctx->flags);
+	else
+		spin_lock(lock);	/* IRQs already disabled */
+
+	ctx->locks[pos] = lock;
+	ctx->n++;
+}
+
+static void cap_derive_lock_end(struct cap_derive_lock_ctx *ctx)
+{
+	int i;
+
+	/* Release in reverse acquisition order */
+	for (i = ctx->n - 1; i > 0; i--)
+		spin_unlock(ctx->locks[i]);
+	if (ctx->n > 0)
+		spin_unlock_irqrestore(ctx->locks[0], ctx->flags);
+}
+
+/*
+ * Acquire ALL bucket locks in ascending order for REVOKE.
+ * REVOKE cascades through the MDB derivation subtree, which may touch
+ * slots in arbitrary buckets.  Since epoch changes are rare, acquiring
+ * all 64 locks is acceptable.
+ */
+static unsigned long cap_derive_lock_all(void)
+{
+	unsigned long flags;
+	int i;
+
+	spin_lock_irqsave(&airy_cap_derive_locks[0], flags);
+	for (i = 1; i < AIRY_CAP_DERIVE_LOCK_NR; i++)
+		spin_lock(&airy_cap_derive_locks[i]);
+	return flags;
+}
+
+static void cap_derive_unlock_all(unsigned long flags)
+{
+	int i;
+
+	for (i = AIRY_CAP_DERIVE_LOCK_NR - 1; i > 0; i--)
+		spin_unlock(&airy_cap_derive_locks[i]);
+	spin_unlock_irqrestore(&airy_cap_derive_locks[0], flags);
+}
 
 /* Operation names for logging */
 static const char *const cap_op_names[] = {
@@ -127,25 +244,46 @@ static void airy_cap_revoke_subtree(__u32 agent_id, __u16 new_epoch)
  *
  * Returns 0 on success, negative airy_err_t on failure.
  *
- * The entire operation runs under airy_cap_derive_lock to close the
- * TOCTOU window between slot-state checks (empty/valid) and the
- * subsequent writes. get_random_u32() and atomic_inc() are
+ * Locking (P1-11 fix): the former global spinlock is replaced by a
+ * 64-bucket hashed lock array.  Non-REVOKE operations acquire only
+ * the buckets covering the involved agents (1–3 locks).  REVOKE
+ * acquires all 64 buckets because the cascading subtree may span
+ * arbitrary buckets.  This closes the TOCTOU window between slot-state
+ * checks and subsequent writes while allowing concurrent derivation
+ * on disjoint agent sets.  get_random_u32() and atomic_inc() are
  * non-blocking and safe under the spinlock.
  */
 int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		    enum airy_cap_op op, __u16 new_perms)
 {
 	struct airy_cap_slot *src, *dst;
+	struct cap_derive_lock_ctx ctx;
 	__u64 epoch, randtag;
 	__u16 perms;
-	unsigned long flags;
+	unsigned long all_flags = 0;
+	bool all_locked = false;
 	int ret = 0;
-
-	spin_lock_irqsave(&airy_cap_derive_lock, flags);
 
 	pr_debug_ratelimited("airy_cap_derive: ENTER op=%s(%u) src=%u dst=%u new_perms=0x%04x\n",
 		op < ARRAY_SIZE(cap_op_names) ? cap_op_names[op] : "UNKNOWN",
 		op, src_agent, dst_agent, new_perms);
+
+	/*
+	 * Acquire locks before slot lookup to close the TOCTOU window.
+	 * REVOKE cascades through the entire MDB subtree and may touch
+	 * slots in arbitrary buckets, so it acquires all 64 locks.
+	 * Other ops acquire only the buckets for the agents they touch.
+	 */
+	if (op == AIRY_CAP_OP_REVOKE) {
+		all_flags = cap_derive_lock_all();
+		all_locked = true;
+	} else {
+		cap_derive_lock_begin(&ctx);
+		cap_derive_lock_add(&ctx, src_agent);
+		if (op == AIRY_CAP_OP_COPY || op == AIRY_CAP_OP_MINT ||
+		    op == AIRY_CAP_OP_MOVE)
+			cap_derive_lock_add(&ctx, dst_agent);
+	}
 
 	/* Validate source slot for all operations.  REVOKE needs the
 	 * slot to increment its epoch (K9-1 changed REVOKE to cascading
@@ -157,6 +295,20 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 			src_agent);
 		ret = -AIRY_ECAP_MISSING;
 		goto out;
+	}
+
+	/*
+	 * For MOVE/DELETE: the MDB unlink helper walks the parent's
+	 * sibling chain and modifies either parent->first_child or a
+	 * sibling's next_sibling.  Acquire the parent's bucket lock to
+	 * serialize concurrent child-chain modifications.  Safe to read
+	 * parent_agent here because we hold src's bucket lock.
+	 */
+	if (op == AIRY_CAP_OP_MOVE || op == AIRY_CAP_OP_DELETE) {
+		__u32 parent = READ_ONCE(src->parent_agent);
+
+		if (parent != 0)
+			cap_derive_lock_add(&ctx, parent);
 	}
 
 	switch (op) {
@@ -384,6 +536,9 @@ out:
 	pr_debug_ratelimited("airy_cap_derive: EXIT op=%s(%u) ret=%d\n",
 		op < ARRAY_SIZE(cap_op_names) ? cap_op_names[op] : "UNKNOWN",
 		op, ret);
-	spin_unlock_irqrestore(&airy_cap_derive_lock, flags);
+	if (all_locked)
+		cap_derive_unlock_all(all_flags);
+	else
+		cap_derive_lock_end(&ctx);
 	return ret;
 }
