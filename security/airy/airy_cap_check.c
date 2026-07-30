@@ -92,20 +92,27 @@ static int phase2_cap_request(struct io_uring_cmd *ioucmd,
 
 /* ─── Phase 3: [DSL]/agentrt Degradation ───────────────────────────────── */
 /*
- * When the [SC] shared contract fastpath is unavailable (e.g., during
- * kernel rescue mode or degraded operation), fall back to DSL POSIX
- * mapping and allow basic operations.
+ * Reached when sec->agent_state == AIRY_AGENT_STOPPED.  A STOPPED agent
+ * has been administratively suspended (TASK_STOPPED, pending adjudication)
+ * and MUST NOT be allowed to perform IPC.
+ *
+ * The previous implementation returned 0 (allow) here, which was a
+ * fail-open security hole: any agent entering the STOPPED state could
+ * bypass ALL badge/epoch/permission checks and issue arbitrary IPC with
+ * forged badges.  This is especially dangerous because STOPPED is the
+ * state an agent enters when it is being quarantined for a policy
+ * violation — exactly the moment enforcement must hold.
+ *
+ * The [DSL] compile-time fallback (AIRY_SC_FALLBACK) is a separate
+ * concern handled by the [SC] header contracts; it does not license a
+ * runtime fail-open path.  Fail closed: deny the operation as if the
+ * ring were frozen, and let the caller's fault path report it.
  */
 static int phase3_dsl_degradation(__u32 agent_id)
 {
-	/*
-	 * In degraded mode, allow all operations with reduced security.
-	 * The five core POSIX codes (EINVAL, ENOMEM, EBUSY, ECANCELED,
-	 * EAGAIN) map 38 POSIX codes for fallback compatibility.
-	 */
-	pr_warn_ratelimited("airy: agent %u operating in [DSL] degraded mode\n",
+	pr_warn_ratelimited("airy: agent %u IPC rejected in STOPPED state (fail-closed)\n",
 			    agent_id);
-	return 0;
+	return -AIRY_EIPC_FROZEN;
 }
 
 /* ─── Phase 4: Fastpath C-S9 Re-check ──────────────────────────────────── */
