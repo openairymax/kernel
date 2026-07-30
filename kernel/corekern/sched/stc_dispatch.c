@@ -149,7 +149,7 @@ int stc_dispatch_enqueue(struct task_struct *tsk, enum airy_sched_policy policy)
 
 	stc_name = stc_policy_name(policy);
 
-	pr_info("stc_dispatch: %s → %s (pid=%d comm=%s)\n",
+	pr_debug_ratelimited("stc_dispatch: %s → %s (pid=%d comm=%s)\n",
 		stc_name, stc_linux_policy_name(linux_policy),
 		tsk->pid, tsk->comm);
 
