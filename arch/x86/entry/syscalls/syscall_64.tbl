@@ -376,15 +376,42 @@
 452	common	fchmodat2		sys_fchmodat2
 453	64	map_shadow_stack	sys_map_shadow_stack
 #
-# Airymax syscalls (548-551)
+# Airymax syscalls (548-571: 4 core + 20 reserved)
 # v1.0.1: 统一使用 548 起始，避开 x86_64 x32 历史遗留区域（512-547）。
 # 确保在 x86_64/arm64/riscv 所有架构上编号一致，实现跨架构二进制兼容。
+#
+# 548-551: 4 核心 syscall（capability invocation + 3 控制原语）。
+# 552-571: 20 预留槽，逐行登记为 sys_ni_syscall（返回 -ENOSYS），
+#          防止未注册编号被误用或越界访问；NAME 列使用 airy_reserved_N
+#          （N 为内部编号 4-23），不使用不存在的 airy_sys_reserved_* 符号。
+#
 # 设计文档：docs/AirymaxOS/30-interfaces/01-syscalls.md §2.2
+# SSoT：include/uapi/linux/airymax/syscalls.h（三方一致性）
 #
 548	common	airy_sys_call		sys_airy_sys_call
 549	common	airy_sys_rovol_ctl		sys_airy_sys_rovol_ctl
 550	common	airy_sys_sched_ctl		sys_airy_sys_sched_ctl
 551	common	airy_sys_clt_notify		sys_airy_sys_clt_notify
+552	common	airy_reserved_4		sys_ni_syscall
+553	common	airy_reserved_5		sys_ni_syscall
+554	common	airy_reserved_6		sys_ni_syscall
+555	common	airy_reserved_7		sys_ni_syscall
+556	common	airy_reserved_8		sys_ni_syscall
+557	common	airy_reserved_9		sys_ni_syscall
+558	common	airy_reserved_10		sys_ni_syscall
+559	common	airy_reserved_11		sys_ni_syscall
+560	common	airy_reserved_12		sys_ni_syscall
+561	common	airy_reserved_13		sys_ni_syscall
+562	common	airy_reserved_14		sys_ni_syscall
+563	common	airy_reserved_15		sys_ni_syscall
+564	common	airy_reserved_16		sys_ni_syscall
+565	common	airy_reserved_17		sys_ni_syscall
+566	common	airy_reserved_18		sys_ni_syscall
+567	common	airy_reserved_19		sys_ni_syscall
+568	common	airy_reserved_20		sys_ni_syscall
+569	common	airy_reserved_21		sys_ni_syscall
+570	common	airy_reserved_22		sys_ni_syscall
+571	common	airy_reserved_23		sys_ni_syscall
 
 #
 # Due to a historical design error, certain syscalls are numbered differently

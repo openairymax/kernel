@@ -823,11 +823,17 @@ __SYSCALL(__NR_cachestat, sys_cachestat)
 #define __NR_fchmodat2 452
 __SYSCALL(__NR_fchmodat2, sys_fchmodat2)
 
-/* Airymax syscalls (548-551)
+/* Airymax syscalls (548-571: 4 core + 20 reserved)
  *
  * v1.0.1: 统一使用 548 起始，避开 x86_64 x32 历史遗留区域（512-547）。
  * 确保在 x86_64/arm64/riscv 所有架构上编号一致，实现跨架构二进制兼容。
+ *
+ * 548-551: 4 核心 syscall（capability invocation + 3 控制原语）。
+ * 552-571: 20 预留槽，登记为 sys_ni_syscall（返回 -ENOSYS），防止
+ *          未注册编号被误用；NAME 使用 airy_reserved_N（N=4..23）。
+ *
  * 设计文档：docs/AirymaxOS/30-interfaces/01-syscalls.md §2.2
+ * SSoT：include/uapi/linux/airymax/syscalls.h（三方一致性）
  * SSoT 注册表：docs/AirymaxOS/140-application-development/07-syscall-registry.md
  */
 #define __NR_airy_sys_call 548
@@ -839,8 +845,50 @@ __SYSCALL(__NR_airy_sys_sched_ctl, sys_airy_sys_sched_ctl)
 #define __NR_airy_sys_clt_notify 551
 __SYSCALL(__NR_airy_sys_clt_notify, sys_airy_sys_clt_notify)
 
+/* Airymax reserved syscall slots (552-571, internal index 4-23) */
+#define __NR_airy_reserved_4 552
+__SYSCALL(__NR_airy_reserved_4, sys_ni_syscall)
+#define __NR_airy_reserved_5 553
+__SYSCALL(__NR_airy_reserved_5, sys_ni_syscall)
+#define __NR_airy_reserved_6 554
+__SYSCALL(__NR_airy_reserved_6, sys_ni_syscall)
+#define __NR_airy_reserved_7 555
+__SYSCALL(__NR_airy_reserved_7, sys_ni_syscall)
+#define __NR_airy_reserved_8 556
+__SYSCALL(__NR_airy_reserved_8, sys_ni_syscall)
+#define __NR_airy_reserved_9 557
+__SYSCALL(__NR_airy_reserved_9, sys_ni_syscall)
+#define __NR_airy_reserved_10 558
+__SYSCALL(__NR_airy_reserved_10, sys_ni_syscall)
+#define __NR_airy_reserved_11 559
+__SYSCALL(__NR_airy_reserved_11, sys_ni_syscall)
+#define __NR_airy_reserved_12 560
+__SYSCALL(__NR_airy_reserved_12, sys_ni_syscall)
+#define __NR_airy_reserved_13 561
+__SYSCALL(__NR_airy_reserved_13, sys_ni_syscall)
+#define __NR_airy_reserved_14 562
+__SYSCALL(__NR_airy_reserved_14, sys_ni_syscall)
+#define __NR_airy_reserved_15 563
+__SYSCALL(__NR_airy_reserved_15, sys_ni_syscall)
+#define __NR_airy_reserved_16 564
+__SYSCALL(__NR_airy_reserved_16, sys_ni_syscall)
+#define __NR_airy_reserved_17 565
+__SYSCALL(__NR_airy_reserved_17, sys_ni_syscall)
+#define __NR_airy_reserved_18 566
+__SYSCALL(__NR_airy_reserved_18, sys_ni_syscall)
+#define __NR_airy_reserved_19 567
+__SYSCALL(__NR_airy_reserved_19, sys_ni_syscall)
+#define __NR_airy_reserved_20 568
+__SYSCALL(__NR_airy_reserved_20, sys_ni_syscall)
+#define __NR_airy_reserved_21 569
+__SYSCALL(__NR_airy_reserved_21, sys_ni_syscall)
+#define __NR_airy_reserved_22 570
+__SYSCALL(__NR_airy_reserved_22, sys_ni_syscall)
+#define __NR_airy_reserved_23 571
+__SYSCALL(__NR_airy_reserved_23, sys_ni_syscall)
+
 #undef __NR_syscalls
-#define __NR_syscalls 552
+#define __NR_syscalls 572
 
 /*
  * 32 bit systems traditionally used different
