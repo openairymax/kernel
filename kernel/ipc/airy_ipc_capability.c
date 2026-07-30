@@ -27,7 +27,7 @@
  * modified at runtime by sec_d (the sole writer).
  */
 static struct airy_cap_slot __airymax_cap_table[AIRY_CAP_MAX_AGENTS]
-	__aligned(64);
+	AIRY_ALIGNED(64);
 
 struct airy_cap_slot *agent_caps __ro_after_init = __airymax_cap_table;
 
