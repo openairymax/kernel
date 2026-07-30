@@ -21,7 +21,7 @@
 
 #include <linux/printk.h>
 #include <linux/sched.h>
-#include <linux/sched/types.h>
+#include <uapi/linux/sched/types.h>
 #include <linux/string.h>
 #include <linux/err.h>
 #include <linux/time.h>

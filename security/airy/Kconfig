@@ -7,6 +7,10 @@ config SECURITY_AIRY
 	bool "Airymax Pure-C LSM (Airy)"
 	depends on SECURITY
 	depends on IO_URING
+	select AIRY_IPC
+	select AIRY_COREKERN
+	select AIRY_SYSCALL
+	select AIRY_LOG
 	default n
 	help
 	  A pure-C Linux Security Module for the Airymax agent runtime.
@@ -17,6 +21,36 @@ config SECURITY_AIRY
 	  enabling formal verification and deterministic enforcement.
 
 	  If unsure, say N.
+
+config AIRY_IPC
+	bool "Airymax IPC fabric (kernel/ipc)"
+	default n
+	help
+	  Airymax IPC capability and ring-buffer support. Provides the
+	  global agent_caps[] array and airy_cap_agent_caps_init() required
+	  by the Airy LSM. Selected automatically by SECURITY_AIRY.
+
+config AIRY_COREKERN
+	bool "Airymax core-kernel enhancements (kernel/corekern)"
+	default n
+	help
+	  Airymax core-kernel subsystems: IPC fastpath, memory tiers,
+	  task lifecycle, locking, time, IRQ, object system. Selected
+	  automatically by SECURITY_AIRY.
+
+config AIRY_SYSCALL
+	bool "Airymax syscall surface (kernel/syscalls)"
+	default n
+	help
+	  Airymax system calls (548-551). Selected automatically by
+	  SECURITY_AIRY.
+
+config AIRY_LOG
+	bool "Airymax logging subsystem (kernel/log)"
+	default n
+	help
+	  Airymax unified logging and printk ring buffer. Selected
+	  automatically by SECURITY_AIRY.
 
 config AIRY_CAP_TABLE_SIZE
 	int "Airy capability table size"
