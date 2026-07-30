@@ -4,8 +4,9 @@
  *
  * airy_lsm.c — Airy Pure-C LSM: registration, hooks, and module init.
  *
- * Registers with DEFINE_LSM(airy) at LSM_ORDER_MUTABLE.  Implements five
- * core LSM hooks: uring_cmd, task_alloc, task_free, task_kill, file_open.
+ * Registers with DEFINE_LSM(airy) at LSM_ORDER_MUTABLE.  Implements seven
+ * core LSM hooks: uring_cmd, task_alloc, task_free, task_kill, file_open,
+ * inode_alloc_security, inode_free_security.
  * Read-only security data is protected with __ro_after_init.
  */
 
@@ -32,7 +33,8 @@ MODULE_PARM_DESC(airy_enabled, "Enable Airy Pure-C LSM (default: true)");
 
 /* ─── LSM blob sizes ──────────────────────────────────────────────────── */
 struct lsm_blob_sizes airy_blob_sizes __ro_after_init = {
-	.lbs_task = sizeof(struct airy_task_sec),
+	.lbs_task  = sizeof(struct airy_task_sec),
+	.lbs_inode = sizeof(struct airy_inode_sec),
 };
 
 /* ─── Hook: task_alloc — initialise agent security blob ───────────────── */
@@ -128,6 +130,27 @@ static int airy_file_open(struct file *file)
 	return 0;
 }
 
+/* ─── Hook: inode_alloc — initialise inode security blob (P1-6 fix) ───── */
+static int airy_inode_alloc(struct inode *inode)
+{
+	struct airy_inode_sec *sec;
+
+	if (!airy_enabled)
+		return 0;
+
+	sec = inode->i_security + airy_blob_sizes.lbs_inode;
+	sec->cap_required = 0;
+	sec->owner_agent  = 0;
+
+	return 0;
+}
+
+/* ─── Hook: inode_free — cleanup inode security blob (P1-6 fix) ────────── */
+static void airy_inode_free(struct inode *inode)
+{
+	/* No dynamic allocations to free; blob is inline in inode. */
+}
+
 /* ─── Hook: uring_cmd — entry point for capability-based IPC ──────────── */
 static int airy_uring_cmd(struct io_uring_cmd *ioucmd)
 {
@@ -139,11 +162,13 @@ static int airy_uring_cmd(struct io_uring_cmd *ioucmd)
 
 /* ─── Hook list ────────────────────────────────────────────────────────── */
 static struct security_hook_list airy_hooks[] __ro_after_init = {
-	LSM_HOOK_INIT(uring_cmd,  airy_uring_cmd),
-	LSM_HOOK_INIT(task_alloc, airy_task_alloc),
-	LSM_HOOK_INIT(task_free,  airy_task_free),
-	LSM_HOOK_INIT(task_kill,  airy_task_kill),
-	LSM_HOOK_INIT(file_open,  airy_file_open),
+	LSM_HOOK_INIT(uring_cmd,       airy_uring_cmd),
+	LSM_HOOK_INIT(task_alloc,      airy_task_alloc),
+	LSM_HOOK_INIT(task_free,       airy_task_free),
+	LSM_HOOK_INIT(task_kill,       airy_task_kill),
+	LSM_HOOK_INIT(file_open,       airy_file_open),
+	LSM_HOOK_INIT(inode_alloc_security, airy_inode_alloc),
+	LSM_HOOK_INIT(inode_free_security,  airy_inode_free),
 };
 
 /* ─── Module init ──────────────────────────────────────────────────────── */
