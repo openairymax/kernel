@@ -8,6 +8,12 @@
  * capability derivation operations: copy, mint, move, mutate,
  * revoke, delete, rotate.
  *
+ * MDB derivation tree (K9-1 fix): COPY/MINT/MOVE maintain a
+ * left-child right-sibling tree via parent_agent/first_child/
+ * next_sibling fields.  REVOKE cascades along this tree, providing
+ * seL4-aligned recursive revocation semantics.  COPY supports
+ * optional permission demotion when new_perms != 0 (P1-10 fix).
+ *
  * All operations are performed under the assumption that the caller
  * holds the appropriate authority (validated by the fastpath or
  * slowpath before reaching this point).
@@ -31,6 +37,85 @@ static const char *const cap_op_names[] = {
 	"COPY", "MINT", "MOVE", "MUTATE", "REVOKE", "DELETE", "ROTATE"
 };
 
+/* ─── MDB tree maintenance helpers ──────────────────────────────────── */
+
+/*
+ * Link dst as a child of src in the MDB derivation tree.
+ * Uses left-child right-sibling representation:
+ *   - If src has no first_child, dst becomes first_child.
+ *   - Otherwise, dst is prepended to the sibling chain.
+ */
+static void airy_cap_mdb_link_child(struct airy_cap_slot *src,
+				    struct airy_cap_slot *dst,
+				    __u32 src_agent, __u32 dst_agent)
+{
+	__u32 old_first_child = READ_ONCE(src->first_child);
+
+	dst->parent_agent  = src_agent;
+	dst->generation    = READ_ONCE(src->generation) + 1;
+	dst->revocable     = 1;  /* Default: parent REVOKE cascades */
+	dst->next_sibling  = old_first_child;
+	WRITE_ONCE(src->first_child, dst_agent);
+}
+
+/*
+ * Unlink agent_id from its parent's child chain (for DELETE/MOVE).
+ * Walks the sibling list starting from parent's first_child.
+ */
+static void airy_cap_mdb_unlink_child(__u32 agent_id)
+{
+	struct airy_cap_slot *slot = &agent_caps[agent_id];
+	__u32 parent_id = READ_ONCE(slot->parent_agent);
+	struct airy_cap_slot *parent;
+	__u32 cur, *prev_ptr;
+
+	if (parent_id == 0)
+		return;  /* Root node, no parent to unlink from */
+
+	parent = &agent_caps[parent_id];
+	prev_ptr = &parent->first_child;
+	cur = READ_ONCE(*prev_ptr);
+
+	while (cur != 0 && cur != agent_id) {
+		struct airy_cap_slot *cur_slot = &agent_caps[cur];
+		prev_ptr = &cur_slot->next_sibling;
+		cur = READ_ONCE(*prev_ptr);
+	}
+
+	if (cur == agent_id)
+		WRITE_ONCE(*prev_ptr, READ_ONCE(slot->next_sibling));
+
+	WRITE_ONCE(slot->parent_agent, 0);
+	WRITE_ONCE(slot->next_sibling, 0);
+}
+
+/*
+ * Recursive cascading revocation (K9-1 fix, seL4 CNode alignment).
+ * Walks the MDB derivation tree from the given agent, incrementing
+ * epoch and clearing randtag for every revocable descendant.
+ *
+ * Complexity: O(N) where N = subtree size.  Typical depth ≤ 3.
+ */
+static void airy_cap_revoke_subtree(__u32 agent_id, __u16 new_epoch)
+{
+	struct airy_cap_slot *slot = &agent_caps[agent_id];
+	__u32 child = READ_ONCE(slot->first_child);
+
+	/* Invalidate this slot */
+	WRITE_ONCE(slot->epoch, new_epoch);
+	WRITE_ONCE(slot->randtag, 0);
+
+	/* Recursively revoke all revocable children */
+	while (child != 0) {
+		struct airy_cap_slot *child_slot = &agent_caps[child];
+
+		if (READ_ONCE(child_slot->revocable))
+			airy_cap_revoke_subtree(child, new_epoch);
+
+		child = READ_ONCE(child_slot->next_sibling);
+	}
+}
+
 /* ─── airy_cap_derive ──────────────────────────────────────────────────── */
 /*
  * Dispatch capability derivation operation.
@@ -45,7 +130,7 @@ static const char *const cap_op_names[] = {
  * The entire operation runs under airy_cap_derive_lock to close the
  * TOCTOU window between slot-state checks (empty/valid) and the
  * subsequent writes. get_random_u32() and atomic_inc() are
- * non-sleeping and safe under the spinlock.
+ * non-blocking and safe under the spinlock.
  */
 int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		    enum airy_cap_op op, __u16 new_perms)
@@ -63,8 +148,8 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		op, src_agent, dst_agent, new_perms);
 
 	/* Validate source slot for all operations.  REVOKE needs the
-	 * slot to increment its per-agent epoch (K9-1 changed REVOKE
-	 * from global epoch to per-agent epoch, making src mandatory). */
+	 * slot to increment its epoch (K9-1 changed REVOKE to cascading
+	 * via MDB tree, src is the root of the revocation subtree). */
 	src = airy_cap_lookup(src_agent);
 	if (!src) {
 		pr_debug_ratelimited("airy_cap_derive: op=%s FAIL - src agent %u not found\n",
@@ -75,7 +160,7 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 	}
 
 	switch (op) {
-	/* ─── COPY ──────────────────────────────────────────────────── */
+	/* ─── COPY (optional demotion, P1-10 fix) ─────────────────── */
 	case AIRY_CAP_OP_COPY:
 		if (dst_agent >= AIRY_CAP_MAX_AGENTS) {
 			pr_debug_ratelimited("airy_cap_derive: COPY FAIL - dst %u >= MAX %u\n",
@@ -91,19 +176,35 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 			goto out;
 		}
 
-		/* Copy badge unchanged (no demotion) */
-		dst->badge    = src->badge;
+		/*
+		 * Copy badge with optional permission demotion (P1-10 fix).
+		 * new_perms == 0: clone unchanged (backward compatible)
+		 * new_perms != 0: intersect with source perms (seL4 maskCapRights)
+		 */
+		if (new_perms != 0)
+			perms = new_perms & src->perms;
+		else
+			perms = src->perms;
+
+		epoch   = AIRY_BADGE_EPOCH(src->badge);
+		randtag = (__u64)src->randtag;
+		dst->badge    = AIRY_BADGE_COMPILE(epoch, randtag, perms);
 		dst->agent_id = dst_agent;
 		dst->flags    = src->flags;
 		dst->randtag  = src->randtag;
-		dst->perms    = src->perms;
+		dst->perms    = perms;
 		dst->epoch    = src->epoch;
-		pr_debug_ratelimited("airy_cap_derive: COPY src=%u→dst=%u badge=0x%016llx epoch=%u perms=0x%04x\n",
+
+		/* MDB tree: link dst as child of src */
+		airy_cap_mdb_link_child(src, dst, src_agent, dst_agent);
+
+		pr_debug_ratelimited("airy_cap_derive: COPY src=%u→dst=%u badge=0x%016llx epoch=%u perms=0x%04x (parent=%u gen=%u)\n",
 			src_agent, dst_agent,
-			(unsigned long long)dst->badge, dst->epoch, dst->perms);
+			(unsigned long long)dst->badge, dst->epoch, dst->perms,
+			dst->parent_agent, dst->generation);
 		break;
 
-	/* ─── MINT ──────────────────────────────────────────────────── */
+	/* ─── MINT (always demotes, maintains MDB tree) ────────────── */
 	case AIRY_CAP_OP_MINT:
 		if (dst_agent >= AIRY_CAP_MAX_AGENTS) {
 			pr_debug_ratelimited("airy_cap_derive: MINT FAIL - dst %u >= MAX %u\n",
@@ -130,13 +231,17 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		dst->randtag  = src->randtag;
 		dst->perms    = perms;
 		dst->epoch    = src->epoch;
-		pr_debug_ratelimited("airy_cap_derive: MINT src=%u→dst=%u badge=0x%016llx epoch=%u perms=0x%04x (demoted from 0x%04x)\n",
+
+		/* MDB tree: link dst as child of src */
+		airy_cap_mdb_link_child(src, dst, src_agent, dst_agent);
+
+		pr_debug_ratelimited("airy_cap_derive: MINT src=%u→dst=%u badge=0x%016llx epoch=%u perms=0x%04x (demoted from 0x%04x parent=%u gen=%u)\n",
 			src_agent, dst_agent,
 			(unsigned long long)dst->badge, dst->epoch,
-			dst->perms, src->perms);
+			dst->perms, src->perms, dst->parent_agent, dst->generation);
 		break;
 
-	/* ─── MOVE ──────────────────────────────────────────────────── */
+	/* ─── MOVE (transfer + unlink from parent) ─────────────────── */
 	case AIRY_CAP_OP_MOVE:
 		if (dst_agent >= AIRY_CAP_MAX_AGENTS) {
 			pr_debug_ratelimited("airy_cap_derive: MOVE FAIL - dst %u >= MAX %u\n",
@@ -152,13 +257,21 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 			goto out;
 		}
 
-		/* Transfer badge, invalidate source */
+		/* Transfer badge */
 		dst->badge    = src->badge;
 		dst->agent_id = dst_agent;
 		dst->flags    = src->flags;
 		dst->randtag  = src->randtag;
 		dst->perms    = src->perms;
 		dst->epoch    = src->epoch;
+
+		/* MDB tree: unlink src, link dst as child of src's parent */
+		airy_cap_mdb_unlink_child(src_agent);
+		if (src->parent_agent != 0) {
+			struct airy_cap_slot *parent = &agent_caps[src->parent_agent];
+			airy_cap_mdb_link_child(parent, dst,
+						src->parent_agent, dst_agent);
+		}
 
 		/* Invalidate source slot */
 		WRITE_ONCE(src->badge, AIRY_CAP_NULL);
@@ -167,7 +280,13 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		WRITE_ONCE(src->randtag, 0);
 		WRITE_ONCE(src->perms, 0);
 		WRITE_ONCE(src->epoch, 0);
-		pr_debug_ratelimited("airy_cap_derive: MOVE src=%u→dst=%u badge=0x%016llx epoch=%u (src invalidated)\n",
+		WRITE_ONCE(src->parent_agent, 0);
+		WRITE_ONCE(src->first_child, 0);
+		WRITE_ONCE(src->next_sibling, 0);
+		WRITE_ONCE(src->generation, 0);
+		WRITE_ONCE(src->revocable, 0);
+
+		pr_debug_ratelimited("airy_cap_derive: MOVE src=%u→dst=%u badge=0x%016llx epoch=%u (src invalidated, MDB re-linked)\n",
 			src_agent, dst_agent,
 			(unsigned long long)dst->badge, dst->epoch);
 		break;
@@ -186,37 +305,50 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 			(unsigned long long)AIRY_BADGE_COMPILE(epoch, randtag, new_perms));
 		break;
 
-	/* ─── REVOKE ────────────────────────────────────────────────── */
+	/* ─── REVOKE (cascading via MDB tree, K9-1 fix) ────────────── */
 	case AIRY_CAP_OP_REVOKE:
 		/*
-		 * Per-agent epoch invalidation: incrementing only the
-		 * target slot's epoch instantly invalidates that agent's
-		 * existing badges without affecting other agents.
+		 * Cascading revocation (seL4 CNode cteRevoke alignment):
+		 * Increment epoch and clear randtag for the target slot
+		 * AND all revocable descendants in the MDB derivation tree.
+		 * This ensures that when a parent capability is revoked,
+		 * all derived capabilities are also invalidated.
+		 *
 		 * The fastpath C-S9.1 will reject any badge whose
-		 * epoch != slot epoch.
+		 * epoch != slot epoch, so all descendants' badges become
+		 * invalid immediately.
 		 */
 		{
 			__u16 old_epoch = READ_ONCE(src->epoch);
 			__u16 new_epoch_val = old_epoch + 1;
-			WRITE_ONCE(src->epoch, new_epoch_val);
-			WRITE_ONCE(src->randtag, 0);
-			pr_debug_ratelimited("airy_cap_derive: REVOKE agent=%u epoch %u→%u (all badges invalidated)\n",
+
+			airy_cap_revoke_subtree(src_agent, new_epoch_val);
+
+			pr_debug_ratelimited("airy_cap_derive: REVOKE agent=%u epoch %u→%u (cascading, all descendants invalidated)\n",
 				src_agent, old_epoch, new_epoch_val);
 		}
 		break;
 
-	/* ─── DELETE ────────────────────────────────────────────────── */
+	/* ─── DELETE (unlink from MDB tree, clear slot) ────────────── */
 	case AIRY_CAP_OP_DELETE:
-		/* Clear the source slot entirely, including epoch */
 		pr_debug_ratelimited("airy_cap_derive: DELETE agent=%u badge=0x%016llx epoch=%u (clearing slot)\n",
 			src_agent, (unsigned long long)src->badge,
 			READ_ONCE(src->epoch));
+
+		/* MDB tree: unlink from parent's child chain */
+		airy_cap_mdb_unlink_child(src_agent);
+
 		WRITE_ONCE(src->badge, AIRY_CAP_NULL);
 		WRITE_ONCE(src->agent_id, 0);
 		WRITE_ONCE(src->flags, 0);
 		WRITE_ONCE(src->randtag, 0);
 		WRITE_ONCE(src->perms, 0);
 		WRITE_ONCE(src->epoch, 0);
+		WRITE_ONCE(src->parent_agent, 0);
+		WRITE_ONCE(src->first_child, 0);
+		WRITE_ONCE(src->next_sibling, 0);
+		WRITE_ONCE(src->generation, 0);
+		WRITE_ONCE(src->revocable, 0);
 		break;
 
 	/* ─── ROTATE ────────────────────────────────────────────────── */

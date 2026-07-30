@@ -7,20 +7,41 @@
  * Maps an Airymax sched_tac policy onto a native Linux scheduling class
  * (SCHED_DEADLINE / SCHED_FIFO / SCHED_NORMAL(EEVDF) / SCHED_BATCH),
  * records the dispatch via stc_stats, logs the mapping, and applies the
- * scheduling class via sched_set_scheduler().
+ * scheduling class via sched_setattr().
+ *
+ * seL4 MCS semantic mapping (10-sc-sched-extension.md §3):
+ *   scBudget  ↔ sched_runtime   (CPU time budget per period)
+ *   scPeriod  ↔ sched_deadline  (replenishment period)
+ *
+ * THINK phase (variable-length LLM inference, 100ms–10s) maps to
+ * SCHED_NORMAL(EEVDF) with cgroup v2 cpu.max bandwidth isolation,
+ * avoiding SCHED_DEADLINE's CBS WCET assumption mismatch (K9-3 fix).
+ * PERCEPT/ACT phases (short, predictable) use SCHED_DEADLINE or SCHED_FIFO.
  */
 
 #include <linux/printk.h>
 #include <linux/sched.h>
 #include <linux/sched/types.h>
+#include <linux/string.h>
 #include <linux/err.h>
+#include <linux/time.h>
 #include <linux/airymax/sched.h>
 
 #include "stc_policy.h"
 
-/* ─── sched_set_scheduler() — declared extern, not invoked here ──────── */
-extern int sched_set_scheduler(struct task_struct *p, int policy,
-			       const struct sched_param *param);
+/* ─── sched_setattr() — kernel-internal, EXPORT_SYMBOL_GPL ──────────── */
+extern int sched_setattr(struct task_struct *p, const struct sched_attr *attr);
+
+/* ─── MCS budget/period defaults (nanoseconds) ──────────────────────────
+ * PERCEPT/ACT phases are short and predictable: 10ms budget, 100ms period.
+ * THINK phase uses EEVDF (not SCHED_DEADLINE), so DEADLINE defaults are
+ * unused for THINK.  The user-space Macro-Supervisor may override these
+ * via AIRY_SYS_SCHED_CTL (syscall 550) at runtime.
+ */
+#define AIRY_MCS_PERCEPT_BUDGET_NS    (10  * NSEC_PER_MSEC)  /* 10ms */
+#define AIRY_MCS_PERCEPT_PERIOD_NS    (100 * NSEC_PER_MSEC)  /* 100ms */
+#define AIRY_MCS_ACT_BUDGET_NS        (10  * NSEC_PER_MSEC)  /* 10ms */
+#define AIRY_MCS_ACT_PERIOD_NS        (100 * NSEC_PER_MSEC)  /* 100ms */
 
 /* ─── Map stc policy → native Linux SCHED_* policy ───────────────────── */
 static int stc_policy_to_linux(unsigned int policy)
@@ -50,14 +71,72 @@ static const char *stc_linux_policy_name(int linux_policy)
 	}
 }
 
+/* ─── Build sched_attr for the given policy ────────────────────────────
+ *
+ * Replaces the broken sched_param + sched_set_scheduler() approach.
+ * SCHED_DEADLINE requires sched_runtime/deadline/period (MCS mapping),
+ * which sched_param cannot carry — sched_setattr() + sched_attr is the
+ * only correct API (K9-3 fix).
+ */
+static int stc_build_attr(struct sched_attr *attr, unsigned int policy)
+{
+	memset(attr, 0, sizeof(*attr));
+	attr->size = sizeof(*attr);
+
+	switch (policy) {
+	case AIRY_SCHED_POLICY_DEADLINE:
+		/*
+		 * SCHED_DEADLINE with seL4 MCS semantic mapping:
+		 *   scBudget  → sched_runtime
+		 *   scPeriod  → sched_deadline = sched_period
+		 *
+		 * Used for PERCEPT/ACT phases (short, predictable).
+		 * THINK phase should use AIRY_SCHED_POLICY_EEVDF instead
+		 * to avoid CBS WCET mismatch with variable-length LLM
+		 * inference (K9-3).
+		 */
+		attr->sched_policy   = SCHED_DEADLINE;
+		attr->sched_runtime  = AIRY_MCS_PERCEPT_BUDGET_NS;
+		attr->sched_deadline = AIRY_MCS_PERCEPT_PERIOD_NS;
+		attr->sched_period   = AIRY_MCS_PERCEPT_PERIOD_NS;
+		break;
+
+	case AIRY_SCHED_POLICY_FIFO:
+		attr->sched_policy   = SCHED_FIFO;
+		attr->sched_priority = 1;  /* RT priority [1, MAX_RT_PRIO-1] */
+		break;
+
+	case AIRY_SCHED_POLICY_EEVDF:
+		/*
+		 * THINK phase: SCHED_NORMAL(EEVDF) for variable-length LLM
+		 * inference (100ms–10s).  Bandwidth isolation via cgroup v2
+		 * cpu.max is configured by the user-space Macro-Supervisor
+		 * (K9-3 fix).  EEVDF's weighted-fair scheduling naturally
+		 * handles variable-length workloads without WCET assumptions.
+		 */
+		attr->sched_policy = SCHED_NORMAL;
+		attr->sched_nice   = 0;
+		break;
+
+	case AIRY_SCHED_POLICY_BESTEFFORT:
+		attr->sched_policy = SCHED_BATCH;
+		break;
+
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 /* ─── Dispatch enqueue ───────────────────────────────────────────────── */
 int stc_dispatch_enqueue(struct task_struct *tsk, enum airy_sched_policy policy)
 {
 	unsigned int pol = (unsigned int)policy;
+	struct sched_attr attr;
 	int linux_policy;
 	int ret;
 	const char *stc_name;
-	struct sched_param param = { .sched_priority = 0 };
 
 	if (!tsk)
 		return -EINVAL;
@@ -76,17 +155,22 @@ int stc_dispatch_enqueue(struct task_struct *tsk, enum airy_sched_policy policy)
 
 	stc_stats_record_dispatch(policy);
 
-	/*
-	 * Apply the resolved scheduling class via sched_set_scheduler().
-	 * SCHED_FIFO requires a non-zero RT priority in [1, MAX_RT_PRIO-1];
-	 * all other policies (SCHED_NORMAL, SCHED_BATCH, SCHED_DEADLINE)
-	 * expect sched_priority == 0.
-	 */
-	param.sched_priority = (linux_policy == SCHED_FIFO) ? 1 : 0;
-
-	ret = sched_set_scheduler(tsk, linux_policy, &param);
+	/* Build sched_attr with seL4 MCS semantic mapping */
+	ret = stc_build_attr(&attr, pol);
 	if (ret) {
-		pr_warn_ratelimited("stc_dispatch: sched_set_scheduler(%s) failed: %d (pid=%d)\n",
+		pr_warn_ratelimited("stc_dispatch: stc_build_attr failed for policy %u\n", pol);
+		return ret;
+	}
+
+	/*
+	 * Apply the scheduling class via sched_setattr().
+	 * SCHED_DEADLINE requires sched_runtime/deadline/period (MCS mapping).
+	 * SCHED_FIFO requires sched_priority in [1, MAX_RT_PRIO-1].
+	 * SCHED_NORMAL/SCHED_BATCH expect sched_priority == 0.
+	 */
+	ret = sched_setattr(tsk, &attr);
+	if (ret) {
+		pr_warn_ratelimited("stc_dispatch: sched_setattr(%s) failed: %d (pid=%d)\n",
 				    stc_linux_policy_name(linux_policy),
 				    ret, tsk->pid);
 		return ret;

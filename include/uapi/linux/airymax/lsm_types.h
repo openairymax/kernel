@@ -42,7 +42,20 @@ struct airy_inode_sec {
 	__u32   owner_agent;      /* Owning agent ID */
 };
 
-/* ─── Capability Slot ────────────────────────────────────────────────── */
+/* ─── Capability Slot ──────────────────────────────────────────────────
+ *
+ * Layout: 80 bytes (24 base + 16 MDB + 40 reserved), AIRY_ALIGNED(64).
+ *
+ * MDB (Memory Derivation Board) fields enable cascading REVOKE via a
+ * left-child right-sibling derivation tree (seL4 CNode alignment, K9-1
+ * fix).  parent_agent/first_child/next_sibling form the tree; generation
+ * prevents circular derivation; revocable controls whether a parent's
+ * REVOKE cascades to this slot.
+ *
+ * The MDB fields were carved from the original _reserved[56] without
+ * breaking UAPI binary compatibility (IRON-001): consumers must not
+ * depend on _reserved contents.
+ */
 struct airy_cap_slot {
 	__u64   badge;            /* 64-bit Capability Folding badge */
 	__u32   agent_id;         /* Owning agent ID */
@@ -50,7 +63,13 @@ struct airy_cap_slot {
 	__u32   randtag;          /* Random tag for forgery prevention */
 	__u16   perms;            /* Permission bits */
 	__u16   epoch;            /* Per-agent epoch for O(1) targeted revocation */
-	__u8    _reserved[56];    /* Cacheline padding */
+	/* ── MDB derivation tree (cascading REVOKE, K9-1 fix) ── */
+	__u32   parent_agent;     /* Derived-from agent ID (0 = root) */
+	__u32   first_child;      /* First child agent ID (0 = leaf) */
+	__u32   next_sibling;     /* Next sibling agent ID (0 = last child) */
+	__u16   generation;       /* Derivation depth (root=0, +1 per MINT/COPY) */
+	__u16   revocable;        /* 1 = parent REVOKE cascades to this slot */
+	__u8    _reserved[40];    /* Cacheline padding (was 56, -16 for MDB) */
 } AIRY_ALIGNED(64);
 
 #define AIRY_CAP_MAX_AGENTS     1024

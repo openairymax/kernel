@@ -6,7 +6,7 @@
  *
  * Two disjoint code-spaces:
  *   Error  space (negative int32_t): recoverable errors, POSIX-compatible.
- *   Fault  space (positive uint32_t): unrecoverable faults,
+ *   Fault  space (positive __u32): unrecoverable faults,
  *          hardware/security/invariants.
  *
  * [DSL] fallback block: 38 POSIX codes active when AIRY_SC_FALLBACK is defined,
@@ -161,7 +161,7 @@ typedef __s32 airy_err_t;
  * updating docs/AirymaxOS/30-interfaces/08-sc-error-contract.md.
  */
 
-/* ─── Fault Codes (positive uint32_t) ────────────────────────────────── */
+/* ─── Fault Codes (positive __u32) ────────────────────────────────── */
 #define AIRY_FAULT_CAP_FORGED        0x1001  /* Badge forgery (security breach) */
 #define AIRY_FAULT_CAP_LEAK          0x1002  /* Capability leak detected */
 #define AIRY_FAULT_RING_CORRUPT      0x1003  /* IPC ring corruption */

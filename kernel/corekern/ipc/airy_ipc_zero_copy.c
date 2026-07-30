@@ -99,6 +99,27 @@ int airy_ipc_zero_copy_unregister(__u64 token)
 }
 
 /* ─── Map registered pages into a VMA ────────────────────────────────── */
+/*
+ * ⚠️ TOCTOU SECURITY NOTE (K9-4):
+ *
+ * vm_insert_pages() maps kernel-allocated pages into user address space.
+ * After mapping, user-space and kernel share the same physical pages.
+ * Any header fields (payload_len, opcode, agent_id) read from shared
+ * memory are subject to TOCTOU — user-space can modify them between
+ * the kernel's read and subsequent use.
+ *
+ * MITIGATION (required for M2 SEND/RECV implementation):
+ *   1. Header (128B) MUST be copy_from_user()'d to kernel stack before
+ *      any field is read or validated.
+ *   2. Payload MUST be copy_from_user()'d (or pin_user_pages + memcmp
+ *      verification) before security-sensitive processing.
+ *   3. AIRY_CAP_PERM_SEND/RECV badge check MUST use the copied header,
+ *      never the shared-memory original.
+ *
+ * Currently safe: SEND/RECV syscalls return -ENOSYS (not yet implemented).
+ * The vulnerability becomes exploitable the moment SEND/RECV is enabled
+ * without the above copy_from_user mitigations.
+ */
 int airy_ipc_zero_copy_map(struct vm_area_struct *vma, __u64 token,
 			   struct page **pages, unsigned long nr_pages)
 {

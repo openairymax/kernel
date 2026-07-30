@@ -71,6 +71,21 @@ enum airy_cap_id {
 	AIRY_CAP_ID_MAX
 };
 
+/* ─── Badge Permission Bits (16-bit perms field) ──────────────────────
+ *
+ * Used by airy_cap_badge_ok() fastpath and airy_lsm hook entry checks.
+ * Bits 0-6 are defined; bits 7-15 reserved for future use.
+ */
+#define AIRY_CAP_PERM_NONE       0x0000
+#define AIRY_CAP_PERM_SEND       0x0001  /* IPC send */
+#define AIRY_CAP_PERM_RECV       0x0002  /* IPC recv */
+#define AIRY_CAP_PERM_DERIVE     0x0004  /* Capability derivation (MINT/COPY) */
+#define AIRY_CAP_PERM_KILL       0x0008  /* Signal delivery (task_kill hook) */
+#define AIRY_CAP_PERM_FILE_OPEN  0x0010  /* File access (file_open hook) */
+#define AIRY_CAP_PERM_ROTATE     0x0020  /* Badge rotation */
+#define AIRY_CAP_PERM_SUPERVISE  0x0040  /* Micro-Supervisor authority */
+#define AIRY_CAP_PERM_ALL        0x007F  /* All defined permissions */
+
 /* ─── Cupolas 4-value Verdict ────────────────────────────────────────── */
 enum airy_verdict {
 	AIRY_VERDICT_ALLOW    = 0,   /* Allow access */

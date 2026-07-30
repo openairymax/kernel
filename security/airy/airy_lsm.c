@@ -63,47 +63,67 @@ static void airy_task_free(struct task_struct *task)
 	/* No dynamic allocations to free; capability slots are persistent. */
 }
 
-/* ─── Hook: task_kill — enforce capability KILL ───────────────────────── */
+/* ─── Hook: task_kill — enforce capability KILL (P1-4 fix: entry symmetry) */
 static int airy_task_kill(struct task_struct *p, struct kernel_siginfo *info,
 			  int sig, const struct cred *cred)
 {
 	struct airy_task_sec *sec;
+	__u64 caller_badge;
 
 	if (!airy_enabled)
 		return 0;
 
-	/*
-	 * Deny signal delivery if the calling agent is frozen or dead.
-	 * A full badge check (airy_cap_badge_ok with AIRY_CAP_PERM_*)
-	 * is deferred until per-agent kill permission bits are defined
-	 * in the [SC] capability permission space.
-	 */
 	sec = current->security + airy_blob_sizes.lbs_task;
+
+	/* Phase 1: agent_state check (retained from original) */
 	if (sec->agent_state == AIRY_AGENT_STOPPED ||
 	    sec->agent_state == AIRY_AGENT_DEAD)
 		return -EPERM;
 
+	/*
+	 * Phase 2: Badge check (P1-4 fix — symmetric with io_uring_cmd).
+	 * The calling agent must hold AIRY_CAP_PERM_KILL in its badge.
+	 * agent_id == 0 means unregistered (init/kernel thread), skip
+	 * badge check for backward compatibility.
+	 */
+	if (sec->agent_id != 0 && sec->agent_id < AIRY_CAP_MAX_AGENTS) {
+		caller_badge = READ_ONCE(agent_caps[sec->agent_id].badge);
+		if (airy_cap_badge_ok(caller_badge, sec->agent_id,
+				      AIRY_CAP_PERM_KILL))
+			return -EPERM;
+	}
+
 	return 0;
 }
 
-/* ─── Hook: file_open — capability-gated file access ──────────────────── */
+/* ─── Hook: file_open — capability-gated file access (P1-4 fix) ────────── */
 static int airy_file_open(struct file *file)
 {
 	struct airy_task_sec *sec;
+	__u64 caller_badge;
 
 	if (!airy_enabled)
 		return 0;
 
-	/*
-	 * Deny file access if the calling agent is stopped or dead.
-	 * Per-agent file access via capability lookups on the owning
-	 * task's capability space is deferred until the inode security
-	 * blob (airy_inode_sec) is wired to VFS.
-	 */
 	sec = current->security + airy_blob_sizes.lbs_task;
+
+	/* Phase 1: agent_state check (retained from original) */
 	if (sec->agent_state == AIRY_AGENT_STOPPED ||
 	    sec->agent_state == AIRY_AGENT_DEAD)
 		return -EACCES;
+
+	/*
+	 * Phase 2: Badge check (P1-4 fix — symmetric with io_uring_cmd).
+	 * The calling agent must hold AIRY_CAP_PERM_FILE_OPEN in its badge.
+	 * agent_id == 0 means unregistered (init/kernel thread), skip
+	 * badge check for backward compatibility.
+	 */
+	if (sec->agent_id != 0 && sec->agent_id < AIRY_CAP_MAX_AGENTS) {
+		caller_badge = READ_ONCE(agent_caps[sec->agent_id].badge);
+		if (airy_cap_badge_ok(caller_badge, sec->agent_id,
+				      AIRY_CAP_PERM_FILE_OPEN))
+			return -EACCES;
+	}
 
 	return 0;
 }

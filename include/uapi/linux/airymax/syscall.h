@@ -16,7 +16,7 @@
 #ifndef AIRY_SYSCALL_GEN_H
 #define AIRY_SYSCALL_GEN_H
 
-#include <stdint.h>
+#include <linux/airymax/uapi_compat.h>
 
 /* ===== 基址与槽位计数 ===== */
 #define AIRY_SYS_BASE		548  /* agentrt-linux 专用编号起始 */
@@ -85,7 +85,7 @@ AIRY_API int airy_sys_call(cap_t cap, const struct airy_ipc_msg_hdr *msg);
  * @since 1.0.1
  * @stability stable
  */
-AIRY_API int airy_sys_rovol_ctl(uint32_t op, uint32_t pid, uint64_t arg);
+AIRY_API int airy_sys_rovol_ctl(__u32 op, __u32 pid, __u64 arg);
 
 /**
  * airy_sys_sched_ctl - Scheduler control operations (sched_tac policy via
@@ -96,7 +96,7 @@ AIRY_API int airy_sys_rovol_ctl(uint32_t op, uint32_t pid, uint64_t arg);
  * @since 1.0.1
  * @stability stable
  */
-AIRY_API int airy_sys_sched_ctl(uint32_t op, const char *cgroup_path,
+AIRY_API int airy_sys_sched_ctl(__u32 op, const char *cgroup_path,
 				const char *policy);
 
 /**
@@ -108,7 +108,7 @@ AIRY_API int airy_sys_sched_ctl(uint32_t op, const char *cgroup_path,
  * @since 1.0.1
  * @stability stable
  */
-AIRY_API int airy_sys_clt_notify(int task_id, uint32_t phase);
+AIRY_API int airy_sys_clt_notify(int task_id, __u32 phase);
 
 #ifdef __cplusplus
 }

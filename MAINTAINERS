@@ -658,8 +658,8 @@ T:	git git://linuxtv.org/anttip/media_tree.git
 F:	drivers/media/usb/airspy/
 
 AIRYMAX SECURITY MODULE (Capability Folding + Micro-Supervisor)
-M:	Decheng Li <lidecheng@spharx.com>
-R:	Liren Wang <wangliren@spharx.com>
+M:	Decheng Li <lidecheng@spharx.cn>
+R:	Liren Wang <wangliren@spharx.cn>
 L:	linux-kernel@vger.kernel.org
 S:	Maintained
 F:	security/airy/
