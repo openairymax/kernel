@@ -70,7 +70,9 @@
 #define AIRY_CAP_PERM_REVOKE    0x0010  /* Revoke capabilities */
 #define AIRY_CAP_PERM_FREEZE    0x0020  /* Freeze agent */
 #define AIRY_CAP_PERM_BATCH     0x0040  /* Batch operations */
+#ifndef AIRY_CAP_PERM_ALL
 #define AIRY_CAP_PERM_ALL       (0x007Fu) /* all 7 perms */
+#endif
 #define AIRY_CAP_PERM_RESERVED  0xFF80  /* must be zero */
 
 /* ─── IPC Message Header Layout C v4 ─────────────────────────────────── */
