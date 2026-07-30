@@ -84,7 +84,9 @@ enum airy_cap_id {
 #define AIRY_CAP_PERM_FILE_OPEN  0x0010  /* File access (file_open hook) */
 #define AIRY_CAP_PERM_ROTATE     0x0020  /* Badge rotation */
 #define AIRY_CAP_PERM_SUPERVISE  0x0040  /* Micro-Supervisor authority */
+#ifndef AIRY_CAP_PERM_ALL
 #define AIRY_CAP_PERM_ALL        0x007F  /* All defined permissions */
+#endif
 
 /* ─── Cupolas 4-value Verdict ────────────────────────────────────────── */
 enum airy_verdict {
