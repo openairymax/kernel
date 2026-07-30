@@ -34,6 +34,7 @@ int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 		       const struct airy_ipc_msg_hdr *hdr);
 int airy_ipc_ring_consume(struct airy_ipc_ring *ring,
 			  struct airy_ipc_msg_hdr *out);
+int airy_ipc_cancel_badged_sends(struct airy_ipc_ring *ring, __u64 badge);
 
 /* ─── Fastpath ──────────────────────────────────────────────────────── */
 int airy_ipc_fastpath_send(struct airy_ipc_ring *ring,
