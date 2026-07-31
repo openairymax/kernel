@@ -20,3 +20,35 @@ CONFIG_ZONE_DEVICE=y
 CONFIG_TRANSPARENT_HUGEPAGE=y
 CONFIG_MEMCG=y
 CONFIG_NUMA_BALANCING=y
+
+#
+# IRON-7: override openEuler-specific core subsystem tweaks back to vanilla defaults.
+# These openEuler extensions do not exist in vanilla 6.6 and conflict with
+# agentrt-linux microkernel enhancements (sched_tac / airy_lsm / memory model).
+# Apply this fragment on top of openeuler_defconfig to neutralize them.
+#
+
+# Scheduler: disable openEuler-specific sched extensions
+# CONFIG_SCHED_CLASS_EXT is not set
+# CONFIG_SCHED_STEAL is not set
+# CONFIG_SCHED_PARAL is not set
+# CONFIG_SCHED_SOFT_QUOTA is not set
+# CONFIG_SCHED_SOFT_DOMAIN is not set
+
+# Memory cgroup: disable openEuler-specific memcg extensions (keep vanilla MEMCG=y)
+# CONFIG_MEMCG_QOS is not set
+# CONFIG_MEMCG_MEMFS_INFO is not set
+# CONFIG_MEMCG_OOM_PRIORITY is not set
+# CONFIG_MEMCG_SWAP_QOS is not set
+# CONFIG_MEMCG_KMEM_STOCK is not set
+
+# NUMA: disable openEuler-specific NUMA extensions (keep vanilla NUMA/BALANCING)
+# CONFIG_NUMA_AWARE_SPINLOCKS is not set
+# CONFIG_NUMA_EMU is not set
+# CONFIG_NUMABALANCING_MEM_SAMPLING is not set
+
+# Security: disable openEuler-specific security bypass
+# CONFIG_SECURITY_FEATURE_BYPASS is not set
+
+# LSM: keep BPF_LSM off (airy_lsm provides hook surface, not BPF-based)
+# CONFIG_BPF_LSM is not set

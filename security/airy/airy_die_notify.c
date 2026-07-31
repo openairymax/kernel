@@ -49,22 +49,31 @@ extern void airy_eventfd_signal_fault(__u32 fault_code, __u32 agent_id,
 
 /**
  * airy_die_map_fault - Map a kernel die reason to an Airy fault code.
- * @val: The die notification value (DIE_OOPS, DIE_PAGE_FAULT, etc.)
+ * @val: The die notification value (DIE_OOPS, etc.)
  *
  * Returns the corresponding AIRY_FAULT_* code, or 0 if the die reason
  * is not recognized as a fatal condition.
+ *
+ * Note: Only DIE_OOPS is portable across architectures (defined in
+ * asm-generic/kdebug.h). DIE_PAGE_FAULT, DIE_TRAP, and DIE_NMI are
+ * x86-specific (arch/x86/include/asm/kdebug.h); arm64 and sw_64 do
+ * not declare them. The x86-specific cases are guarded by
+ * IS_ENABLED(CONFIG_X86) to keep the Airy LSM portable across the
+ * three target architectures (x86/arm64/sw_64).
  */
 static __u32 airy_die_map_fault(unsigned long val)
 {
 	switch (val) {
 	case DIE_OOPS:
 		return AIRY_FAULT_VM_FAULT;        /* Kernel OOPS → VM fault */
+#if IS_ENABLED(CONFIG_X86)
 	case DIE_PAGE_FAULT:
 		return AIRY_FAULT_VM_FAULT;        /* Page fault → VM fault */
 	case DIE_TRAP:
 		return AIRY_FAULT_ABNORMAL_CAP;    /* BUG()/trap → abnormal capability */
 	case DIE_NMI:
 		return AIRY_FAULT_TIMEOUT;         /* NMI/NMI watchdog → timeout */
+#endif
 	default:
 		return 0;                          /* Not a fatal condition */
 	}
@@ -75,7 +84,7 @@ static __u32 airy_die_map_fault(unsigned long val)
 /**
  * airy_die_notifier - Die notification callback for the Airy Micro-Supervisor.
  * @nb:   The notifier block (unused).
- * @val:  The die notification value (DIE_OOPS, DIE_PAGE_FAULT, etc.)
+ * @val:  The die notification value (DIE_OOPS, etc.)
  * @data: Pointer to struct pt_regs for the faulting context.
  *
  * Maps the die reason to an AIRY_FAULT_* code, freezes the current
