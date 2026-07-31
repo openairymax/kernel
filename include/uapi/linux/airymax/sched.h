@@ -42,8 +42,13 @@ typedef __s32 airy_vtime_t;
 static inline airy_vtime_t airy_vtime_decay(airy_vtime_t vtime, __u32 weight)
 {
 	/*
-	 * EEVDF virtual time decay: vtime += slice / weight.
-	 * For precomputed tables, approximate as integer math.
+	 * User-space vtime approximation (NOT the kernel EEVDF internal
+	 * algorithm). The kernel's EEVDF uses vruntime += delta_exec *
+	 * NICE_0_LOAD / load_weight with actual execution time delta_exec;
+	 * this UAPI helper uses the default slice constant AIRY_SLICE_DFL
+	 * for precomputed table consumers that need a static estimate.
+	 * Real EEVDF scheduling happens in kernel/sched/fair.c and is not
+	 * exposed through this UAPI.
 	 */
 	return vtime + (AIRY_SLICE_DFL * AIRY_VTIME_ONE) /
 	       (weight ? weight : 1);
@@ -67,7 +72,7 @@ struct airy_task_desc {
 	__u32       sched_policy;   /* offset 40: SCHED_DEADLINE/FIFO/OTHER */
 	__u32       weight;         /* offset 44: EEVDF weight */
 	__u32       state;          /* offset 48: agent lifecycle state */
-	__u8        reserved[12];   /* offset 52: reserved */
+	__u8        _reserved[12];  /* offset 52: reserved (underscore-prefixed per OS-IRON-014 naming convention) */
 } AIRY_ALIGNED(64);
 
 _Static_assert(sizeof(struct airy_task_desc) == 64,
