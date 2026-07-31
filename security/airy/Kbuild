@@ -5,8 +5,7 @@
 
 obj-$(CONFIG_SECURITY_AIRY) += airy.o
 
-airy-y := airy_lsm.o \
-	  airy_cap_array.o \
+airy-y := airy_cap_array.o \
 	  airy_cap_derive.o \
 	  airy_cap_check.o \
 	  airy_cap_rotate.o \
@@ -14,3 +13,14 @@ airy-y := airy_lsm.o \
 	  airy_ipc_freeze.o \
 	  airy_die_notify.o \
 	  airy_eventfd.o
+
+# P1-4/P1-10 KUnit regressions.  airy_lsm_test.c #includes airy_lsm.c to
+# reach the static task_kill/file_open hooks, so the standalone airy_lsm.o
+# is dropped when tests are on to keep DEFINE_LSM(airy) single-defined.
+# airy_cap_derive_test.c links against the non-static airy_cap_derive() so
+# airy_cap_derive.o stays in the build either way.
+ifeq ($(CONFIG_AIRY_KUNIT),y)
+	airy-y += airy_lsm_test.o airy_cap_derive_test.o
+else
+	airy-y += airy_lsm.o
+endif

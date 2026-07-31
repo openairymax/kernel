@@ -6,3 +6,8 @@
 obj-y += airy_ipc.o
 
 airy_ipc-y := airy_ipc_capability.o
+
+# P1-5 KUnit regression for the AIRY_ALIGNED capability-table layout.
+# airy_ipc_capability_test.c reaches agent_caps via airy_ipc_capability.h
+# (non-static extern), so airy_ipc_capability.o stays in the link.
+airy_ipc-$(CONFIG_AIRY_KUNIT) += airy_ipc_capability_test.o

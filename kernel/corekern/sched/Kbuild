@@ -2,4 +2,14 @@
 
 obj-y += airy_ck_sched.o
 
-airy_ck_sched-y := stc_policy.o stc_dispatch.o stc_mcs_map.o stc_stats.o
+airy_ck_sched-y := stc_policy.o stc_mcs_map.o stc_stats.o
+
+# P1-1 KUnit regression.  stc_dispatch_test.c #includes stc_dispatch.c to
+# reach the static stc_policy_to_linux/stc_build_attr helpers, so the
+# standalone stc_dispatch.o is dropped when tests are on to keep
+# stc_dispatch_enqueue single-defined.
+ifeq ($(CONFIG_AIRY_KUNIT),y)
+	airy_ck_sched-y += stc_dispatch_test.o
+else
+	airy_ck_sched-y += stc_dispatch.o
+endif

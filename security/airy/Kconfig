@@ -60,3 +60,20 @@ config AIRY_CAP_TABLE_SIZE
 	help
 	  Number of capability slots in the global agent capability table.
 	  Each slot is 64 bytes. Total memory = AIRY_CAP_TABLE_SIZE * 64.
+
+config AIRY_KUNIT
+	bool "Airy KUnit regression tests" if !KUNIT_ALL_TESTS
+	depends on KUNIT
+	depends on SECURITY_AIRY
+	default KUNIT_ALL_TESTS
+	help
+	  KUnit regression tests for the Airy P1 fixes (P1-1/4/5/8/10).
+	  Builds five test objects next to the fix sites:
+	    - security/airy/airy_lsm_test.c           (P1-4 Badge validation)
+	    - security/airy/airy_cap_derive_test.c    (P1-10 COPY downgrade)
+	    - kernel/ipc/airy_ipc_capability_test.c   (P1-5 AIRY_ALIGNED layout)
+	    - kernel/corekern/ipc/airy_ipc_ring_test.c (P1-8 cancelBadgedSends)
+	    - kernel/corekern/sched/stc_dispatch_test.c (P1-1 log rate-limit)
+
+	  Each test exercises the fixed path with no functional change to
+	  production code.  Say N if unsure.
