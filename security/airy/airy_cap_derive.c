@@ -8,6 +8,20 @@
  * capability derivation operations: copy, mint, move, mutate,
  * revoke, delete, rotate.
  *
+ * Design decision — CNodeSaveCaller not implemented (P2-11):
+ * seL4 MCS mode adds an 8th operation, SaveCaller, for Reply Cap
+ * management (replaces Rotate in MCS). agentrt-linux intentionally
+ * does NOT implement SaveCaller because:
+ *   1. The v1.0.1 Capability Folding replaces Reply Cap semantics
+ *      with io_uring CQE completion (IORING_OP_URING_CMD done path),
+ *      eliminating the need for a dedicated Reply Cap slot.
+ *   2. Rotate is retained instead (non-MCS alignment) for badge
+ *      rotation under PERM_ROTATE.
+ *   3. MCS reply scopes are unnecessary in the io_uring data-plane
+ *      model where each SQE/CQE pair is self-contained.
+ * Consumers requiring Reply semantics must use io_uring completion,
+ * not a capability operation.
+ *
  * MDB derivation tree (K9-1 fix): COPY/MINT/MOVE maintain a
  * left-child right-sibling tree via parent_agent/first_child/
  * next_sibling fields.  REVOKE cascades along this tree, providing
