@@ -5,8 +5,10 @@
  * Security types — [SC] shared contract header.
  *
  * POSIX capability 44 IDs (41 standard + 3 Airymax extensions),
- * Airy LSM 5 implemented hooks (Linux 6.6 LSM framework exposes ~250
- * total slots — see lsm_types.h AIRY_LSM_KERNEL_HOOK_TOTAL),
+ * Airy LSM 7 implemented hooks (uring_cmd/task_alloc/task_free/
+ * task_kill/file_open/inode_alloc_security/inode_free_security;
+ * Linux 6.6 LSM framework exposes ~250 total slots — see
+ * lsm_types.h AIRY_LSM_KERNEL_HOOK_TOTAL),
  * Cupolas 4-value verdict, seL4 CNode 7 derivation operations,
  * and capability type definitions.
  *
