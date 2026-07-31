@@ -13,6 +13,7 @@
 #define _UAPI_AIRYMAX_IPC_H
 
 #include <linux/airymax/uapi_compat.h>
+#include <linux/airymax/security_types.h>
 
 /* ─── Constants ──────────────────────────────────────────────────────── */
 #define AIRY_IPC_MAGIC          0x41524531u /* 'ARE1' */
@@ -61,19 +62,6 @@
 #define AIRY_BADGE_EPOCH(b)   (((b) & AIRY_BADGE_EPOCH_MASK) >> AIRY_BADGE_EPOCH_SHIFT)
 #define AIRY_BADGE_RANDTAG(b) (((b) & AIRY_BADGE_RANDTAG_MASK) >> AIRY_BADGE_RANDTAG_SHIFT)
 #define AIRY_BADGE_PERMS(b)   (((b) & AIRY_BADGE_PERMS_MASK) >> AIRY_BADGE_PERMS_SHIFT)
-
-/* ─── Capability Permission Bits ─────────────────────────────────────── */
-#define AIRY_CAP_PERM_SEND      0x0001  /* Send messages */
-#define AIRY_CAP_PERM_RECV      0x0002  /* Receive messages */
-#define AIRY_CAP_PERM_CALL      0x0004  /* Call (RPC-style) */
-#define AIRY_CAP_PERM_GRANT     0x0008  /* Grant (delegate) */
-#define AIRY_CAP_PERM_REVOKE    0x0010  /* Revoke capabilities */
-#define AIRY_CAP_PERM_FREEZE    0x0020  /* Freeze agent */
-#define AIRY_CAP_PERM_BATCH     0x0040  /* Batch operations */
-#ifndef AIRY_CAP_PERM_ALL
-#define AIRY_CAP_PERM_ALL       (0x007Fu) /* all 7 perms */
-#endif
-#define AIRY_CAP_PERM_RESERVED  0xFF80  /* must be zero */
 
 /* ─── IPC Message Header Layout C v4 ─────────────────────────────────── */
 struct airy_ipc_msg_hdr {

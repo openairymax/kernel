@@ -22,7 +22,9 @@
 
 /* ─── Global Capability Array (authoritative definition) ─────────────── */
 /*
- * agent_caps — 1024 capability slots, each 128-byte cacheline-aligned.
+ * agent_caps — 1024 capability slots, each 64-byte cacheline-aligned
+ * (AIRY_ALIGNED(64); sizeof(struct airy_cap_slot) == 128 bytes due to
+ * content 80 + alignment padding to next multiple of 64).
  * The pointer itself is __ro_after_init; the pointed-to array may be
  * modified at runtime by sec_d (the sole writer).
  */

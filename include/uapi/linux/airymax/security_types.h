@@ -9,6 +9,10 @@
  * total slots — see lsm_types.h AIRY_LSM_KERNEL_HOOK_TOTAL),
  * Cupolas 4-value verdict, seL4 CNode 7 derivation operations,
  * and capability type definitions.
+ *
+ * SSoT (OS-IRON-014): this header is the single source of truth for
+ * AIRY_CAP_PERM_* permission bits. ipc.h and other consumers must
+ * include this header rather than redefining the constants.
  */
 
 #ifndef _UAPI_AIRYMAX_SECURITY_TYPES_H
@@ -87,6 +91,7 @@ enum airy_cap_id {
 #ifndef AIRY_CAP_PERM_ALL
 #define AIRY_CAP_PERM_ALL        0x007F  /* All defined permissions */
 #endif
+#define AIRY_CAP_PERM_RESERVED   0xFF80  /* Bits 7-15: must be zero (C-S10 check) */
 
 /* ─── Cupolas 4-value Verdict ────────────────────────────────────────── */
 enum airy_verdict {
