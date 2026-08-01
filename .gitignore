@@ -72,6 +72,11 @@ modules.order
 /modules.nsdeps
 
 #
+# Build logs (root-level only; keep upstream kunit test_data/*.log tracked)
+#
+/build-*.log
+
+#
 # RPM spec file (make rpm-pkg)
 #
 /kernel.spec
