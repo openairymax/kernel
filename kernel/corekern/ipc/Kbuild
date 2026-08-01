@@ -7,3 +7,8 @@ airy_ck_ipc-y := airy_ipc_ring.o airy_ipc_fastpath.o airy_ipc_zero_copy.o
 # P1-8 KUnit regression for cancelBadgedSends.  The ring entry points are
 # non-static (airy_ipc_internal.h), so airy_ipc_ring.o stays in the link.
 airy_ck_ipc-$(CONFIG_AIRY_KUNIT) += airy_ipc_ring_test.o
+
+# IPC fastpath micro-benchmark (v3.6 closure: replaces ~10ns/~158ns design
+# estimates with measured data).  Linked when CONFIG_AIRY_KUNIT=y; the suite
+# reports mean/p50/p99 via KUNIT_INFO for collection under UML or hardware.
+airy_ck_ipc-$(CONFIG_AIRY_KUNIT) += airy_fastpath_bench.o

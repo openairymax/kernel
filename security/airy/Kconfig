@@ -67,12 +67,14 @@ config AIRY_KUNIT
 	depends on SECURITY_AIRY
 	default KUNIT_ALL_TESTS
 	help
-	  KUnit regression tests for the Airy P1 fixes (P1-1/4/5/8/10).
-	  Builds five test objects next to the fix sites:
-	    - security/airy/airy_lsm_test.c           (P1-4 Badge validation)
-	    - security/airy/airy_cap_derive_test.c    (P1-10 COPY downgrade)
-	    - kernel/ipc/airy_ipc_capability_test.c   (P1-5 AIRY_ALIGNED layout)
+	  KUnit regression tests for the Airy P1 fixes (P1-1/4/5/8/10) plus the
+	  IPC fastpath micro-benchmark (v3.6 closure item: measured Badge and
+	  fastpath latency replacing design estimates).  Builds:
+	    - security/airy/airy_lsm_test.c            (P1-4 Badge validation)
+	    - security/airy/airy_cap_derive_test.c     (P1-10 COPY downgrade)
+	    - kernel/ipc/airy_ipc_capability_test.c    (P1-5 AIRY_ALIGNED layout)
 	    - kernel/corekern/ipc/airy_ipc_ring_test.c (P1-8 cancelBadgedSends)
+	    - kernel/corekern/ipc/airy_fastpath_bench.c (fastpath micro-benchmark)
 	    - kernel/corekern/sched/stc_dispatch_test.c (P1-1 log rate-limit)
 
 	  Each test exercises the fixed path with no functional change to
