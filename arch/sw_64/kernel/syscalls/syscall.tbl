@@ -526,3 +526,34 @@
 516	common	preadv2				sys_preadv2
 517	common	pwritev2			sys_pwritev2
 518	common	statx				sys_statx
+#
+# Airymax airy syscalls (548-571)
+# SSoT: include/uapi/linux/airymax/syscalls.h
+# See arch/x86/entry/syscalls/syscall_64.tbl for the canonical list.
+# 548-551 are implemented in kernel/syscalls/airy_syscalls.c; 552-571 are
+# reserved slots pinned to sys_ni_syscall to prevent third-party collisions.
+#
+548	common	airy_sys_call			sys_airy_sys_call
+549	common	airy_sys_rovol_ctl		sys_airy_sys_rovol_ctl
+550	common	airy_sys_sched_ctl		sys_airy_sys_sched_ctl
+551	common	airy_sys_clt_notify		sys_airy_sys_clt_notify
+552	common	airy_reserved_4			sys_ni_syscall
+553	common	airy_reserved_5			sys_ni_syscall
+554	common	airy_reserved_6			sys_ni_syscall
+555	common	airy_reserved_7			sys_ni_syscall
+556	common	airy_reserved_8			sys_ni_syscall
+557	common	airy_reserved_9			sys_ni_syscall
+558	common	airy_reserved_10		sys_ni_syscall
+559	common	airy_reserved_11		sys_ni_syscall
+560	common	airy_reserved_12		sys_ni_syscall
+561	common	airy_reserved_13		sys_ni_syscall
+562	common	airy_reserved_14		sys_ni_syscall
+563	common	airy_reserved_15		sys_ni_syscall
+564	common	airy_reserved_16		sys_ni_syscall
+565	common	airy_reserved_17		sys_ni_syscall
+566	common	airy_reserved_18		sys_ni_syscall
+567	common	airy_reserved_19		sys_ni_syscall
+568	common	airy_reserved_20		sys_ni_syscall
+569	common	airy_reserved_21		sys_ni_syscall
+570	common	airy_reserved_22		sys_ni_syscall
+571	common	airy_reserved_23		sys_ni_syscall
