@@ -28,7 +28,8 @@
  *     checks airy_enabled at runtime for the fast-path bypass.
  *     This two-layer design (boot registration + runtime check)
  *     allows CONFIG_SECURITY_AIRY=y builds to ship with the LSM
- *     compiled in but disabled by default (airy_enabled=false).
+ *     compiled in and enabled by default (airy_enabled=true); the
+ *     airy.enabled=0 command line disables it at boot.
  */
 
 #include <linux/lsm_hooks.h>

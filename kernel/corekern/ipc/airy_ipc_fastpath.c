@@ -1,12 +1,28 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2025-2026 SPHARx Ltd. All Rights Reserved.
+ * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
  * airy_ipc_fastpath.c — Airymax IPC fast-path send.
  *
  * Implements the hot-path send: a single unlikely() check on the ring's
  * frozen flag, then delegation to airy_ipc_ring_post().  This is the
  * fast-path entry point for AIRY_IPC_OP_SEND.
+ *
+ * ─── 唯一合法入口声明 (E12) ───────────────────────────────────────────
+ *
+ * 本函数（以及 airy_ipc_ring_post()）不是独立可用的 IPC 入口。内核态
+ * IPC 的**唯一合法入口**是 io_uring IORING_OP_URING_CMD 提交路径：
+ *
+ *   io_uring_cmd() → security_uring_cmd() LSM 钩子链
+ *     → airy_uring_cmd()（security/airy/airy_lsm.c）
+ *       → airy_uring_cmd_check() 五阶段 slowpath
+ *         （security/airy/airy_cap_check.c，Phase 1-4 含 C-S9）
+ *           → C-S9 PASS 后 → airy_ipc_fastpath_send()（本函数）
+ *
+ * 任何直接调用本函数、绕过 LSM 5-phase 校验的路径都是非法的（除
+ * [DSL] 降级模式下 capability_badge=0 的 cap_pass 语义，H6）。此声明
+ * 与 110-security/06-io-uring-hardening.md §3 的 io_uring 加固一致：
+ * fastpath 是 LSM 校验通过后的**机制执行器**，不是安全边界。
  *
  * ─── Badge Decision Path (P1-7) ──────────────────────────────────────
  *

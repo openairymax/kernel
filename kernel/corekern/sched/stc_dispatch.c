@@ -43,6 +43,25 @@ extern int sched_setattr(struct task_struct *p, const struct sched_attr *attr);
 #define AIRY_MCS_ACT_BUDGET_NS        (10  * NSEC_PER_MSEC)  /* 10ms */
 #define AIRY_MCS_ACT_PERIOD_NS        (100 * NSEC_PER_MSEC)  /* 100ms */
 
+/* ─── 机制/策略边界声明 (E6) ────────────────────────────────────────────
+ *
+ * stc_policy_to_linux() 是**纯机制**（mechanism）：仅把 Airymax 策略
+ * 编号映射为 Linux 原生调度类，不做任何调度决策——不选择策略、不
+ * 计算预算/期限、不比较优先级。对齐 seL4 "内核零策略" 哲学
+ * （ES-SEL4-04：机制与策略分离）：
+ *
+ *   - 机制（内核，本文件）：策略编号 → SCHED_* 调度类映射 + sched_attr
+ *     构造 + sched_setattr() 注入。所有可能产生副作用的决策均无。
+ *   - 策略（用户态，sched_tac）：策略类别选择（stc_realtime/
+ *     stc_interactive/stc_agent/stc_batch）、budget/period 数值、阶段
+ *     映射（PERCEPT/ACT/THINK），由用户态 sched_tac 通过
+ *     AIRY_SYS_SCHED_CTL（syscall 550）注入，经 capability 校验
+ *     （fastpath C-S9）后到达本机制层。
+ *
+ * 边界验证：内核态不存在任何策略决策代码路径；policy 参数由
+ * [SC] sched.h AIRY_SCHED_POLICY_* 枚举承载（E7：UAPI 唯一数值源）。
+ */
+
 /* ─── Map stc policy → native Linux SCHED_* policy ───────────────────── */
 static int stc_policy_to_linux(unsigned int policy)
 {

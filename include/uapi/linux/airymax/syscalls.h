@@ -28,6 +28,23 @@
 #define AIRY_SYS_RESERVED_END    571
 #define AIRY_SYS_SLOTS_MAX       24    /* 4 core + 20 reserved */
 
+/* E1: 编译期钉死槽位一致性（UAPI 常量与 SSoT 注册表三方一致） */
+AIRY_COMPILE_ASSERT(AIRY_SYS_SLOTS_MAX ==
+	(AIRY_SYS_RESERVED_END - AIRY_SYS_CALL + 1),
+	"Airymax syscall: SLOTS_MAX must equal 4 core + 20 reserved (24)");
+
+/* ─── [预留→消费] 登记机制 (E14) ──────────────────────────────────────
+ * 预留槽（552-571）消费时必须显式登记，防止编号冲突与越界。参考
+ * openEuler include/linux/kabi.h L439/L443 的 KABI_USE 式"预留→消费"
+ * 登记：消费方在此显式声明占用，编译期断言槽位在预留范围内。
+ * 完整消费清单登记于 docs/AirymaxOS/140-application-development/
+ * 07-syscall-registry.md（SSoT，编号不变性规则见 §2.3）。
+ */
+#define AIRY_SYS_RESERVED_CLAIM(num) \
+	AIRY_COMPILE_ASSERT((num) >= AIRY_SYS_RESERVED_BASE && \
+			    (num) <= AIRY_SYS_RESERVED_END, \
+			    "Airymax syscall: reserved slot claim out of range")
+
 /* ─── [DSL] Degraded Survival Layer Fallback Block ──────────────────────
  * When AIRY_SC_FALLBACK is defined, only the 4 core syscalls (548-551)
  * are available; the 20 reserved slots (552-571) are marked unavailable

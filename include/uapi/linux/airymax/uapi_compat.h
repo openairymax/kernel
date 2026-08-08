@@ -84,6 +84,29 @@
 	#define AIRY_ALIGNED(n) _Alignas(n)
 #endif
 
+/* ─── Compile-time Assertion (E1, seL4 assert.h 对齐) ────────────────────
+ *
+ * AIRY_COMPILE_ASSERT(cond, msg) — 双模式编译期契约断言，用于 [SC]
+ * 头文件中"内核-用户态常量一致性"的编译期钉死（v3.6 评审 E1，参考
+ * seL4 include/assert.h L45-69 的 static_assert 用法）。
+ *
+ * 模式选择：
+ *   C++            → static_assert（原生）
+ *   C11 及以上     → _Static_assert（GCC/Clang/MSVC 均支持）
+ *   其他（旧编译器）→ typedef 数组技巧（负数组长度触发编译错误）
+ *
+ * 与 Linux 内核 BUILD_BUG_ON 的差异：本宏用于 UAPI 共享头文件，
+ * 必须同时在内核态、Linux 用户态、macOS/Windows 用户态编译通过。
+ */
+#if defined(__cplusplus)
+	#define AIRY_COMPILE_ASSERT(cond, msg) static_assert(cond, msg)
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+	#define AIRY_COMPILE_ASSERT(cond, msg) _Static_assert(cond, msg)
+#else
+	#define AIRY_COMPILE_ASSERT(cond, msg) \
+		typedef char airy_ca_[(cond) ? 1 : -1]
+#endif
+
 /* ─── [DSL] Degraded Survival Layer Fallback Block ──────────────────────
  * When AIRY_SC_FALLBACK is defined, the three-way type bridge collapses
  * to a two-way bridge: __KERNEL__ vs non-__KERNEL__. The non-Linux

@@ -26,7 +26,13 @@
 	#define AIRY_LSM_ENABLED        0
 #endif
 
-/* Build-derived version strings */
+/* Build-derived version strings.
+ *
+ * 0.1.1 是奠基开发代号（项目工程基线，非产品版本号）；产品对外版本
+ * 统一为 v1.0.1（IRON-7：禁止 v1.0/v1.1/v1.1.1/v1.2/v2.0 中间过渡
+ * 版本）。0.1.1 作为唯一奠基版本直接过渡到 1.0.1，本宏在发布构建
+ * 中切换为 1/0/1。
+ */
 #define AIRY_BUILD_VERSION_MAJOR     0
 #define AIRY_BUILD_VERSION_MINOR     1
 #define AIRY_BUILD_VERSION_PATCH     1
