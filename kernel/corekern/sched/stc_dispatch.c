@@ -9,9 +9,10 @@
  * records the dispatch via stc_stats, logs the mapping, and applies the
  * scheduling class via sched_setattr().
  *
- * seL4 MCS semantic mapping (10-sc-sched-extension.md §3):
- *   scBudget  ↔ sched_runtime   (CPU time budget per period)
- *   scPeriod  ↔ sched_deadline  (replenishment period)
+ * seL4 MCS semantic mapping (10-sc-sched-extension.md §4.2 L255-257):
+ *   scBudget  ↔ sched_runtime   (CPU budget per period)
+ *   scRefill  ↔ sched_deadline  (replenishment deadline)
+ *   scPeriod  ↔ sched_period    (replenishment period)
  *
  * THINK phase (variable-length LLM inference, 100ms–10s) maps to
  * SCHED_NORMAL(EEVDF) with cgroup v2 cpu.max bandwidth isolation,
