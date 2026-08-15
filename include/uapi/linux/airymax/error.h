@@ -13,6 +13,11 @@
  *
  * [DSL] fallback block: 38 POSIX codes active when AIRY_SC_FALLBACK is defined,
  * mapping to 5 core codes (EINVAL, ENOMEM, EBUSY, ECANCELED, EAGAIN).
+ *
+ * 注意：本头为 [SC] 共享契约头（AirymaxOS UAPI），错误码为「正数幅值」，
+ * 调用方返回 -AIRY_E*。agentrt 用户态通用错误码权威源为
+ * commons/include/airy_types.h（POSIX errno 负值，直接返回）。
+ * 两者分属不同体系，禁止在同一编译单元混用（sc-dual-ci 校验两端逐字节一致）。
  */
 
 #ifndef _UAPI_AIRYMAX_ERROR_H

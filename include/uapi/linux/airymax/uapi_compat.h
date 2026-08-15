@@ -19,15 +19,19 @@
 #ifdef __KERNEL__
 	/* Kernel-space: use Linux kernel UAPI types */
 	#include <linux/types.h>
+	#define _AIRY_UAPI_COMPAT_TYPES_SET 1
 #elif defined(__linux__)
 	/* Linux user-space: <linux/types.h> is the authoritative source of
 	 * __u32/__u64/... types. Include it directly rather than redefining
 	 * with <stdint.h> types, which may differ in type identity (e.g. on
 	 * 64-bit, uint64_t = unsigned long vs __u64 = unsigned long long). */
 	#include <linux/types.h>
+	#include <stddef.h>   /* offsetof, used by layout _Static_asserts in [SC] headers */
+	#define _AIRY_UAPI_COMPAT_TYPES_SET 1
 #else
 	/* Non-Linux user-space (macOS, Windows): same mapping */
 	#include <stdint.h>
+	#include <stddef.h>   /* offsetof, used by layout _Static_asserts in [SC] headers */
 	typedef int32_t   __s32;
 	typedef uint32_t  __u32;
 	typedef int64_t   __s64;
@@ -36,6 +40,7 @@
 	typedef uint16_t  __u16;
 	typedef int8_t    __s8;
 	typedef uint8_t   __u8;
+	#define _AIRY_UAPI_COMPAT_TYPES_SET 1
 #endif
 
 /* ─── Struct Alignment Abstraction (OS-IRON-016 sanctioned exception) ──
@@ -67,7 +72,11 @@
  * include/uapi/linux/types.h) which expands to __attribute__((aligned(N))).
  * AirymaxOS cannot reuse __aligned(N) directly in [SC] headers because
  * macOS/Windows user-space builds do not include <linux/types.h>.
+ *
+ * 注意：与 commons/utils/compat/include/compat.h 的 AIRY_ALIGNED 同名，
+ * 用 #ifndef 保护避免跨头重复定义（2026-08-14 构建修复）。
  */
+#ifndef AIRY_ALIGNED
 #if defined(__GNUC__) || defined(__clang__)
 	#define AIRY_ALIGNED(n) __attribute__((aligned(n)))
 #elif defined(_MSC_VER)
@@ -83,6 +92,7 @@
 	 * after a type definition. This is a best-effort fallback. */
 	#define AIRY_ALIGNED(n) _Alignas(n)
 #endif
+#endif /* AIRY_ALIGNED */
 
 /* ─── Compile-time Assertion (E1, seL4 assert.h 对齐) ────────────────────
  *
@@ -119,34 +129,24 @@
 	#ifdef __KERNEL__
 		/* Kernel branch unchanged — <linux/types.h> is authoritative. */
 	#else
-		/* All user-space branches collapse to <stdint.h> mapping. */
-		#ifndef _AIRY_DSL_UAPI_COMPAT_DONE
+		/* User-space branches: if the main bridge already provided the
+		 * fixed-width types (_AIRY_UAPI_COMPAT_TYPES_SET), keep them —
+		 * re-typedefing from <stdint.h> would change type identity on
+		 * 64-bit Linux (long vs long long) and conflict (the old per-type
+		 * `#ifndef __u64` guards cannot detect typedefs, only macros).
+		 * The stdint mapping below is the fallback when types are absent. */
+		#ifndef _AIRY_UAPI_COMPAT_TYPES_SET
 			#define _AIRY_DSL_UAPI_COMPAT_DONE
 			#include <stdint.h>
-			#ifndef __s32
-				typedef int32_t   __s32;
-			#endif
-			#ifndef __u32
-				typedef uint32_t  __u32;
-			#endif
-			#ifndef __s64
-				typedef int64_t   __s64;
-			#endif
-			#ifndef __u64
-				typedef uint64_t  __u64;
-			#endif
-			#ifndef __s16
-				typedef int16_t   __s16;
-			#endif
-			#ifndef __u16
-				typedef uint16_t  __u16;
-			#endif
-			#ifndef __s8
-				typedef int8_t    __s8;
-			#endif
-			#ifndef __u8
-				typedef uint8_t   __u8;
-			#endif
+			#include <stddef.h>
+			typedef int32_t   __s32;
+			typedef uint32_t  __u32;
+			typedef int64_t   __s64;
+			typedef uint64_t  __u64;
+			typedef int16_t   __s16;
+			typedef uint16_t  __u16;
+			typedef int8_t    __s8;
+			typedef uint8_t   __u8;
 		#endif
 	#endif
 	#define AIRY_DSL_UAPI_BRANCHES  2  /* __KERNEL__ vs user-space */

@@ -23,7 +23,18 @@
 #include <linux/airymax/uapi_compat.h>
 
 /* ─── Capability Type ────────────────────────────────────────────────── */
-typedef __u64 cap_t;
+/*
+ * Airymax capabilities are represented as a 64-bit mask (__u64).
+ *
+ * Naming note: the system libcap (<sys/capability.h>) also defines `cap_t`
+ * (an opaque pointer, `typedef struct _cap_struct *cap_t`).
+ * gateway_d/ws_gateway.c pulls in libcap via <libwebsockets.h>, and a
+ * same-named type in this header would break the full build. Therefore this
+ * header uses `airy_cap_t` as the single type name and provides no `cap_t`
+ * alias (no `cap_t` references exist in the tree; an alias has no
+ * compatibility value and only introduces collision risk).
+ */
+typedef __u64 airy_cap_t;
 
 #define AIRY_CAP_NULL           0x0
 

@@ -41,7 +41,7 @@
   <syscall>
     <name>airy_sys_call</name>
     <number>0</number>
-    <signature>cap_t cap, const struct airy_ipc_msg_hdr *msg</signature>
+    <signature>airy_cap_t cap, const struct airy_ipc_msg_hdr *msg</signature>
     <flags>blocking</flags>
     <category>ipc_primitive</category>
     <since>1.0.1</since>
