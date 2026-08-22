@@ -47,7 +47,7 @@
  * to "M1 scaffolding" to align with the milestone definitions and resolve
  * the v3.5 audit P0-17 stage-claim contradiction with §15.2.
  *
- * Reference: docs-closed/agentrt-linux/00-reviews/_review_v3.5/
+ * Reference: docs-closed/agent-linux/00-reviews/_review_v3.5/
  *            07-final-independent-verification-v3.5.md §P0-17
  * ════════════════════════════════════════════════════════════════════════
  */

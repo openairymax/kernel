@@ -24,7 +24,7 @@ CONFIG_NUMA_BALANCING=y
 #
 # IRON-7: override openEuler-specific core subsystem tweaks back to vanilla defaults.
 # These openEuler extensions do not exist in vanilla 6.6 and conflict with
-# agentrt-linux microkernel enhancements (sched_tac / airy_lsm / memory model).
+# agent-linux microkernel enhancements (sched_tac / airy_lsm / memory model).
 # Apply this fragment on top of openeuler_defconfig to neutralize them.
 #
 

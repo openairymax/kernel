@@ -674,7 +674,7 @@ CONFIG_SCHEDSTATS=y
 CONFIG_STACK_TRACER=y
 
 #
-# AirymaxOS agentrt-linux microkernel enhancements
+# AirymaxOS agent-linux microkernel enhancements
 # SPDX-License-Identifier: GPL-2.0-only
 # Applied on top of openEuler sw_64 openeuler_defconfig base.
 # IRON-7: core subsystem (sched/lsm/landlock/memcg) overrides live in

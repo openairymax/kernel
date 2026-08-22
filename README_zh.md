@@ -10,7 +10,7 @@
  * 微内核化改造、目录组织、关键技术与构建方式，便于开发者快速、准确的理解极境内核的物理形态与工程取向。
  *
  * 权威源：docs/AirymaxOS/10-architecture/00-alk-kernel-overview.md (v1.0.1)
- * 对应代码：agentrt-linux/kernel/（Linux 6.6.144 LTS 完整 fork + 增量改造）
+ * 对应代码：agent-linux/kernel/（Linux 6.6.144 LTS 完整 fork + 增量改造）
 -->
 
 # Airymax Kernel 极境内核（ALK-6.6）
@@ -32,7 +32,7 @@
 
 ## 一、设计哲学
 
-极境内核不是全量改动 Linux 内核，而是"在 Linux 6.6 LTS 之上增量添加 agentrt-linux 所需的内核能力"。
+极境内核不是全量改动 Linux 内核，而是"在 Linux 6.6 LTS 之上增量添加 agent-linux 所需的内核能力"。
 
 所有 Airymax 代码必须在新增目录中，与主线源码物理隔离。
 
@@ -137,7 +137,7 @@ ALK-6.6
 > 以下仅列出 Airymax 专属代码路径。本仓是 Linux 6.6 完整内核树，其余目录（`arch/`、`block/`、`crypto/`、`drivers/`、`fs/`、`mm/`、`net/` 等）为标准上游代码，不修改。
 
 ```
-agentrt-linux/kernel/                              # Linux 6.6.144 LTS fork
+agent-linux/kernel/                              # Linux 6.6.144 LTS fork
 │
 ├── 【Linux 6.6 主线源码（不修改，OS-ARCH-001 约束）】
 │   ├── arch/  block/  certs/  crypto/  drivers/
@@ -389,7 +389,7 @@ L1-L4 四层递进记忆系统，内核态负责 CXL 内存分层、PMEM 持久�
 | 1 | **BPF 依赖与纯 C LSM 原则冲突** | sched\_ext 依赖 `BPF_SYSCALL && BPF_JIT && DEBUG_INFO_BTF`（`kernel/Kconfig.preempt:138`） |
 | 2 | **x86 默认禁用**            | `include/linux/sched.h:1663-1667` 注释明确 "SCHED\_EXT is disabled by default on x86"      |
 | 3 | **形式化验证可行性**            | BPF verifier 在调度路径的语义不确定性影响形式化验证可行性                                                    |
-| 4 | **体系一致性**               | sched\_ext 的 BPF struct\_ops 模型与 agentrt-linux 纯 C 体系不一致                               |
+| 4 | **体系一致性**               | sched\_ext 的 BPF struct\_ops 模型与 agent-linux 纯 C 体系不一致                               |
 
 ### 6.2 为什么使用纯 C LSM 而非 BPF LSM？
 
@@ -686,7 +686,7 @@ dmesg | grep -E "airy|Airymax ALK"
 
 - **治理主体**：开源极境工程与规范委员会（TSC）
 - **贡献协议**：DCO sign-off（与 Linux 一致）
-- **安全披露**：agentrt-linux-SA
+- **安全披露**：agent-linux-SA
 - **贡献指南**：CONTRIBUTING.md
 
 ***

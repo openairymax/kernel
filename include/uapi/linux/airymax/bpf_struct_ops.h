@@ -4,7 +4,7 @@
  *
  * bpf_struct_ops.h — Supplementary shared contract header (NOT a [SC]
  * core header). Defines struct_ops state machine + common_value layout
- * shared between agentrt userspace BPF loader and agentrt-linux kernel
+ * shared between agentrt userspace BPF loader and agent-linux kernel
  * struct_ops framework.
  *
  * SSoT: docs/AirymaxOS/50-engineering-standards/120-cross-project-code-sharing.md
@@ -13,7 +13,7 @@
  *
  * Physical host: kernel/include/uapi/linux/airymax/bpf_struct_ops.h
  * Sharing: physical sharing, byte-identical between agentrt and
- *          agentrt-linux (like [SC] headers but scoped to struct_ops
+ *          agent-linux (like [SC] headers but scoped to struct_ops
  *          state synchronisation).
  *
  * Design rationale: sched_tac userspace scheduler reuses this state

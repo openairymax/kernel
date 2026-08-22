@@ -4,7 +4,7 @@
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
- * agentrt-linux (AirymaxOS) Agent 专用系统调用编号定义（生成产物）
+ * agent-linux (AirymaxOS) Agent 专用系统调用编号定义（生成产物）
  *
  * 编号规则:
  *   - 起始编号 548（避开 Linux 标准 0-511 + x86_64 x32 区域 512-547）
@@ -19,7 +19,7 @@
 #include <linux/airymax/uapi_compat.h>
 
 /* ===== 基址与槽位计数 ===== */
-#define AIRY_SYS_BASE		548  /* agentrt-linux 专用编号起始 */
+#define AIRY_SYS_BASE		548  /* agent-linux 专用编号起始 */
 #define AIRY_SYS_NR_CORE	4    /* 核心 syscall 数 */
 #define AIRY_SYS_NR_RESERVED	20   /* 预留槽位数 */
 #define AIRY_SYS_NR_TOTAL	24   /* 总槽位数（548-571） */

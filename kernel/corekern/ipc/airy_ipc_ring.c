@@ -156,7 +156,7 @@ int airy_ipc_ring_consume(struct airy_ipc_ring *ring,
  * zeroing the slot's magic field; airy_ipc_ring_consume() skips slots
  * with magic == 0.
  *
- * This is the agentrt-linux equivalent of seL4's cancelBadgedSends
+ * This is the agent-linux equivalent of seL4's cancelBadgedSends
  * (endpoint.c:476-489), which removes all pending send operations on
  * an endpoint that were made with a given badge.  It is invoked when a
  * badge is revoked (airy_cap_derive REVOKE) to ensure that messages

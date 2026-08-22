@@ -10,7 +10,7 @@
  *
  * Design decision — CNodeSaveCaller not implemented (P2-11):
  * seL4 MCS mode adds an 8th operation, SaveCaller, for Reply Cap
- * management (replaces Rotate in MCS). agentrt-linux intentionally
+ * management (replaces Rotate in MCS). agent-linux intentionally
  * does NOT implement SaveCaller because:
  *   1. The v1.0.1 Capability Folding replaces Reply Cap semantics
  *      with io_uring CQE completion (IORING_OP_URING_CMD done path),

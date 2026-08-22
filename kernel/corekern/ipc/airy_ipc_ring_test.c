@@ -4,7 +4,7 @@
  *
  * airy_ipc_ring_test.c — KUnit regression for the P1-8 cancelBadgedSends fix.
  *
- * P1-8 implemented airy_ipc_cancel_badged_sends(): the agentrt-linux
+ * P1-8 implemented airy_ipc_cancel_badged_sends(): the agent-linux
  * analogue of seL4's cancelBadgedSends (endpoint.c:476-489).  It walks
  * the pending region of an SPSC ring and zeroes the magic field of every
  * slot whose capability_badge matches, so airy_ipc_ring_consume() skips
