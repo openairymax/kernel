@@ -9,7 +9,7 @@
  * 不同，本文档系统性地介绍 Airymax 在 Linux 6.6.144 LTS 之上进行的
  * 微内核化改造、目录组织、关键技术与构建方式，便于开发者快速、准确的理解极境内核的物理形态与工程取向。
  *
- * 权威源：docs/AirymaxOS/10-architecture/00-alk-kernel-overview.md (v1.0.1)
+ * 权威源：docs/docs-linux/10-architecture/00-alk-kernel-overview.md (v1.0.1)
  * 对应代码：agent-linux/kernel/（Linux 6.6.144 LTS 完整 fork + 增量改造）
 -->
 
@@ -602,57 +602,57 @@ dmesg | grep -E "airy|Airymax ALK"
 
 ## 十二、配套设计文档
 
-极境内核的完整设计文档位于 `docs/AirymaxOS/`，以下是关键文档索引：
+极境内核的完整设计文档位于 `docs/docs-linux/`，以下是关键文档索引：
 
 ### 12.1 架构与原则
 
 | 文档     | 路径                                                          | 说明                                    |
 | ------ | ----------------------------------------------------------- | ------------------------------------- |
-| 极境内核总览 | `docs/AirymaxOS/10-architecture/00-alk-kernel-overview.md`  | **SSoT 权威源**，物理形态、改造方式、6 大改造点、4 大技术支柱 |
-| 系统架构   | `docs/AirymaxOS/10-architecture/01-system-architecture.md`  | 8 子仓架构总览                              |
-| 微内核策略  | `docs/AirymaxOS/10-architecture/03-microkernel-strategy.md` | seL4 思想借鉴与实践落地                        |
-| 工程基线   | `docs/AirymaxOS/10-architecture/04-engineering-baseline.md` | Linux 6.6 基线 + Linux 7.1 前瞻性预留        |
-| 架构决策记录 | `docs/AirymaxOS/10-architecture/05-adrs.md`                 | ADR-001 \~ ADR-017                    |
+| 极境内核总览 | `docs/docs-linux/10-architecture/00-alk-kernel-overview.md`  | **SSoT 权威源**，物理形态、改造方式、6 大改造点、4 大技术支柱 |
+| 系统架构   | `docs/docs-linux/10-architecture/01-system-architecture.md`  | 8 子仓架构总览                              |
+| 微内核策略  | `docs/docs-linux/10-architecture/03-microkernel-strategy.md` | seL4 思想借鉴与实践落地                        |
+| 工程基线   | `docs/docs-linux/10-architecture/04-engineering-baseline.md` | Linux 6.6 基线 + Linux 7.1 前瞻性预留        |
+| 架构决策记录 | `docs/docs-linux/10-architecture/05-adrs.md`                 | ADR-001 \~ ADR-017                    |
 
 ### 12.2 内核模块设计
 
 | 文档               | 路径                                                        | 说明                 |
 | ---------------- | --------------------------------------------------------- | ------------------ |
-| 内核设计             | `docs/AirymaxOS/20-modules/01-kernel.md`                  | **核心文档**——内核子仓完整设计 |
-| Micro-Supervisor | `docs/AirymaxOS/20-modules/09-kernel-agent-supervisor.md` | 冷酷执法机制             |
-| Macro-Supervisor | `docs/AirymaxOS/20-modules/10-user-supervisor-daemon.md`  | 温情裁决机制             |
+| 内核设计             | `docs/docs-linux/20-modules/01-kernel.md`                  | **核心文档**——内核子仓完整设计 |
+| Micro-Supervisor | `docs/docs-linux/20-modules/09-kernel-agent-supervisor.md` | 冷酷执法机制             |
+| Macro-Supervisor | `docs/docs-linux/20-modules/10-user-supervisor-daemon.md`  | 温情裁决机制             |
 
 ### 12.3 接口与数据流
 
 | 文档     | 路径                                                      | 说明                                     |
 | ------ | ------------------------------------------------------- | -------------------------------------- |
-| 系统调用接口 | `docs/AirymaxOS/30-interfaces/01-syscalls.md`           | syscall 分类/编号/C 接口/错误码                 |
-| IPC 协议 | `docs/AirymaxOS/30-interfaces/02-ipc-protocol.md`       | 128B 消息头 + 5 种 payload + io\_uring 零拷贝 |
-| 调度扩展   | `docs/AirymaxOS/30-interfaces/10-sc-sched-extension.md` | sched\_tac 定义                          |
+| 系统调用接口 | `docs/docs-linux/30-interfaces/01-syscalls.md`           | syscall 分类/编号/C 接口/错误码                 |
+| IPC 协议 | `docs/docs-linux/30-interfaces/02-ipc-protocol.md`       | 128B 消息头 + 5 种 payload + io\_uring 零拷贝 |
+| 调度扩展   | `docs/docs-linux/30-interfaces/10-sc-sched-extension.md` | sched\_tac 定义                          |
 
 ### 12.4 安全
 
 | 文档            | 路径                                                     | 说明                      |
 | ------------- | ------------------------------------------------------ | ----------------------- |
-| Capability 模型 | `docs/AirymaxOS/110-security/03-capability-model.md`   | seL4 风格 Capability 完整设计 |
-| 纯 C LSM 设计    | `docs/AirymaxOS/110-security/07-airy-lsm-design.md`    | 10 钩子覆盖 + 250 钩子枚举      |
-| io\_uring 加固  | `docs/AirymaxOS/110-security/06-io-uring-hardening.md` | opcode 白名单              |
+| Capability 模型 | `docs/docs-linux/110-security/03-capability-model.md`   | seL4 风格 Capability 完整设计 |
+| 纯 C LSM 设计    | `docs/docs-linux/110-security/07-airy-lsm-design.md`    | 10 钩子覆盖 + 250 钩子枚举      |
+| io\_uring 加固  | `docs/docs-linux/110-security/06-io-uring-hardening.md` | opcode 白名单              |
 
 ### 12.5 工程规范
 
 | 文档     | 路径                                                                             | 说明                               |
 | ------ | ------------------------------------------------------------------------------ | -------------------------------- |
-| 工程标准手册 | `docs/AirymaxOS/50-engineering-standards/00-engineering-standards-handbook.md` | SSoT 规则注册表；IRON-9 v3；禁词清单        |
-| 编码规范   | `docs/AirymaxOS/50-engineering-standards/01-coding-standards.md`               | C/Rust 编码规范；安全编码                 |
-| 契约总览   | `docs/AirymaxOS/50-engineering-standards/20-contracts/README.md`               | \[SC]/\[SS]/\[IND]/\[DSL] 四层契约模型 |
+| 工程标准手册 | `docs/docs-linux/50-engineering-standards/00-engineering-standards-handbook.md` | SSoT 规则注册表；IRON-9 v3；禁词清单        |
+| 编码规范   | `docs/docs-linux/50-engineering-standards/01-coding-standards.md`               | C/Rust 编码规范；安全编码                 |
+| 契约总览   | `docs/docs-linux/50-engineering-standards/20-contracts/README.md`               | \[SC]/\[SS]/\[IND]/\[DSL] 四层契约模型 |
 
 ### 12.6 性能与测试
 
 | 文档     | 路径                                                            | 说明                                        |
 | ------ | ------------------------------------------------------------- | ----------------------------------------- |
-| 调度性能   | `docs/AirymaxOS/170-performance/01-scheduling-performance.md` | sched\_tac 性能基准（60-150ns）与 P99 < 50μs SLA |
-| IPC 性能 | `docs/AirymaxOS/170-performance/03-ipc-performance.md`        | io\_uring 零拷贝延迟 ≤ 50ns / 吞吐 ≥ 10M msg/s   |
-| 测试框架   | `docs/AirymaxOS/80-testing/01-kunit-framework.md`             | KUnit 内核单元测试                              |
+| 调度性能   | `docs/docs-linux/170-performance/01-scheduling-performance.md` | sched\_tac 性能基准（60-150ns）与 P99 < 50μs SLA |
+| IPC 性能 | `docs/docs-linux/170-performance/03-ipc-performance.md`        | io\_uring 零拷贝延迟 ≤ 50ns / 吞吐 ≥ 10M msg/s   |
+| 测试框架   | `docs/docs-linux/80-testing/01-kunit-framework.md`             | KUnit 内核单元测试                              |
 
 ***
 
@@ -693,7 +693,7 @@ dmesg | grep -E "airy|Airymax ALK"
 
 **文档版本**：v1.0.1（开发版）\
 **最后更新**：2026-07-22\
-**设计文档**：[docs/AirymaxOS/](../docs/AirymaxOS/)\
+**设计文档**：[docs/docs-linux/](../docs/docs-linux/)\
 **文档编写**：开源极境工程与规范委员会
 
 Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
