@@ -96,7 +96,7 @@ ALK-6.6
   + 新增 [SC] 共享契约层 10 个 UAPI 头文件
   + 新增 security/airy/ 纯 C LSM 模块（14 文件）
   + 新增 kernel/superv/ Micro-Supervisor 内核模块（6 文件）
-  + 新增 kernel/syscalls/ 4 个 Airymax syscall（编号 454-457）
+  + 新增 kernel/syscalls/ 4 个 Airymax syscall（编号 548-551）
   + 新增 kernel/corekern/ 微核心抽象层（10 子目录，22 文件）
   + 新增 kernel/log/ A-ULP 内核侧（4 文件）
   + 新增 kernel/ipc/ A-IPC 内核基础设施（4 文件）
@@ -117,18 +117,18 @@ ALK-6.6
 | 2  | `include/airymax/`                            | 不存在             | 新增 2 内部类型                 |         否        |
 | 3  | `security/airy/`                              | 不存在             | 新增 14 文件纯 C LSM           |         否        |
 | 4  | `kernel/superv/`                              | 不存在             | 新增 6 文件 Micro-Supervisor  |         否        |
-| 5  | `kernel/syscalls/airy_syscalls.c`             | 不存在             | 新增 4 syscall（454-457）     |         否        |
+| 5  | `kernel/syscalls/airy_syscalls.c`             | 不存在             | 新增 4 syscall（548-551）     |         否        |
 | 6  | `kernel/corekern/`                            | 不存在             | 新增 10 子目录 22 文件微核心抽象层     |         否        |
 | 7  | `kernel/log/`                                 | 不存在             | 新增 4 文件 A-ULP 内核侧         |         否        |
 | 8  | `kernel/ipc/`                                 | 不存在             | 新增 4 文件 A-IPC 内核基础设施      |         否        |
 | 9  | `configs/`                                    | 不存在             | 新增 4 fragment             |         否        |
 | 10 | `arch/*/configs/airy_defconfig`               | 不存在             | 新增 4 架构 defconfig         |         否        |
-| 11 | `include/uapi/asm-generic/unistd.h`           | vanilla 原样      | 扩展 4 syscall 编号 454-457   | **是**（仅扩展，不修改已有） |
+| 11 | `include/uapi/asm-generic/unistd.h`           | vanilla 原样      | 扩展 4 syscall 编号 548-551   | **是**（仅扩展，不修改已有） |
 | 12 | `kernel/`、`mm/`、`net/`、`drivers/` 等           | vanilla 原样      | 不修改                       |         否        |
 | 13 | `security/selinux/`、`apparmor/`、`landlock/` 等 | vanilla 原样      | 不修改                       |         否        |
 | 14 | `io_uring/`                                   | vanilla 原样      | 复用 IORING\_OP\_URING\_CMD |         否        |
 
-**唯一的主线文件扩展**：`include/uapi/asm-generic/unistd.h` 新增 4 个 syscall 编号条目（454-457，避开 x32 历史占用区间 512-547），不修改已有条目。这是 Linux 内核标准的 syscall 注册方式，符合上游规范。
+**唯一的主线文件扩展**：`include/uapi/asm-generic/unistd.h` 新增 4 个 syscall 编号条目（548-551，避开 x32 历史占用区间 512-547），不修改已有条目。这是 Linux 内核标准的 syscall 注册方式，符合上游规范。
 
 ***
 
@@ -235,7 +235,7 @@ agent-linux/kernel/                              # Linux 6.6.144 LTS fork
 │   │   ├── airy_ipc_capability.h                  #   slowpath 包装声明，引用 security/airy/airy_cap.h
 │   │   └── airy_ipc_capability.c                  #   权威定义 agent_caps[] + airy_cap_global_epoch
 │   │
-│   ├── kernel/syscalls/                           # ★ 4 新增 syscall（454-457）
+│   ├── kernel/syscalls/                           # ★ 4 新增 syscall（548-551）
 │   │   └── airy_syscalls.c                        #   airy_sys_call + airy_sys_rovol_ctl
 │   │                                              #   + airy_sys_sched_ctl + airy_sys_clt_notify
 │   │
@@ -333,13 +333,13 @@ agent-linux/kernel/                              # Linux 6.6.144 LTS fork
 
 | 编号      | syscall               | 独占 Daemon | 功能                                                             |
 | ------- | --------------------- | --------- | -------------------------------------------------------------- |
-| 454     | `airy_sys_call`       | sec\_d    | Capability Invocation 总入口——Badge 编译/撤销 + LSM\_ctl + Wasm\_load |
-| 455     | `airy_sys_rovol_ctl`  | mem\_d    | 记忆卷载控制                                                         |
-| 456     | `airy_sys_sched_ctl`  | sched\_d  | 调度策略配置                                                         |
-| 457     | `airy_sys_clt_notify` | cogn\_d   | CoreLoopThree 通知 + kthread 注册                                  |
-| 458-477 | —                     | —         | 预留                                                             |
+| 548     | `airy_sys_call`       | sec\_d    | Capability Invocation 总入口——Badge 编译/撤销 + LSM\_ctl + Wasm\_load |
+| 549     | `airy_sys_rovol_ctl`  | mem\_d    | 记忆卷载控制                                                         |
+| 550     | `airy_sys_sched_ctl`  | sched\_d  | 调度策略配置                                                         |
+| 551     | `airy_sys_clt_notify` | cogn\_d   | CoreLoopThree 通知 + kthread 注册                                  |
+| 552-571 | —                     | —         | 预留                                                             |
 
-**编号选择理由**：避开 x32 历史占用区间 512-547，选用 454-457 空闲编号。
+**编号选择理由**：避开 x32 历史占用区间 512-547，选用 548-551 空闲编号。
 
 ### 5.5 记忆卷载（MemoryRovol）内核态
 
@@ -358,10 +358,10 @@ L1-L4 四层递进记忆系统，内核态负责 CXL 内存分层、PMEM 持久�
 
 | Daemon     | 职责                                       | 内核切入点                                    | syscall                        |
 | ---------- | ---------------------------------------- | ---------------------------------------- | ------------------------------ |
-| sec\_d     | Capability 编译/撤销 + Badge 生命周期            | `agent_caps[1024]` 静态数组写者 + `airy_lsm.c` | `airy_sys_call`（454）           |
-| cogn\_d    | 认知循环调度（CoreLoopThree: PERCEPT→THINK→ACT） | kthread 注册 + 阶段通知                        | `airy_sys_clt_notify`（457）     |
-| mem\_d     | 记忆卷载管理（快照/恢复/迁移）                         | userfaultfd + MGLRU + CXL bus            | `airy_sys_rovol_ctl`（455）      |
-| sched\_d   | sched\_tac 策略守护                          | sched\_tac 策略框架 + cgroup cpuset          | `airy_sys_sched_ctl`（456）      |
+| sec\_d     | Capability 编译/撤销 + Badge 生命周期            | `agent_caps[1024]` 静态数组写者 + `airy_lsm.c` | `airy_sys_call`（548）           |
+| cogn\_d    | 认知循环调度（CoreLoopThree: PERCEPT→THINK→ACT） | kthread 注册 + 阶段通知                        | `airy_sys_clt_notify`（551）     |
+| mem\_d     | 记忆卷载管理（快照/恢复/迁移）                         | userfaultfd + MGLRU + CXL bus            | `airy_sys_rovol_ctl`（549）      |
+| sched\_d   | sched\_tac 策略守护                          | sched\_tac 策略框架 + cgroup cpuset          | `airy_sys_sched_ctl`（550）      |
 | logger\_d  | 统一日志（128B 记录 + 5 级枚举）                    | printk bridge + char dev `/dev/airy_log` | char dev + \[SC] `log_types.h` |
 | audit\_d   | 审计哈希链                                    | eBPF ringbuf 上报审计事件                      | eBPF ringbuf + kfunc           |
 | gateway\_d | 跨节点 IPC                                  | io\_uring ring + 网络栈                     | io\_uring + gRPC/QUIC          |
