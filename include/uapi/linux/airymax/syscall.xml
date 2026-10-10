@@ -3,7 +3,7 @@
   syscall.xml — agent-linux 系统调用契约源（R-01 SSoT）
   物理宿主: include/uapi/linux/airymax/syscall.xml
   生成器:   tools/codegen/syscall_gen.py
-  禁止手工修改生成产物: include/uapi/linux/airymax/syscall.h 等
+  禁止手工修改生成产物: include/uapi/linux/airymax/syscall_gen.h 等
 
   SPDX-License-Identifier: GPL-2.0
   Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
