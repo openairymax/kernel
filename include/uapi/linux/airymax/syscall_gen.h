@@ -17,6 +17,8 @@
 #define AIRY_SYSCALL_GEN_H
 
 #include <linux/airymax/uapi_compat.h>
+#include <linux/airymax/ipc.h>
+#include <linux/airymax/security_types.h>
 
 /* ===== 基址与槽位计数 ===== */
 #define AIRY_SYS_BASE		548  /* agent-linux 专用编号起始 */
