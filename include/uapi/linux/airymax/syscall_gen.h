@@ -114,4 +114,20 @@ AIRY_API int airy_sys_clt_notify(int task_id, __u32 phase);
 }
 #endif
 
+/* ─── [DSL] Degraded Survival Layer Fallback Block ──────────────────────
+ * When AIRY_SC_FALLBACK is defined, only the 4 core syscalls
+ * (548-551) remain available; the 20 reserved slots
+ * (552-571) are unavailable (-1) and must not be claimed.
+ * The IDX/__NR macro values are compile-time constants and stay unchanged;
+ * the alias set below lets callers detect fallback at compile time.
+ * See [DSL] §2.2 (v1.0.1: 12→4 syscalls) and the SSoT form in [SC] syscalls.h.
+ */
+#ifdef AIRY_SC_FALLBACK
+	/* Only the 4 core syscalls (548-551) are retained. */
+	#define AIRY_DSL_SYSGEN_SLOTS_MAX    4      /* 4 core + 0 reserved */
+	#define AIRY_DSL_SYSGEN_RESERVED     (-1)   /* reserved slots unavailable */
+
+	#warning "AIRY_SC_FALLBACK active: syscall_gen.h degraded to 4 core syscalls (548-551), 20 reserved slots unavailable"
+#endif /* AIRY_SC_FALLBACK */
+
 #endif /* AIRY_SYSCALL_GEN_H */
