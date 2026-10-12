@@ -31,7 +31,7 @@
 #define AIRY_IPC_OP_CAP_RESPONSE 0x0011 /* Capability response */
 
 /* ─── IPC Flags ────────────────────────────────────────────────────────
- * SSoT: docs/AirymaxOS/30-interfaces/02-ipc-protocol.md §3.1
+ * SSoT: docs/docs-linux/30-interfaces/02-ipc-protocol.md §3.1
  *
  * Bit assignment (16-bit __u16 flags field at offset 6):
  *   bits 0-4:   active flags (5 defined)
