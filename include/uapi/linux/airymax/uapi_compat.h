@@ -17,8 +17,14 @@
 #define _UAPI_AIRYMAX_UAPI_COMPAT_H
 
 #ifdef __KERNEL__
-	/* Kernel-space: use Linux kernel UAPI types */
+	/* Kernel-space: <linux/types.h> supplies the __u32/__u64/... types and
+	 * <linux/stddef.h> supplies offsetof() for the layout assertions that
+	 * the [SC] contract headers carry. Kbuild searches include/ before
+	 * include/uapi/, so <linux/stddef.h> resolves to the kernel-internal
+	 * definition (not the UAPI stub), which is the only offsetof provider
+	 * available under -nostdinc. */
 	#include <linux/types.h>
+	#include <linux/stddef.h>   /* offsetof, used by layout _Static_asserts in [SC] headers */
 	#define _AIRY_UAPI_COMPAT_TYPES_SET 1
 #elif defined(__linux__)
 	/* Linux user-space: <linux/types.h> is the authoritative source of
