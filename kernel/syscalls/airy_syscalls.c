@@ -75,7 +75,7 @@
  * range) is performed as a lightweight contract check. Justified by
  * OS-IRON-004 progressive development; not an IRON-2 violation.
  */
-SYSCALL_DEFINE2(airy_sys_call, cap_t, cap,
+SYSCALL_DEFINE2(airy_sys_call, airy_cap_t, cap,
 		const struct airy_ipc_msg_hdr __user *, msg)
 {
 	struct airy_ipc_msg_hdr hdr;
