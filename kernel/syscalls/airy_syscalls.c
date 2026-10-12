@@ -17,7 +17,7 @@
  * Project stage: M0 design phase + M1 [SC] header scaffolding
  *                (per docs/AirymaxOS/20-modules/01-kernel.md §15.1)
  *
- * All four syscalls (548-551) return -ENOSYS for every opcode branch.
+ * All four syscalls (548-551) return -ENOSYS for every valid opcode.
  * This is NOT a violation of IRON-2 (禁止桩函数桩文件):
  *
  *   - IRON-2 forbids hidden stubs that masquerade as real implementations.
@@ -30,6 +30,10 @@
  *     phase range, op != 0, pointer nullity) is performed as a
  *     lightweight contract check so callers receive -EINVAL/-EFAULT
  *     for malformed requests instead of -ENOSYS.
+ *   - Syscall 548 additionally walks the real control-plane entry
+ *     airy_invoke_dispatch(): it validates the opcode contract and
+ *     authenticates the badge via airy_cap_badge_ok() against the
+ *     caller's identity derived from current (OS-KER-225).
  *
  * The -ENOSYS contract is justified by OS-IRON-004 (渐进式开发，补丁自
  * 包含): every intermediate point of the patch series must be compilable
@@ -55,6 +59,8 @@
 #include <linux/syscalls.h>
 #include <linux/uaccess.h>
 #include <linux/sched.h>
+#include <linux/lsm_hooks.h>
+
 #include <linux/airymax/ipc.h>
 #include <linux/airymax/syscalls.h>
 #include <linux/airymax/sched.h>
@@ -62,18 +68,100 @@
 #include <linux/airymax/cognition_types.h>
 #include <linux/airymax/error.h>
 
+#include "../../security/airy/airy_cap.h"
+#include "airy_invoke.h"
+
 /*
- * SYSCALL 548: airy_sys_call — IPC send/recv entry point.
- * @cap: Capability badge for authentication.
+ * airy_invoke_op_valid — test whether an opcode is dispatchable.
+ * @opcode: IPC opcode from the [SC] AIRY_IPC_OP_* space.
+ *
+ * Returns true only for opcodes that belong to the syscall 548
+ * control-plane dispatch set. Unknown opcodes must be rejected with
+ * -EINVAL before any state is touched (OS-KER-225).
+ */
+bool airy_invoke_op_valid(u16 opcode)
+{
+	switch (opcode) {
+	case AIRY_IPC_OP_SEND:
+	case AIRY_IPC_OP_RECV:
+	case AIRY_IPC_OP_SEND_BATCH:
+	case AIRY_IPC_OP_CANCEL:
+	case AIRY_IPC_OP_FREEZE:
+	case AIRY_IPC_OP_CAP_REQUEST:
+	case AIRY_IPC_OP_CAP_RESPONSE:
+		return true;
+	default:
+		return false;
+	}
+}
+
+/*
+ * airy_invoke_dispatch — validate and dispatch a syscall 548 request.
+ * @cap: Capability badge presented by the caller.
+ * @msg: Kernel-resident copy of the caller message header.
+ *
+ * Validates the opcode contract and authenticates @cap against the
+ * caller's own capability slot. The agent_id is derived from current —
+ * never from the caller-supplied msg->src_task/dst_task, which are
+ * untrusted — so a forged header cannot impersonate another agent.
+ * Only badge authenticity is checked here; per-operation permissions
+ * are the responsibility of the individual handler.
+ */
+__must_check int airy_invoke_dispatch(airy_cap_t cap,
+				      const struct airy_ipc_msg_hdr *msg)
+{
+	struct airy_task_sec *sec;
+	__u32 agent_id;
+	int ret;
+
+	if (unlikely(!msg))
+		return -EINVAL;
+
+	if (unlikely(!airy_invoke_op_valid(msg->opcode)))
+		return -EINVAL;
+
+	sec = current->security + airy_blob_sizes.lbs_task;
+	agent_id = READ_ONCE(sec->agent_id);
+
+	ret = airy_cap_badge_ok(cap, agent_id, AIRY_CAP_PERM_NONE);
+	if (unlikely(ret))
+		return ret;
+
+	switch (msg->opcode) {
+	case AIRY_IPC_OP_SEND:
+	case AIRY_IPC_OP_SEND_BATCH:
+		/* IPC send path — M2 handler pending */
+		return -ENOSYS;
+	case AIRY_IPC_OP_RECV:
+		/* IPC receive path — M2 handler pending */
+		return -ENOSYS;
+	case AIRY_IPC_OP_CANCEL:
+		/* Cancel pending IPC operation — M2 handler pending */
+		return -ENOSYS;
+	case AIRY_IPC_OP_FREEZE:
+		/* Freeze IPC ring — supervisor-only, M2 handler pending */
+		return -ENOSYS;
+	case AIRY_IPC_OP_CAP_REQUEST:
+	case AIRY_IPC_OP_CAP_RESPONSE:
+		/* Capability bootstrap — handled via io_uring_cmd, M2 pending */
+		return -ENOSYS;
+	default:
+		return -EINVAL;
+	}
+}
+
+/*
+ * SYSCALL 548: airy_sys_call — control-plane management entry.
+ * @cap: Capability badge authenticating the caller (sec_d).
  * @msg: User-space pointer to a struct airy_ipc_msg_hdr.
  *
- * The Micro-Supervisor validates the capability badge via
- * airy_cap_badge_ok() before allowing the IPC operation.
+ * The user header is copied in and its magic verified here; the
+ * opcode contract and the capability badge are then validated by
+ * airy_invoke_dispatch() (OS-KER-225: validation precedes mutation).
  *
- * M1 scaffolding: returns -ENOSYS for all opcodes pending M2 io_uring
- * IPC data-plane integration. Parameter validation (cap/magic/opcode
- * range) is performed as a lightweight contract check. Justified by
- * OS-IRON-004 progressive development; not an IRON-2 violation.
+ * M1 scaffolding: valid opcodes still return -ENOSYS pending M2
+ * handler landings. Justified by OS-IRON-004 progressive development;
+ * not an IRON-2 violation.
  */
 SYSCALL_DEFINE2(airy_sys_call, airy_cap_t, cap,
 		const struct airy_ipc_msg_hdr __user *, msg)
@@ -100,33 +188,7 @@ SYSCALL_DEFINE2(airy_sys_call, airy_cap_t, cap,
 	if (hdr.magic != AIRY_IPC_MAGIC)
 		return -EINVAL;
 
-	/*
-	 * Dispatch based on opcode.  M1 scaffolding returns -ENOSYS
-	 * for all opcodes pending M2 io_uring fastpath integration,
-	 * but the dispatch path is walked to validate the opcode
-	 * contract (range check, default -EINVAL for unknown opcodes).
-	 */
-	switch (hdr.opcode) {
-	case AIRY_IPC_OP_SEND:
-	case AIRY_IPC_OP_SEND_BATCH:
-		/* IPC send path — M2 io_uring fastpath pending */
-		return -ENOSYS;
-	case AIRY_IPC_OP_RECV:
-		/* IPC receive path — M2 io_uring fastpath pending */
-		return -ENOSYS;
-	case AIRY_IPC_OP_CANCEL:
-		/* Cancel pending IPC operation — M2 pending */
-		return -ENOSYS;
-	case AIRY_IPC_OP_FREEZE:
-		/* Freeze IPC ring — supervisor-only, M2 pending */
-		return -ENOSYS;
-	case AIRY_IPC_OP_CAP_REQUEST:
-	case AIRY_IPC_OP_CAP_RESPONSE:
-		/* Capability bootstrap — handled via io_uring_cmd, M2 pending */
-		return -ENOSYS;
-	default:
-		return -EINVAL;
-	}
+	return airy_invoke_dispatch(cap, &hdr);
 }
 
 /*

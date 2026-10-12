@@ -59,10 +59,12 @@ bool airy_invoke_op_valid(u16 opcode);
  * @cap: Capability badge presented by the caller.
  * @msg: Kernel-resident copy of the caller message header.
  *
- * Validates the capability badge and the opcode contract, then routes
+ * Validates the opcode contract and the capability badge, then routes
  * the request to the matching control-plane handler. Validation always
- * precedes mutation; the badge is checked with airy_cap_badge_ok()
- * against msg->dst_task (OS-KER-225, C-S9 fastpath rules).
+ * precedes mutation (OS-KER-225). The badge is checked with
+ * airy_cap_badge_ok() against the caller's own capability slot, whose
+ * agent_id is derived from current — never from the caller-supplied
+ * msg->src_task/dst_task, which are untrusted.
  *
  * Return: 0 on success; -EINVAL on a malformed or unknown opcode;
  *         -AIRY_ECAP_* when badge validation fails; -ENOSYS while the
