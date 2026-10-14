@@ -3,7 +3,7 @@
  * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
  * airy_invoke_test.c — KUnit coverage for the syscall 548 message-header
- * contract validation (airy_invoke_hdr_check, C-S1/C-S4/C-S10).
+ * contract validation (airy_invoke_hdr_check, C-S1/C-S3/C-S4/C-S10).
  *
  * A well-formed Layout C v4 header must be accepted, and each contract
  * field must be rejected independently with the [SC] error magnitude that
@@ -38,6 +38,22 @@ static void airy_invoke_hdr_magic_test(struct kunit *test)
 	struct airy_ipc_msg_hdr hdr = { .magic = 0xdeadbeefu };
 
 	KUNIT_EXPECT_EQ(test, -AIRY_EIPC_MAGIC, airy_invoke_hdr_check(&hdr));
+}
+
+static void airy_invoke_hdr_payload_test(struct kunit *test)
+{
+	struct airy_ipc_msg_hdr hdr = { .magic = AIRY_IPC_MAGIC };
+
+	/* A zero-length payload needs no data plane at all. */
+	KUNIT_EXPECT_EQ(test, AIRY_EOK, airy_invoke_hdr_check(&hdr));
+
+	/* The ceiling is inclusive: a payload of exactly that size is legal. */
+	hdr.payload_len = AIRY_IPC_MAX_PAYLOAD;
+	KUNIT_EXPECT_EQ(test, AIRY_EOK, airy_invoke_hdr_check(&hdr));
+
+	/* One byte past the ceiling must be refused. */
+	hdr.payload_len = AIRY_IPC_MAX_PAYLOAD + 1u;
+	KUNIT_EXPECT_EQ(test, -AIRY_EIPC_PAYLOAD, airy_invoke_hdr_check(&hdr));
 }
 
 static void airy_invoke_hdr_flags_reserved_test(struct kunit *test)
@@ -94,6 +110,7 @@ static void airy_invoke_hdr_null_test(struct kunit *test)
 static struct kunit_case airy_invoke_cases[] = {
 	KUNIT_CASE(airy_invoke_hdr_accept_test),
 	KUNIT_CASE(airy_invoke_hdr_magic_test),
+	KUNIT_CASE(airy_invoke_hdr_payload_test),
 	KUNIT_CASE(airy_invoke_hdr_flags_reserved_test),
 	KUNIT_CASE(airy_invoke_hdr_flags_unsupported_test),
 	KUNIT_CASE(airy_invoke_hdr_reserved_test),

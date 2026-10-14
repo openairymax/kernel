@@ -83,10 +83,13 @@ static inline u16 airy_op_required_perms(u16 opcode)
  *
  * Enforces the [SC] Layout C v4 field contract that the syscall 548 entry
  * rests on, and is the single choke point every header must pass before any
- * state is touched (OS-KER-225). Three checks are applied, cheapest first:
+ * state is touched (OS-KER-225). Four checks are applied, cheapest first:
  *
  *   - C-S1:  magic must equal AIRY_IPC_MAGIC, otherwise the buffer is not a
  *            Layout C v4 header at all (-AIRY_EIPC_MAGIC).
+ *   - C-S3:  payload_len must not exceed AIRY_IPC_MAX_PAYLOAD
+ *            (-AIRY_EIPC_PAYLOAD). The data plane would otherwise be asked
+ *            to frame a payload that no legal message can carry.
  *   - C-S10: the reserved flag bits (AIRY_IPC_FLAG_RESERVED, bits 5-15)
  *            must be zero (-AIRY_EIPC_FLAGS), and the declared-but-unimpl-
  *            emented ENCRYPT/COMPRESS features must not be requested
@@ -100,7 +103,7 @@ static inline u16 airy_op_required_perms(u16 opcode)
  * airy_op_required_perms()/airy_invoke_op_valid() so that the dispatchable
  * set has exactly one definition (see airy_invoke_dispatch()).
  *
- * SSoT: 30-interfaces/07-ipc-fastpath.md §3.1 (C-S1/C-S4/C-S10);
+ * SSoT: 30-interfaces/07-ipc-fastpath.md §3.1 (C-S1/C-S3/C-S4/C-S10);
  *       30-interfaces/08-sc-error-contract.md §2.3 (error magnitudes).
  *
  * Return: AIRY_EOK (0) when @hdr satisfies the contract; -EINVAL when @hdr

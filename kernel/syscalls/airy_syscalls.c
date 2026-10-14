@@ -35,8 +35,8 @@
  * airy_invoke_hdr_check — validate the fixed 128-byte IPC message header.
  * @hdr: Kernel-resident copy of the caller message header.
  *
- * Applies the [SC] Layout C v4 field contract (C-S1 magic, C-S10 flags,
- * C-S4 reserved) and returns the [SC] AIRY_EIPC_* magnitude that
+ * Applies the [SC] Layout C v4 field contract (C-S1 magic, C-S3 payload_len,
+ * C-S10 flags, C-S4 reserved) and returns the [SC] AIRY_EIPC_* magnitude that
  * 07-ipc-fastpath.md §3.1 assigns to whichever check fails. The opcode is
  * intentionally left to airy_invoke_op_valid() so the dispatchable set has
  * one definition. See airy_invoke.h for the full contract.
@@ -51,6 +51,14 @@ __must_check int airy_invoke_hdr_check(const struct airy_ipc_msg_hdr *hdr)
 	/* C-S1: the buffer must announce itself as a Layout C v4 header. */
 	if (unlikely(hdr->magic != AIRY_IPC_MAGIC))
 		return -AIRY_EIPC_MAGIC;
+
+	/*
+	 * C-S3: payload_len must fit under the [SC] ceiling. A larger value
+	 * can never map onto a legal frame, so it is rejected here rather than
+	 * left for the copy-in of the data plane to choke on.
+	 */
+	if (unlikely(hdr->payload_len > AIRY_IPC_MAX_PAYLOAD))
+		return -AIRY_EIPC_PAYLOAD;
 
 	/* C-S10: reserved flag bits (5-15) are contractually zero. */
 	if (unlikely(hdr->flags & AIRY_IPC_FLAG_RESERVED))
@@ -96,7 +104,7 @@ bool airy_invoke_op_valid(u16 opcode)
  * @msg: Kernel-resident copy of the caller message header.
  *
  * First the header field contract is enforced by airy_invoke_hdr_check()
- * (C-S1/C-S4/C-S10), then the opcode contract, and only then is @cap
+ * (C-S1/C-S3/C-S4/C-S10), then the opcode contract, and only then is @cap
  * authenticated against the caller's own capability slot. The agent_id is
  * derived from current — never from the caller-supplied
  * msg->src_task/dst_task, which are untrusted — so a forged header cannot
@@ -159,7 +167,7 @@ __must_check int airy_invoke_dispatch(airy_cap_t cap,
  * @msg: User-space pointer to a struct airy_ipc_msg_hdr.
  *
  * The user header is copied in here; every field of the header contract
- * (C-S1/C-S4/C-S10), the opcode contract, and the capability badge are
+ * (C-S1/C-S3/C-S4/C-S10), the opcode contract, and the capability badge are
  * then validated by airy_invoke_dispatch() (OS-KER-225: validation
  * precedes mutation). Keeping that validation in the dispatch choke point
  * — instead of repeating the magic check here — leaves exactly one

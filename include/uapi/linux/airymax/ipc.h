@@ -20,6 +20,7 @@
 /* ─── Constants ──────────────────────────────────────────────────────── */
 #define AIRY_IPC_MAGIC          0x41524531u /* 'ARE1' */
 #define AIRY_IPC_HDR_SIZE       128
+#define AIRY_IPC_MAX_PAYLOAD    0x04000000u /* 64 MiB payload ceiling */
 
 /* ─── IPC Opcodes ────────────────────────────────────────────────────── */
 #define AIRY_IPC_OP_SEND        0x0001  /* Unicast send */
