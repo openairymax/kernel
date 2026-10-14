@@ -73,6 +73,51 @@
 #include "airy_invoke.h"
 
 /*
+ * airy_invoke_hdr_check — validate the fixed 128-byte IPC message header.
+ * @hdr: Kernel-resident copy of the caller message header.
+ *
+ * Applies the [SC] Layout C v4 field contract (C-S1 magic, C-S10 flags,
+ * C-S4 reserved) and returns the [SC] AIRY_EIPC_* magnitude that
+ * 07-ipc-fastpath.md §3.1 assigns to whichever check fails. The opcode is
+ * intentionally left to airy_invoke_op_valid() so the dispatchable set has
+ * one definition. See airy_invoke.h for the full contract.
+ */
+__must_check int airy_invoke_hdr_check(const struct airy_ipc_msg_hdr *hdr)
+{
+	unsigned int i;
+
+	if (unlikely(!hdr))
+		return -EINVAL;
+
+	/* C-S1: the buffer must announce itself as a Layout C v4 header. */
+	if (unlikely(hdr->magic != AIRY_IPC_MAGIC))
+		return -AIRY_EIPC_MAGIC;
+
+	/* C-S10: reserved flag bits (5-15) are contractually zero. */
+	if (unlikely(hdr->flags & AIRY_IPC_FLAG_RESERVED))
+		return -AIRY_EIPC_FLAGS;
+
+	/*
+	 * C-S10: ENCRYPT/COMPRESS are declared in the [SC] header for forward
+	 * ABI stability, but no v1.0.1 code path produces or consumes them.
+	 * Accepting a message that sets either would let a caller assert a
+	 * confidentiality/compression property the kernel never applies, so
+	 * they are rejected as unsupported rather than silently ignored.
+	 */
+	if (unlikely(hdr->flags & (AIRY_IPC_FLAG_ENCRYPT |
+				   AIRY_IPC_FLAG_COMPRESS)))
+		return -AIRY_EIPC_NOTSUPP;
+
+	/* C-S4: reserved[72] is a closed contract and must be all zero. */
+	for (i = 0; i < sizeof(hdr->reserved); i++) {
+		if (unlikely(hdr->reserved[i]))
+			return -AIRY_EIPC_RESERVED;
+	}
+
+	return AIRY_EOK;
+}
+
+/*
  * airy_invoke_op_valid — test whether an opcode is dispatchable.
  * @opcode: IPC opcode from the [SC] AIRY_IPC_OP_* space.
  *
@@ -91,14 +136,15 @@ bool airy_invoke_op_valid(u16 opcode)
  * @cap: Capability badge presented by the caller.
  * @msg: Kernel-resident copy of the caller message header.
  *
- * Validates the opcode contract and authenticates @cap against the
- * caller's own capability slot. The agent_id is derived from current —
- * never from the caller-supplied msg->src_task/dst_task, which are
- * untrusted — so a forged header cannot impersonate another agent.
- * The permission mask demanded of @cap is derived from msg->opcode by
- * airy_op_required_perms(), so an authentic badge that lacks the
- * operation's permission is rejected with -AIRY_ECAP_PERM before any
- * handler runs (OS-KER-225).
+ * First the header field contract is enforced by airy_invoke_hdr_check()
+ * (C-S1/C-S4/C-S10), then the opcode contract, and only then is @cap
+ * authenticated against the caller's own capability slot. The agent_id is
+ * derived from current — never from the caller-supplied
+ * msg->src_task/dst_task, which are untrusted — so a forged header cannot
+ * impersonate another agent. The permission mask demanded of @cap is
+ * derived from msg->opcode by airy_op_required_perms(), so an authentic
+ * badge that lacks the operation's permission is rejected with
+ * -AIRY_ECAP_PERM before any handler runs (OS-KER-225).
  */
 __must_check int airy_invoke_dispatch(airy_cap_t cap,
 				      const struct airy_ipc_msg_hdr *msg)
@@ -110,8 +156,12 @@ __must_check int airy_invoke_dispatch(airy_cap_t cap,
 	if (unlikely(!msg))
 		return -EINVAL;
 
+	ret = airy_invoke_hdr_check(msg);
+	if (unlikely(ret))
+		return ret;
+
 	if (unlikely(!airy_invoke_op_valid(msg->opcode)))
-		return -EINVAL;
+		return -AIRY_EIPC_OPCODE;
 
 	sec = current->security + airy_blob_sizes.lbs_task;
 	agent_id = READ_ONCE(sec->agent_id);
@@ -140,7 +190,7 @@ __must_check int airy_invoke_dispatch(airy_cap_t cap,
 		/* Capability bootstrap — handled via io_uring_cmd, M2 pending */
 		return -ENOSYS;
 	default:
-		return -EINVAL;
+		return -AIRY_EIPC_OPCODE;
 	}
 }
 
@@ -149,9 +199,12 @@ __must_check int airy_invoke_dispatch(airy_cap_t cap,
  * @cap: Capability badge authenticating the caller (sec_d).
  * @msg: User-space pointer to a struct airy_ipc_msg_hdr.
  *
- * The user header is copied in and its magic verified here; the
- * opcode contract and the capability badge are then validated by
- * airy_invoke_dispatch() (OS-KER-225: validation precedes mutation).
+ * The user header is copied in here; every field of the header contract
+ * (C-S1/C-S4/C-S10), the opcode contract, and the capability badge are
+ * then validated by airy_invoke_dispatch() (OS-KER-225: validation
+ * precedes mutation). Keeping that validation in the dispatch choke point
+ * — instead of repeating the magic check here — leaves exactly one
+ * definition of the header contract.
  *
  * M1 scaffolding: valid opcodes still return -ENOSYS pending M2
  * handler landings. Justified by OS-IRON-004 progressive development;
@@ -174,13 +227,10 @@ SYSCALL_DEFINE2(airy_sys_call, airy_cap_t, cap,
 	if (cap == AIRY_CAP_NULL)
 		return -EINVAL;
 
-	/* Copy and validate the IPC message header. */
+	/* Copy in the IPC message header; airy_invoke_dispatch validates it. */
 	ret = copy_from_user(&hdr, msg, sizeof(hdr));
 	if (ret)
 		return -EFAULT;
-
-	if (hdr.magic != AIRY_IPC_MAGIC)
-		return -EINVAL;
 
 	return airy_invoke_dispatch(cap, &hdr);
 }

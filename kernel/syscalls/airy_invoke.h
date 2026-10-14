@@ -78,6 +78,38 @@ static inline u16 airy_op_required_perms(u16 opcode)
 	return AIRY_OP_PERMS_INVALID;
 }
 
+/* ─── Message header contract validation ─────────────────────────────── */
+/**
+ * airy_invoke_hdr_check() - validate the fixed 128-byte IPC message header
+ * @hdr: Kernel-resident copy of the caller message header.
+ *
+ * Enforces the [SC] Layout C v4 field contract that the syscall 548 entry
+ * rests on, and is the single choke point every header must pass before any
+ * state is touched (OS-KER-225). Three checks are applied, cheapest first:
+ *
+ *   - C-S1:  magic must equal AIRY_IPC_MAGIC, otherwise the buffer is not a
+ *            Layout C v4 header at all (-AIRY_EIPC_MAGIC).
+ *   - C-S10: the reserved flag bits (AIRY_IPC_FLAG_RESERVED, bits 5-15)
+ *            must be zero (-AIRY_EIPC_FLAGS), and the declared-but-unimpl-
+ *            emented ENCRYPT/COMPRESS features must not be requested
+ *            (-AIRY_EIPC_NOTSUPP). Either one would let a caller assert a
+ *            guarantee the kernel does not honour.
+ *   - C-S4:  reserved[72] must be all zero (-AIRY_EIPC_RESERVED), keeping
+ *            the header a closed contract and denying a covert channel
+ *            through fields the kernel never interprets.
+ *
+ * The opcode is deliberately not checked here: its validity is owned by
+ * airy_op_required_perms()/airy_invoke_op_valid() so that the dispatchable
+ * set has exactly one definition (see airy_invoke_dispatch()).
+ *
+ * SSoT: 30-interfaces/07-ipc-fastpath.md §3.1 (C-S1/C-S4/C-S10);
+ *       30-interfaces/08-sc-error-contract.md §2.3 (error magnitudes).
+ *
+ * Return: AIRY_EOK (0) when @hdr satisfies the contract; -EINVAL when @hdr
+ *         is NULL; otherwise the negated [SC] AIRY_EIPC_* magnitude.
+ */
+__must_check int airy_invoke_hdr_check(const struct airy_ipc_msg_hdr *hdr);
+
 /* ─── Invocation context ─────────────────────────────────────────────── */
 /**
  * struct airy_invoke_ctx - per-request context for syscall 548 dispatch

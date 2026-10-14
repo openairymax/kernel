@@ -76,6 +76,7 @@ config AIRY_KUNIT
 	    - kernel/corekern/ipc/airy_ipc_ring_test.c (P1-8 cancelBadgedSends)
 	    - kernel/corekern/ipc/airy_fastpath_bench.c (fastpath micro-benchmark)
 	    - kernel/corekern/sched/stc_dispatch_test.c (P1-1 log rate-limit)
+	    - kernel/syscalls/airy_invoke_test.c        (C-S1/C-S4/C-S10 header contract)
 
 	  Each test exercises the fixed path with no functional change to
 	  production code.  Say N if unsure.
