@@ -2,8 +2,6 @@
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd.
  *
- * kernel/kernel/syscalls/airy_invoke.h
- *
  * Control-plane invocation dispatch contract for syscall 548
  * (airy_sys_call). The dispatch key is the single dimension
  * msg->opcode, whose authoritative values are the [SC]
@@ -24,7 +22,7 @@
 #include <linux/airymax/ipc.h>
 #include <linux/airymax/security_types.h>
 
-/* ─── Opcode permission mapping ──────────────────────────────────────── */
+/* Opcode permission mapping */
 /*
  * Sentinel returned by airy_op_required_perms() for an opcode that is
  * not part of the dispatch contract. It lies outside the AIRY_CAP_PERM_*
@@ -78,7 +76,7 @@ static inline u16 airy_op_required_perms(u16 opcode)
 	return AIRY_OP_PERMS_INVALID;
 }
 
-/* ─── Message header contract validation ─────────────────────────────── */
+/* Message header contract validation */
 /**
  * airy_invoke_hdr_check() - validate the fixed 128-byte IPC message header
  * @hdr: Kernel-resident copy of the caller message header.
@@ -110,7 +108,7 @@ static inline u16 airy_op_required_perms(u16 opcode)
  */
 __must_check int airy_invoke_hdr_check(const struct airy_ipc_msg_hdr *hdr);
 
-/* ─── Invocation context ─────────────────────────────────────────────── */
+/* Invocation context */
 /**
  * struct airy_invoke_ctx - per-request context for syscall 548 dispatch
  * @cap:    Capability badge presented by the caller (airy_cap_t).
@@ -127,14 +125,14 @@ struct airy_invoke_ctx {
 	const struct airy_ipc_msg_hdr *msg;
 };
 
-/* ─── Dispatch entry points (defined in airy_syscalls.c) ─────────────── */
+/* Dispatch entry points (defined in airy_syscalls.c) */
 /**
  * airy_invoke_op_valid() - test whether an opcode is dispatchable
  * @opcode: IPC opcode taken from the [SC] ipc.h AIRY_IPC_OP_* space.
  *
  * Tells the caller whether @opcode belongs to the control-plane
- * dispatch set. Unknown opcodes must be rejected with -EINVAL before
- * any state is touched.
+ * dispatch set. Unknown opcodes must be rejected with -AIRY_EIPC_OPCODE
+ * before any state is touched.
  *
  * Return: true if @opcode is dispatchable, false otherwise.
  */
@@ -155,9 +153,10 @@ bool airy_invoke_op_valid(u16 opcode);
  * airy_op_required_perms(), so a badge that is authentic but lacks the
  * operation's permission is rejected with -AIRY_ECAP_PERM.
  *
- * Return: 0 on success; -EINVAL on a malformed or unknown opcode;
- *         -AIRY_ECAP_* when badge validation fails; -ENOSYS while the
- *         handler for a valid opcode has not yet landed.
+ * Return: 0 on success; -AIRY_EIPC_OPCODE on a malformed or unknown
+ *         opcode; -AIRY_ECAP_* when badge validation fails;
+ *         -AIRY_ENOTSUP while the handler for a valid opcode has not
+ *         yet landed.
  */
 __must_check int airy_invoke_dispatch(airy_cap_t cap,
 				      const struct airy_ipc_msg_hdr *msg);
