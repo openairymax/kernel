@@ -24,6 +24,60 @@
 #include <linux/airymax/ipc.h>
 #include <linux/airymax/security_types.h>
 
+/* ─── Opcode permission mapping ──────────────────────────────────────── */
+/*
+ * Sentinel returned by airy_op_required_perms() for an opcode that is
+ * not part of the dispatch contract. It lies outside the AIRY_CAP_PERM_*
+ * space (the widest real mask is AIRY_CAP_PERM_ALL == 0x007F) so it can
+ * never be mistaken for a grantable permission mask.
+ */
+#define AIRY_OP_PERMS_INVALID	0xFFFFu
+
+/**
+ * airy_op_required_perms() - map an IPC opcode to its required permissions
+ * @opcode: Dispatch key from the [SC] AIRY_IPC_OP_* space.
+ *
+ * Side-effect-free translation of a control-plane opcode into the
+ * capability permission mask the caller must hold. The result is fed to
+ * airy_cap_badge_ok() so that authorization, not merely badge
+ * authenticity, is enforced before any handler runs. It is also the
+ * single source of truth for which opcodes are dispatchable at all:
+ * airy_invoke_op_valid() accepts exactly the opcodes that do not map to
+ * AIRY_OP_PERMS_INVALID.
+ *
+ * SEND, SEND_BATCH and CANCEL operate on the IPC stream and require
+ * AIRY_CAP_PERM_SEND; RECV requires AIRY_CAP_PERM_RECV; FREEZE is a
+ * supervisory action requiring AIRY_CAP_PERM_SUPERVISE. The capability
+ * bootstrap pair CAP_REQUEST/CAP_RESPONSE carries no permission of its
+ * own and maps to AIRY_CAP_PERM_NONE. Every other opcode yields
+ * AIRY_OP_PERMS_INVALID.
+ *
+ * SSoT: 110-security/03-capability-model.md §2.6.1.
+ *
+ * Return: the required permission mask, or AIRY_OP_PERMS_INVALID when
+ *         @opcode is outside the dispatch contract.
+ */
+static inline u16 airy_op_required_perms(u16 opcode)
+{
+	/* Indexed by (opcode - AIRY_IPC_OP_SEND); holes are rejected. */
+	static const u16 op_perms[] = {
+		AIRY_CAP_PERM_SEND,	 /* AIRY_IPC_OP_SEND       0x0001 */
+		AIRY_CAP_PERM_RECV,	 /* AIRY_IPC_OP_RECV       0x0002 */
+		AIRY_CAP_PERM_SEND,	 /* AIRY_IPC_OP_SEND_BATCH 0x0003 */
+		AIRY_CAP_PERM_SEND,	 /* AIRY_IPC_OP_CANCEL     0x0004 */
+		AIRY_CAP_PERM_SUPERVISE, /* AIRY_IPC_OP_FREEZE     0x0005 */
+	};
+
+	if (opcode >= AIRY_IPC_OP_SEND && opcode <= AIRY_IPC_OP_FREEZE)
+		return op_perms[opcode - AIRY_IPC_OP_SEND];
+
+	if (opcode == AIRY_IPC_OP_CAP_REQUEST ||
+	    opcode == AIRY_IPC_OP_CAP_RESPONSE)
+		return AIRY_CAP_PERM_NONE;
+
+	return AIRY_OP_PERMS_INVALID;
+}
+
 /* ─── Invocation context ─────────────────────────────────────────────── */
 /**
  * struct airy_invoke_ctx - per-request context for syscall 548 dispatch
@@ -64,7 +118,10 @@ bool airy_invoke_op_valid(u16 opcode);
  * precedes mutation (OS-KER-225). The badge is checked with
  * airy_cap_badge_ok() against the caller's own capability slot, whose
  * agent_id is derived from current — never from the caller-supplied
- * msg->src_task/dst_task, which are untrusted.
+ * msg->src_task/dst_task, which are untrusted. The permission mask the
+ * badge must carry is derived from the opcode by
+ * airy_op_required_perms(), so a badge that is authentic but lacks the
+ * operation's permission is rejected with -AIRY_ECAP_PERM.
  *
  * Return: 0 on success; -EINVAL on a malformed or unknown opcode;
  *         -AIRY_ECAP_* when badge validation fails; -ENOSYS while the

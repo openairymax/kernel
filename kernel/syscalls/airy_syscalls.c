@@ -31,8 +31,9 @@
  *     lightweight contract check so callers receive -EINVAL/-EFAULT
  *     for malformed requests instead of -ENOSYS.
  *   - Syscall 548 additionally walks the real control-plane entry
- *     airy_invoke_dispatch(): it validates the opcode contract and
- *     authenticates the badge via airy_cap_badge_ok() against the
+ *     airy_invoke_dispatch(): it validates the opcode contract, derives
+ *     the required permission mask for that opcode, and authenticates
+ *     and authorizes the badge via airy_cap_badge_ok() against the
  *     caller's identity derived from current (OS-KER-225).
  *
  * The -ENOSYS contract is justified by OS-IRON-004 (渐进式开发，补丁自
@@ -75,24 +76,14 @@
  * airy_invoke_op_valid — test whether an opcode is dispatchable.
  * @opcode: IPC opcode from the [SC] AIRY_IPC_OP_* space.
  *
- * Returns true only for opcodes that belong to the syscall 548
- * control-plane dispatch set. Unknown opcodes must be rejected with
- * -EINVAL before any state is touched (OS-KER-225).
+ * The dispatchable set is defined solely by airy_op_required_perms():
+ * an opcode is valid exactly when the mapping recognises it. Keeping a
+ * second opcode list here would let the two drift apart and silently
+ * admit an unauthenticated operation (OS-KER-225).
  */
 bool airy_invoke_op_valid(u16 opcode)
 {
-	switch (opcode) {
-	case AIRY_IPC_OP_SEND:
-	case AIRY_IPC_OP_RECV:
-	case AIRY_IPC_OP_SEND_BATCH:
-	case AIRY_IPC_OP_CANCEL:
-	case AIRY_IPC_OP_FREEZE:
-	case AIRY_IPC_OP_CAP_REQUEST:
-	case AIRY_IPC_OP_CAP_RESPONSE:
-		return true;
-	default:
-		return false;
-	}
+	return airy_op_required_perms(opcode) != AIRY_OP_PERMS_INVALID;
 }
 
 /*
@@ -104,8 +95,10 @@ bool airy_invoke_op_valid(u16 opcode)
  * caller's own capability slot. The agent_id is derived from current —
  * never from the caller-supplied msg->src_task/dst_task, which are
  * untrusted — so a forged header cannot impersonate another agent.
- * Only badge authenticity is checked here; per-operation permissions
- * are the responsibility of the individual handler.
+ * The permission mask demanded of @cap is derived from msg->opcode by
+ * airy_op_required_perms(), so an authentic badge that lacks the
+ * operation's permission is rejected with -AIRY_ECAP_PERM before any
+ * handler runs (OS-KER-225).
  */
 __must_check int airy_invoke_dispatch(airy_cap_t cap,
 				      const struct airy_ipc_msg_hdr *msg)
@@ -123,7 +116,8 @@ __must_check int airy_invoke_dispatch(airy_cap_t cap,
 	sec = current->security + airy_blob_sizes.lbs_task;
 	agent_id = READ_ONCE(sec->agent_id);
 
-	ret = airy_cap_badge_ok(cap, agent_id, AIRY_CAP_PERM_NONE);
+	ret = airy_cap_badge_ok(cap, agent_id,
+				airy_op_required_perms(msg->opcode));
 	if (unlikely(ret))
 		return ret;
 
