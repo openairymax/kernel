@@ -31,7 +31,9 @@
  *
  * Returns 0 on success, -EINVAL for null arguments, -AIRY_EIPC_FROZEN
  * if the ring is administratively frozen, or -AIRY_EIPC_CRC32 when the
- * C-S12 header digest does not match.
+ * C-S12 header digest does not match.  ring_post() may additionally
+ * surface its own SC codes (C-S1 -AIRY_EIPC_MAGIC, C-S6
+ * -AIRY_EIPC_KFIFO).
  */
 int airy_ipc_fastpath_send(struct airy_ipc_ring *ring,
 			   const struct airy_ipc_msg_hdr *hdr)
@@ -62,6 +64,7 @@ int airy_ipc_fastpath_send(struct airy_ipc_ring *ring,
 
 	/* Delegate to ring_post() which performs the actual slot write.
 	 * ring_post() re-checks frozen (defence in depth) and validates
-	 * magic before writing. */
+	 * magic before writing.
+	 */
 	return airy_ipc_ring_post(ring, hdr);
 }

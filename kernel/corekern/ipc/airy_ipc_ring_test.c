@@ -4,14 +4,13 @@
  *
  * airy_ipc_ring_test.c — KUnit coverage for the IPC ring core.
  *
- * Covers the two invariants of the SPSC ring: the capacity/ceiling
- * contract enforced by airy_ipc_ring_init(), and the cursor semantics
- * (FIFO order, exact-full/empty detection, wrap-around) guarded by the
- * release/acquire pairing in airy_ipc_ring_post()/consume().  It also
- * covers P1-8 airy_ipc_cancel_badged_sends(), the agent-linux analogue
- * of seL4's cancelBadgedSends (endpoint.c:476-489), which zeroes the
- * magic field of every pending slot whose capability_badge matches, and
- * the occupancy accounting airy_ipc_ring_depth_stats() samples.
+ * Covers the SPSC ring's capacity/ceiling contract (airy_ipc_ring_init),
+ * cursor semantics (FIFO order, exact-full/empty detection, wrap-around)
+ * guarded by the release/acquire pairing in post()/consume(), the SC
+ * rejection codes the post path returns (C-S1 -AIRY_EIPC_MAGIC, C-S6
+ * -AIRY_EIPC_KFIFO), P1-8 airy_ipc_cancel_badged_sends() (the agent-linux
+ * analogue of seL4's cancelBadgedSends, endpoint.c:476-489), and the
+ * occupancy accounting airy_ipc_ring_depth_stats() samples.
  *
  * The ring entry points are non-static (declared in airy_ipc_internal.h),
  * so the test links against airy_ipc_ring.o within the airy_ck_ipc module
@@ -23,6 +22,7 @@
 #include <linux/errno.h>
 #include <linux/string.h>
 #include <linux/types.h>
+#include <linux/airymax/error.h>
 
 #include "airy_ipc_internal.h"
 
@@ -225,7 +225,8 @@ static void spsc_wrap_around_preserves_fifo_test(struct kunit *test)
 
 	/* One more post must be rejected: the ring is exactly full. */
 	fill_hdr(&hdr, 0xFFFFFFFFFFFFFFFFULL);
-	KUNIT_EXPECT_EQ(test, -ENOSPC, airy_ipc_ring_post(ring, &hdr));
+	KUNIT_EXPECT_EQ(test, -AIRY_EIPC_KFIFO,
+			airy_ipc_ring_post(ring, &hdr));
 
 	/* Drain in FIFO order. */
 	for (i = 1; i < TEST_RING_ENTRIES; i++) {
@@ -242,6 +243,23 @@ static void spsc_wrap_around_preserves_fifo_test(struct kunit *test)
 	KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_post(ring, &hdr));
 	KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_consume(ring, &out));
 	KUNIT_EXPECT_EQ(test, 0xABCDEFULL, out.capability_badge);
+}
+
+static void post_rejects_bad_magic_test(struct kunit *test)
+{
+	struct airy_ipc_ring *ring = test->priv;
+	struct airy_ipc_msg_hdr hdr, out;
+
+	/*
+	 * C-S1: a header whose magic is not 'ARE1' must be refused with
+	 * -AIRY_EIPC_MAGIC, and the slot must stay untouched so a later
+	 * consume still reports the ring as empty.
+	 */
+	fill_hdr(&hdr, 0x1ULL);
+	hdr.magic = 0xDEADBEEF;
+	KUNIT_EXPECT_EQ(test, -AIRY_EIPC_MAGIC, airy_ipc_ring_post(ring, &hdr));
+
+	KUNIT_EXPECT_EQ(test, -ENOMSG, airy_ipc_ring_consume(ring, &out));
 }
 
 static void depth_stats_init_snapshot_test(struct kunit *test)
@@ -298,7 +316,7 @@ static void depth_stats_counts_full_rejection_test(struct kunit *test)
 
 	/* The rejected post is the event the nightly monitor fails on. */
 	fill_hdr(&hdr, 0xFFFFULL);
-	KUNIT_EXPECT_EQ(test, -ENOSPC, airy_ipc_ring_post(ring, &hdr));
+	KUNIT_EXPECT_EQ(test, -AIRY_EIPC_KFIFO, airy_ipc_ring_post(ring, &hdr));
 
 	KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_depth_stats(ring, &d));
 	KUNIT_EXPECT_EQ(test, (u32)3, d.depth);
@@ -333,6 +351,7 @@ static struct kunit_case airy_ipc_ring_cases[] = {
 	KUNIT_CASE(init_rejects_capacity_above_max_test),
 	KUNIT_CASE(init_accepts_default_capacity_test),
 	KUNIT_CASE(spsc_wrap_around_preserves_fifo_test),
+	KUNIT_CASE(post_rejects_bad_magic_test),
 	KUNIT_CASE(depth_stats_init_snapshot_test),
 	KUNIT_CASE(depth_stats_tracks_occupancy_test),
 	KUNIT_CASE(depth_stats_counts_full_rejection_test),

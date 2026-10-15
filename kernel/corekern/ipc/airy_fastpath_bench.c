@@ -41,9 +41,9 @@
 #define BENCH_BATCH_RING	32u	/* ops per timer pair (ring) */
 /*
  * Total ring ops per bench_run(): warm-up + batched samples + bulk loop.
- * The ring must never fill, otherwise post() takes the cheap -ENOSPC path
- * and the latency no longer reflects a successful send.  Capacity of a
- * 2^18-entry ring is 262143 > 201000.
+ * The ring must never fill, otherwise post() takes the cheap
+ * -AIRY_EIPC_KFIFO path and the latency no longer reflects a successful
+ * send.  Capacity of a 2^18-entry ring is 262143 > 201000.
  */
 #define BENCH_RING_TOTAL	(BENCH_RING_ITERS * 2 + BENCH_WARMUP)
 

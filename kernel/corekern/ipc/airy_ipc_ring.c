@@ -65,6 +65,12 @@ void airy_ipc_ring_destroy(struct airy_ipc_ring *ring)
 }
 
 /* ─── Post a message header to the ring ──────────────────────────────── */
+/*
+ * Returns 0 on success, -EINVAL for null/invalid arguments,
+ * -AIRY_EIPC_FROZEN (C-S0) if the ring is administratively frozen,
+ * -AIRY_EIPC_MAGIC (C-S1) if the header magic is not 'ARE1', or
+ * -AIRY_EIPC_KFIFO (C-S6) when the ring is exactly full.
+ */
 int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 		       const struct airy_ipc_msg_hdr *hdr)
 {
@@ -79,7 +85,7 @@ int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 	if (hdr->magic != AIRY_IPC_MAGIC) {
 		pr_warn_ratelimited("airy_ipc_ring: bad magic 0x%08x\n",
 				    hdr->magic);
-		return -EINVAL;
+		return -AIRY_EIPC_MAGIC;
 	}
 
 	/* Single-producer advance: head only moves forward by one slot. */
@@ -99,7 +105,7 @@ int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 		WRITE_ONCE(ring->full_count, ring->full_count + 1);
 		pr_warn_ratelimited("airy_ipc_ring: ring full (head=%u tail=%u)\n",
 				    ring->head, tail);
-		return -ENOSPC;
+		return -AIRY_EIPC_KFIFO;
 	}
 
 	/*
