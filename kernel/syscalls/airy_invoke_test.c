@@ -2,17 +2,25 @@
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
- * airy_invoke_test.c — KUnit coverage for the syscall 548 message-header
- * contract validation (airy_invoke_hdr_check, C-S1/C-S3/C-S4/C-S10).
+ * airy_invoke_test.c — KUnit coverage for the syscall 548 control-plane
+ * entry defined in airy_syscalls.c.
  *
- * A well-formed Layout C v4 header must be accepted, and each contract
- * field must be rejected independently with the [SC] error magnitude that
- * 07-ipc-fastpath.md §3.1 assigns to its C-S check.  This keeps the syscall
- * entry from admitting a header the data-plane fastpath would have refused,
- * which is what would happen if the two validators drifted apart.
+ * Two layers are exercised.  The header contract (airy_invoke_hdr_check,
+ * C-S1/C-S3/C-S4/C-S10) must accept a well-formed Layout C v4 header and
+ * reject each field independently with the [SC] magnitude that
+ * 07-ipc-fastpath.md §3.1 assigns to its C-S check; this keeps the syscall
+ * entry from admitting a header the data-plane fastpath would have refused.
+ * The dispatch skeleton (airy_invoke_dispatch) must then refuse exactly the
+ * opcodes outside airy_op_required_perms() and enforce the documented
+ * ordering: NULL, then header, then opcode, and only afterwards badge
+ * authorisation.  The badge path itself is not covered here — it
+ * dereferences current->security and reads the global capability slots,
+ * neither of which is hermetic under KUnit; it is owned by the capability
+ * suites.
  */
 
 #include <kunit/test.h>
+#include <linux/array_size.h>
 #include <linux/errno.h>
 #include <linux/string.h>
 #include <linux/types.h>
@@ -107,6 +115,80 @@ static void airy_invoke_hdr_null_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, -EINVAL, airy_invoke_hdr_check(NULL));
 }
 
+static void airy_invoke_op_valid_accept_test(struct kunit *test)
+{
+	static const u16 dispatchable[] = {
+		AIRY_IPC_OP_SEND, AIRY_IPC_OP_RECV, AIRY_IPC_OP_SEND_BATCH,
+		AIRY_IPC_OP_CANCEL, AIRY_IPC_OP_FREEZE,
+		AIRY_IPC_OP_CAP_REQUEST, AIRY_IPC_OP_CAP_RESPONSE,
+	};
+	unsigned int i;
+	u16 op;
+
+	for (i = 0; i < ARRAY_SIZE(dispatchable); i++) {
+		op = dispatchable[i];
+
+		KUNIT_EXPECT_TRUE_MSG(test, airy_invoke_op_valid(op),
+				      "0x%04x not dispatchable", op);
+	}
+}
+
+static void airy_invoke_op_valid_reject_test(struct kunit *test)
+{
+	static const u16 holes[] = {
+		0x0000,	/* below the contiguous SEND..FREEZE block */
+		0x0006,	/* first hole above FREEZE */
+		0x000f,	/* last hole below CAP_REQUEST */
+		0x0012,	/* first hole above CAP_RESPONSE */
+		0xffff,	/* the AIRY_OP_PERMS_INVALID sentinel */
+	};
+	unsigned int i;
+	u16 op;
+
+	for (i = 0; i < ARRAY_SIZE(holes); i++) {
+		op = holes[i];
+
+		KUNIT_EXPECT_FALSE_MSG(test, airy_invoke_op_valid(op),
+				       "0x%04x must be refused", op);
+	}
+}
+
+static void airy_invoke_dispatch_entry_test(struct kunit *test)
+{
+	const struct airy_ipc_msg_hdr bad_magic = {
+		.magic = 0xdeadbeefu,
+		.opcode = AIRY_IPC_OP_SEND,
+	};
+	const struct airy_ipc_msg_hdr bad_payload = {
+		.magic = AIRY_IPC_MAGIC,
+		.opcode = AIRY_IPC_OP_SEND,
+		.payload_len = AIRY_IPC_MAX_PAYLOAD + 1u,
+	};
+
+	KUNIT_EXPECT_EQ(test, -EINVAL,
+			airy_invoke_dispatch(AIRY_CAP_NULL, NULL));
+	KUNIT_EXPECT_EQ(test, -AIRY_EIPC_MAGIC,
+			airy_invoke_dispatch(AIRY_CAP_NULL, &bad_magic));
+	KUNIT_EXPECT_EQ(test, -AIRY_EIPC_PAYLOAD,
+			airy_invoke_dispatch(AIRY_CAP_NULL, &bad_payload));
+}
+
+static void airy_invoke_dispatch_order_test(struct kunit *test)
+{
+	const struct airy_ipc_msg_hdr unknown = {
+		.magic = AIRY_IPC_MAGIC,
+		.opcode = 0x0006,
+	};
+
+	/*
+	 * The opcode contract precedes badge authorisation: an unknown opcode
+	 * in an otherwise valid header is refused with -AIRY_EIPC_OPCODE even
+	 * though the badge is null.
+	 */
+	KUNIT_EXPECT_EQ(test, -AIRY_EIPC_OPCODE,
+			airy_invoke_dispatch(AIRY_CAP_NULL, &unknown));
+}
+
 static struct kunit_case airy_invoke_cases[] = {
 	KUNIT_CASE(airy_invoke_hdr_accept_test),
 	KUNIT_CASE(airy_invoke_hdr_magic_test),
@@ -115,6 +197,10 @@ static struct kunit_case airy_invoke_cases[] = {
 	KUNIT_CASE(airy_invoke_hdr_flags_unsupported_test),
 	KUNIT_CASE(airy_invoke_hdr_reserved_test),
 	KUNIT_CASE(airy_invoke_hdr_null_test),
+	KUNIT_CASE(airy_invoke_op_valid_accept_test),
+	KUNIT_CASE(airy_invoke_op_valid_reject_test),
+	KUNIT_CASE(airy_invoke_dispatch_entry_test),
+	KUNIT_CASE(airy_invoke_dispatch_order_test),
 	{}
 };
 
