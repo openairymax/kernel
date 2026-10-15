@@ -28,8 +28,12 @@ int airy_ipc_ring_init(struct airy_ipc_ring *ring, u32 entries)
 	if (!ring)
 		return -EINVAL;
 
-	/* Capacity must be a power of two so mask = entries - 1 works. */
-	if (!is_power_of_2(entries) || entries < 2)
+	/* Capacity must be a power of two so mask = entries - 1 works, and
+	 * must not exceed the shared ceiling so a single ring cannot pin an
+	 * unbounded amount of memory.
+	 */
+	if (!is_power_of_2(entries) || entries < 2 ||
+	    entries > AIRY_IPC_RING_MAX_ENTRIES)
 		return -EINVAL;
 
 	ring->head   = 0;
@@ -82,8 +86,10 @@ int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 		return -ENOSPC;
 	}
 
-	/* Store the message header into the current slot before advancing.
-	 *
+	/* Store the message header into the current slot before advancing. */
+	memcpy(&ring->slots[ring->head], hdr, sizeof(*hdr));
+
+	/*
 	 * smp_store_release() pairs with smp_load_acquire() in
 	 * airy_ipc_ring_consume().  It ensures the memcpy (data store)
 	 * is visible before the head advance (index store) on
@@ -91,7 +97,6 @@ int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 	 * barrier, the consumer could see the new head before the data,
 	 * reading stale/uninitialised memory.
 	 */
-	memcpy(&ring->slots[ring->head], hdr, sizeof(*hdr));
 	smp_store_release(&ring->head, next);
 	return 0;
 }
@@ -188,21 +193,21 @@ int airy_ipc_cancel_badged_sends(struct airy_ipc_ring *ring, __u64 badge)
 	head = smp_load_acquire(&ring->head);
 	tail = READ_ONCE(ring->tail);
 
-	pr_debug_ratelimited("airy_ipc_cancel_badged_sends: ring=%p badge=0x%016llx head=%u tail=%u\n",
-		ring, (unsigned long long)badge, head, tail);
+	pr_debug_ratelimited("%s: ring=%p badge=0x%016llx head=%u tail=%u\n",
+		__func__, ring, (unsigned long long)badge, head, tail);
 
 	for (i = tail; i != head; i = (i + 1) & ring->mask) {
 		struct airy_ipc_msg_hdr *slot = &ring->slots[i];
 
 		if (READ_ONCE(slot->capability_badge) == badge) {
-			pr_debug_ratelimited("airy_ipc_cancel_badged_sends: cancelling slot=%u badge=0x%016llx\n",
-				i, (unsigned long long)badge);
+			pr_debug_ratelimited("%s: cancelling slot=%u badge=0x%016llx\n",
+				__func__, i, (unsigned long long)badge);
 			WRITE_ONCE(slot->magic, 0);
 			cancelled++;
 		}
 	}
 
-	pr_debug_ratelimited("airy_ipc_cancel_badged_sends: cancelled %d message(s)\n",
-		cancelled);
+	pr_debug_ratelimited("%s: cancelled %d message(s)\n",
+		__func__, cancelled);
 	return cancelled;
 }

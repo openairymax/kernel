@@ -73,8 +73,6 @@ struct bench_fixture {
 	struct airy_ipc_msg_hdr out;
 	struct airy_cap_slot saved_slot;
 	bool slot_saved;
-	bool ring_up;
-	bool ring_vmalloc;	/* slots[] vmalloc-backed (UML fallback) */
 };
 
 struct bench_result {
@@ -287,8 +285,10 @@ static int bench_init(struct kunit *test)
 	KUNIT_ASSERT_NOT_NULL(test, f);
 	test->priv = f;
 
-	/* Dedicated agent slot: save production state, install benchmark
-	 * state (epoch=7 / randtag=0x13579BDF / perms=SEND). */
+	/*
+	 * Dedicated agent slot: save production state, install benchmark
+	 * state (epoch=7 / randtag=0x13579BDF / perms=SEND).
+	 */
 	f->saved_slot = agent_caps[BENCH_AGENT];
 	f->slot_saved = true;
 	agent_caps[BENCH_AGENT].badge = AIRY_BADGE_COMPILE(7u, 0x13579BDFu,
@@ -297,24 +297,21 @@ static int bench_init(struct kunit *test)
 	agent_caps[BENCH_AGENT].randtag = 0x13579BDFu;
 	agent_caps[BENCH_AGENT].perms = AIRY_CAP_PERM_SEND;
 
-	/* Dedicated benchmark ring: never touches production rings.
-	 * airy_ipc_ring_init() kcallocs the slot array; under UML the 32MiB
-	 * order-13 allocation can fail even with plenty of free memory, so
-	 * fall back to vmalloc (ring_post/consume/fastpath_send access
-	 * slots[] as a flat array — the backing store does not affect the
-	 * measured per-op cost). */
-	if (airy_ipc_ring_init(&f->ring, BENCH_RING_ENTRIES) == 0) {
-		f->ring_up = true;
-	} else {
-		f->ring.slots = vzalloc(BENCH_RING_ENTRIES *
-					sizeof(struct airy_ipc_msg_hdr));
-		KUNIT_ASSERT_NOT_NULL(test, f->ring.slots);
-		f->ring.head = 0;
-		f->ring.tail = 0;
-		f->ring.mask = BENCH_RING_ENTRIES - 1;
-		f->ring.frozen = 0;
-		f->ring_vmalloc = true;
-	}
+	/*
+	 * Dedicated benchmark ring: never touches production rings.  Its
+	 * 262144 slots (32MiB) deliberately exceed AIRY_IPC_RING_MAX_ENTRIES
+	 * so airy_ipc_ring_init() declines it; the module therefore backs
+	 * the flat slots[] array with vmalloc directly (ring_post/consume/
+	 * fastpath_send access slots[] as a flat array — the backing store
+	 * does not affect the measured per-op cost).
+	 */
+	f->ring.slots = vzalloc(BENCH_RING_ENTRIES *
+				sizeof(struct airy_ipc_msg_hdr));
+	KUNIT_ASSERT_NOT_NULL(test, f->ring.slots);
+	f->ring.head = 0;
+	f->ring.tail = 0;
+	f->ring.mask = BENCH_RING_ENTRIES - 1;
+	f->ring.frozen = 0;
 
 	/* Default ctx plumbing. */
 	f->ctx.ring = &f->ring;
@@ -343,10 +340,7 @@ static void bench_exit(struct kunit *test)
 
 	if (!f)
 		return;
-	if (f->ring_up)
-		airy_ipc_ring_destroy(&f->ring);
-	else if (f->ring_vmalloc)
-		vfree(f->ring.slots);
+	vfree(f->ring.slots);
 	if (f->slot_saved)
 		agent_caps[BENCH_AGENT] = f->saved_slot;
 }
@@ -439,8 +433,10 @@ static void ring_consume_test(struct kunit *test)
 	struct bench_fixture *f = test->priv;
 	u32 i;
 
-	/* Pre-fill enough messages for warm-up + batched + bulk consumes,
-	 * so no consume ever hits the empty (-ENOMSG) path. */
+	/*
+	 * Pre-fill enough messages for warm-up + batched + bulk consumes,
+	 * so no consume ever hits the empty (-ENOMSG) path.
+	 */
 	for (i = 0; i < BENCH_RING_TOTAL; i++)
 		KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_post(&f->ring, &f->hdr));
 
@@ -459,8 +455,10 @@ static void slowpath_sim_test(struct kunit *test)
 	struct bench_fixture *f = test->priv;
 
 	f->ctx.op = op_slowpath_sim;
-	/* Forged badge drives phase4 to fail, so phase5 (full badge + perms)
-	 * executes — the slowpath's complete 5-phase enforcement path. */
+	/*
+	 * Forged badge drives phase4 to fail, so phase5 (full badge + perms)
+	 * executes — the slowpath's complete 5-phase enforcement path.
+	 */
 	f->ctx.badge = AIRY_BADGE_COMPILE(7u, 0x13579BE0u,
 					  AIRY_CAP_PERM_SEND);
 	f->ctx.iters = BENCH_RING_ITERS;

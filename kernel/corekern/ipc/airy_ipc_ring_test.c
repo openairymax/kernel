@@ -72,8 +72,10 @@ static void cancel_drops_matching_preserves_other_test(struct kunit *test)
 	ret = airy_ipc_cancel_badged_sends(ring, badged);
 	KUNIT_EXPECT_EQ(test, 1, ret);
 
-	/* The consumer must skip the cancelled slot and return the
-	 * unbadged message, proving the badged send was dropped. */
+	/*
+	 * The consumer must skip the cancelled slot and return the
+	 * unbadged message, proving the badged send was dropped.
+	 */
 	KUNIT_EXPECT_EQ(test, 0, airy_ipc_ring_consume(ring, &out));
 	KUNIT_EXPECT_EQ(test, other, out.capability_badge);
 
@@ -97,8 +99,10 @@ static void cancel_preserves_non_matching_badges_test(struct kunit *test)
 	KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_post(ring, &hdr_b));
 	KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_post(ring, &hdr_c));
 
-	/* Cancel only badge_b; a and c must survive and be delivered in
-	 * order, proving unbadged (non-matching) sends are unaffected. */
+	/*
+	 * Cancel only badge_b; a and c must survive and be delivered in
+	 * order, proving unbadged (non-matching) sends are unaffected.
+	 */
 	ret = airy_ipc_cancel_badged_sends(ring, badge_b);
 	KUNIT_EXPECT_EQ(test, 1, ret);
 
@@ -122,8 +126,10 @@ static void cancel_no_match_leaves_ring_intact_test(struct kunit *test)
 	fill_hdr(&hdr, present);
 	KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_post(ring, &hdr));
 
-	/* Cancelling a badge that was never sent must report zero and leave
-	 * the pending message intact. */
+	/*
+	 * Cancelling a badge that was never sent must report zero and leave
+	 * the pending message intact.
+	 */
 	ret = airy_ipc_cancel_badged_sends(ring, absent);
 	KUNIT_EXPECT_EQ(test, 0, ret);
 
@@ -144,8 +150,10 @@ static void cancel_multiple_matching_sends_test(struct kunit *test)
 	const __u64 badge = 0xBEEF000000000000ULL;
 	int ret;
 
-	/* Three posts with the SAME badge; a 4-entry ring holds up to 3
-	 * (one slot is reserved for full-detection). */
+	/*
+	 * Three posts with the SAME badge; a 4-entry ring holds up to 3
+	 * (one slot is reserved for full-detection).
+	 */
 	fill_hdr(&hdr1, badge);
 	fill_hdr(&hdr2, badge);
 	fill_hdr(&hdr3, badge);
@@ -160,12 +168,51 @@ static void cancel_multiple_matching_sends_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, -ENOMSG, airy_ipc_ring_consume(ring, &out));
 }
 
+static void init_rejects_capacity_above_max_test(struct kunit *test)
+{
+	struct airy_ipc_ring ring;
+	int ret;
+
+	/*
+	 * A zero-initialised ring makes a rejected init observable: if the
+	 * ceiling check runs before the allocation, slots stays NULL.
+	 */
+	memset(&ring, 0, sizeof(ring));
+
+	/*
+	 * MAX_ENTRIES * 2 is still a power of two, so only the ceiling
+	 * check can reject it.
+	 */
+	ret = airy_ipc_ring_init(&ring, AIRY_IPC_RING_MAX_ENTRIES * 2);
+	KUNIT_EXPECT_EQ(test, -EINVAL, ret);
+	KUNIT_EXPECT_NULL(test, ring.slots);
+}
+
+static void init_accepts_default_capacity_test(struct kunit *test)
+{
+	struct airy_ipc_ring ring;
+	int ret;
+
+	/*
+	 * The shared default must be a usable capacity, not just a
+	 * declarative constant.
+	 */
+	memset(&ring, 0, sizeof(ring));
+	ret = airy_ipc_ring_init(&ring, AIRY_IPC_RING_DEF_ENTRIES);
+	KUNIT_EXPECT_EQ(test, 0, ret);
+	KUNIT_EXPECT_NOT_NULL(test, ring.slots);
+	KUNIT_EXPECT_EQ(test, (u32)(AIRY_IPC_RING_DEF_ENTRIES - 1), ring.mask);
+	airy_ipc_ring_destroy(&ring);
+}
+
 static struct kunit_case airy_ipc_ring_cases[] = {
 	KUNIT_CASE(cancel_drops_matching_preserves_other_test),
 	KUNIT_CASE(cancel_preserves_non_matching_badges_test),
 	KUNIT_CASE(cancel_no_match_leaves_ring_intact_test),
 	KUNIT_CASE(cancel_null_ring_returns_einval_test),
 	KUNIT_CASE(cancel_multiple_matching_sends_test),
+	KUNIT_CASE(init_rejects_capacity_above_max_test),
+	KUNIT_CASE(init_accepts_default_capacity_test),
 	{}
 };
 

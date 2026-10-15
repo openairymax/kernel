@@ -22,6 +22,10 @@
 #define AIRY_IPC_HDR_SIZE       128
 #define AIRY_IPC_MAX_PAYLOAD    0x04000000u /* 64 MiB payload ceiling */
 
+/* Ring capacity constants */
+#define AIRY_IPC_RING_DEF_ENTRIES  256
+#define AIRY_IPC_RING_MAX_ENTRIES  32768
+
 /* ─── IPC Opcodes ────────────────────────────────────────────────────── */
 #define AIRY_IPC_OP_SEND        0x0001  /* Unicast send */
 #define AIRY_IPC_OP_RECV        0x0002  /* Unicast receive */
