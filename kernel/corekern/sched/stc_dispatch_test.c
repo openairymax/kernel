@@ -2,21 +2,14 @@
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
- * stc_dispatch_test.c — KUnit regression for the P1-1 log-level fix.
+ * stc_dispatch_test.c — KUnit regression for the stc_dispatch hot-path.
  *
- * P1-1 downgraded the stc_dispatch success-path log from pr_info to
- * pr_debug_ratelimited, so the dispatch hot-path no longer floods the
- * log on every scheduling class transition.  These tests exercise the
- * dispatch logic (policy mapping, sched_attr construction, input
- * validation) by #include-ing stc_dispatch.c to reach its static
- * helpers.  The pr_debug_ratelimited call at the dispatch entry is
- * covered by the valid-policy path; functional verification of the
- * printk level is out of scope for KUnit without console mocking, so
- * the regression is pinned by asserting the surrounding dispatch
- * behaviour that the log line sits in.
+ * Exercises policy mapping, sched_attr construction, and input
+ * validation by #include-ing stc_dispatch.c to reach its static
+ * helpers. stc_dispatch.o is dropped from airy_ck_sched when
+ * CONFIG_AIRY_KUNIT=y to keep stc_dispatch_enqueue single-defined.
  *
- * stc_dispatch.o is dropped from airy_ck_sched when CONFIG_AIRY_KUNIT=y
- * to keep stc_dispatch_enqueue single-defined.
+ * Design rationale: docs/AirymaxOS/80-testing/01-kunit-framework.md
  */
 
 #include <kunit/test.h>

@@ -4,32 +4,12 @@
  *
  * airy_lsm.c — Airy Pure-C LSM: registration, hooks, and module init.
  *
- * Registers with DEFINE_LSM(airy) at LSM_ORDER_MUTABLE.  Implements seven
- * core LSM hooks: uring_cmd, task_alloc, task_free, task_kill, file_open,
- * inode_alloc_security, inode_free_security.
- * Read-only security data is protected with __ro_after_init.
+ * Registers with DEFINE_LSM(airy) at LSM_ORDER_MUTABLE and implements
+ * seven hooks: uring_cmd, task_alloc, task_free, task_kill, file_open,
+ * inode_alloc_security, inode_free_security. Boot-only static
+ * registration gated by the airy_enabled boot-time kill switch.
  *
- * Registration phase (P2-5):
- *   - Boot-only: airy_init() is __init, invoked once during boot from
- *     the LSM framework's security_init() -> orderly_init() path.
- *     There is no runtime register/unregister; the hook list
- *     airy_hooks[] is __ro_after_init and security_add_hooks() is
- *     called exactly once.
- *   - Runtime gating: the airy_enabled module parameter (also
- *     __ro_after_init, set at boot via the airy.enabled=0 kernel
- *     command line) provides a boot-time kill switch. When false,
- *     airy_init() skips security_add_hooks() entirely and the LSM
- *     becomes a no-op. Runtime toggling is NOT supported — changing
- *     /sys/module/airy/parameters/airy_enabled after boot has no
- *     effect on hook registration, only on the per-hook fast-path
- *     check (which is itself __ro_after_init).
- *   - Hook execution vs registration: hooks are registered at boot
- *     (static struct security_hook_list[]), but each hook's body
- *     checks airy_enabled at runtime for the fast-path bypass.
- *     This two-layer design (boot registration + runtime check)
- *     allows CONFIG_SECURITY_AIRY=y builds to ship with the LSM
- *     compiled in and enabled by default (airy_enabled=true); the
- *     airy.enabled=0 command line disables it at boot.
+ * Design rationale: docs/AirymaxOS/110-security/07-airy-lsm-design.md
  */
 
 #include <linux/lsm_hooks.h>

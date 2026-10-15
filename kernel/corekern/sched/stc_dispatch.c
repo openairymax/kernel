@@ -4,20 +4,12 @@
  *
  * stc_dispatch.c — sched_tac dispatch to native Linux scheduling classes.
  *
- * Maps an Airymax sched_tac policy onto a native Linux scheduling class
- * (SCHED_DEADLINE / SCHED_FIFO / SCHED_NORMAL(EEVDF) / SCHED_BATCH),
- * records the dispatch via stc_stats, logs the mapping, and applies the
- * scheduling class via sched_setattr().
+ * Maps an Airymax sched_tac policy onto SCHED_DEADLINE / SCHED_FIFO /
+ * SCHED_NORMAL(EEVDF) / SCHED_BATCH, records it via stc_stats, and
+ * applies it via sched_setattr(). seL4 MCS scBudget/scRefill/scPeriod
+ * map to sched_runtime/deadline/period; THINK maps to SCHED_NORMAL.
  *
- * seL4 MCS semantic mapping (10-sc-sched-extension.md §4.2 L255-257):
- *   scBudget  ↔ sched_runtime   (CPU budget per period)
- *   scRefill  ↔ sched_deadline  (replenishment deadline)
- *   scPeriod  ↔ sched_period    (replenishment period)
- *
- * THINK phase (variable-length LLM inference, 100ms–10s) maps to
- * SCHED_NORMAL(EEVDF) with cgroup v2 cpu.max bandwidth isolation,
- * avoiding SCHED_DEADLINE's CBS WCET assumption mismatch (K9-3 fix).
- * PERCEPT/ACT phases (short, predictable) use SCHED_DEADLINE or SCHED_FIFO.
+ * Design rationale: docs/AirymaxOS/30-interfaces/10-sc-sched-extension.md
  */
 
 #include <linux/printk.h>

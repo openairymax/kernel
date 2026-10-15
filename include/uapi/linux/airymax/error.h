@@ -2,22 +2,14 @@
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
- * A-UEF (Unified Error and Fault Framework) — [SC] shared contract header.
+ * error.h — A-UEF unified error and fault framework, [SC] shared header.
  *
- * Two disjoint code-spaces:
- *   Error  space (negative int32_t): recoverable errors, POSIX-compatible.
- *          AIRY_E* constants are positive magnitudes (like POSIX errno);
- *          callers return -AIRY_E* to produce the negative error value.
- *   Fault  space (positive __u32): unrecoverable faults,
- *          hardware/security/invariants.
+ * Two disjoint code-spaces: Error (negative int32_t, recoverable,
+ * POSIX-compatible — AIRY_E* are positive magnitudes, callers return
+ * -AIRY_E*) and Fault (positive __u32, unrecoverable). 本头为 [SC]
+ * 契约头，禁止与 agentrt 通用错误码在同一编译单元混用。
  *
- * [DSL] fallback block: 38 POSIX codes active when AIRY_SC_FALLBACK is defined,
- * mapping to 5 core codes (EINVAL, ENOMEM, EBUSY, ECANCELED, EAGAIN).
- *
- * 注意：本头为 [SC] 共享契约头（AirymaxOS UAPI），错误码为「正数幅值」，
- * 调用方返回 -AIRY_E*。agentrt 用户态通用错误码权威源为
- * commons/include/airy_types.h（POSIX errno 负值，直接返回）。
- * 两者分属不同体系，禁止在同一编译单元混用（sc-dual-ci 校验两端逐字节一致）。
+ * Design rationale: docs/AirymaxOS/30-interfaces/08-sc-error-contract.md
  */
 
 #ifndef _UAPI_AIRYMAX_ERROR_H

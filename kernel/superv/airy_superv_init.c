@@ -4,22 +4,12 @@
  *
  * airy_superv_init.c — Micro-Supervisor initialization entry point.
  *
- * Provides late_initcall() to bring up the Micro-Supervisor subsystem:
- *   1. Register Micro-Supervisor supplemental LSM hooks via
- *      airy_superv_register_hooks() (defined in security/airy/).
+ * Provides late_initcall() to bring up the Micro-Supervisor: registers
+ * its supplemental LSM hooks via airy_superv_register_hooks(). The
+ * die_notifier is registered by the "airy" LSM itself, so no redundant
+ * registration is needed here; late_initcall runs after LSM init.
  *
- * The die_notifier is registered by the "airy" LSM itself during
- * security_initcall (airy_die_notify_init in security/airy/airy_die_notify.c),
- * so no redundant registration is needed here.
- *
- * Eventfd context and IPC ring freeze are initialised lazily on demand:
- *   - eventfd context is registered by userspace via airy_sys_clt_notify()
- *   - IPC ring freeze is triggered on first ring creation
- *
- * Design rationale (see docs/AirymaxOS/20-modules/09-kernel-agent-supervisor.md):
- *   - Micro-Supervisor lives in kernel/superv/ as an independent module
- *   - Delegates to security/airy/ for capability-aware enforcement
- *   - late_initcall ensures LSM "airy" is fully initialised first
+ * Design rationale: docs/AirymaxOS/20-modules/09-kernel-agent-supervisor.md
  */
 
 #include <linux/init.h>

@@ -1,31 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2025-2026 SPHARX Ltd.
+ * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
  * airy_log_ring.c — A-ULP 128-byte fixed-record lock-free ring buffer.
  *
  * Backed by alloc_pages(GFP_KERNEL) so the ring can be mmap()-ed into
- * agent address spaces for zero-copy log streaming.  Records are
- * fixed-size (128 bytes, struct airy_log_record) and accessed via a
- * reserve/commit two-phase model with atomic head/tail indices.
+ * agent address spaces for zero-copy streaming. Producers reserve a
+ * slot via cmpxchg on head, fill the record, then publish it by
+ * smp_store_release() of committed_head; consumers use smp_load_acquire().
  *
- * Memory layout:
- *
- *   +─────────────────────────── kaddr (page-aligned) ────────────+
- *   |  airy_log_ring_header (40 B)  |  record[0] | record[1] | …  |
- *   +──────────────────────────────────────────────────────────────+
- *
- * Producers reserve a slot by atomically incrementing head (cmpxchg),
- * fill the 128-byte record, then publish it by copying head into
- * committed_head via smp_store_release().  Consumers read
- * committed_head with smp_load_acquire() — never head — so that only
- * fully-written records become visible; head advances at reserve time
- * (before the record body is filled), whereas committed_head advances
- * at commit time (after the body is filled).  Consumers advance tail
- * after processing.  When the ring is full the oldest record is
- * overwritten.
- *
- * Design: docs/AirymaxOS/40-dataflows/05-ring-buffer-logging.md §1–§4
+ * Design rationale: docs/AirymaxOS/40-dataflows/05-ring-buffer-logging.md
  */
 
 #include <linux/atomic.h>

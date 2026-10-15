@@ -4,61 +4,12 @@
  *
  * airy_ipc_fastpath.c — Airymax IPC fast-path send.
  *
- * Implements the hot-path send: a single unlikely() check on the ring's
- * frozen flag, then delegation to airy_ipc_ring_post().  This is the
- * fast-path entry point for AIRY_IPC_OP_SEND.
+ * Hot-path send: a single unlikely() check on the ring's frozen flag,
+ * then delegation to airy_ipc_ring_post(). Not an IPC entry point:
+ * the only legal entry is the io_uring IORING_OP_URING_CMD path, after
+ * the LSM five-phase check has validated the Badge (C-S9).
  *
- * ─── 唯一合法入口声明 (E12) ───────────────────────────────────────────
- *
- * 本函数（以及 airy_ipc_ring_post()）不是独立可用的 IPC 入口。内核态
- * IPC 的**唯一合法入口**是 io_uring IORING_OP_URING_CMD 提交路径：
- *
- *   io_uring_cmd() → security_uring_cmd() LSM 钩子链
- *     → airy_uring_cmd()（security/airy/airy_lsm.c）
- *       → airy_uring_cmd_check() 五阶段 slowpath
- *         （security/airy/airy_cap_check.c，Phase 1-4 含 C-S9）
- *           → C-S9 PASS 后 → airy_ipc_fastpath_send()（本函数）
- *
- * 任何直接调用本函数、绕过 LSM 5-phase 校验的路径都是非法的（除
- * [DSL] 降级模式下 capability_badge=0 的 cap_pass 语义，H6）。此声明
- * 与 110-security/06-io-uring-hardening.md §3 的 io_uring 加固一致：
- * fastpath 是 LSM 校验通过后的**机制执行器**，不是安全边界。
- *
- * ─── Badge Decision Path (P1-7) ──────────────────────────────────────
- *
- * This function does NOT perform Badge validation.  The capability
- * Badge decision is made entirely by the caller via the C-S9 inline
- * check (airy_cap_badge_ok(), defined in security/airy/airy_cap.h)
- * BEFORE control reaches this function.  The full decision flow is:
- *
- *   1. io_uring_cmd IPC entry → airy_uring_cmd() LSM hook
- *      (security/airy/airy_lsm.c)
- *   2. airy_uring_cmd_check() five-phase slowpath
- *      (security/airy/airy_cap_check.c)
- *   3. Phase 4: C-S9 inline Badge validation via airy_cap_badge_ok():
- *        C-S9.1 — epoch check (badge epoch vs slot epoch)
- *        C-S9.2 — RandomTag check (forgery prevention)
- *        C-S9.3 — permission check (required_perms ⊆ badge perms)
- *      If C-S9 returns non-zero, the operation is rejected before
- *      reaching this function.
- *   4. On C-S9 PASS, the caller invokes airy_ipc_fastpath_send() to
- *      post the message to the ring.
- *
- * The separation is deliberate:
- *   - C-S9 is a pure capability check (no side effects, ~10 ns) that
- *     gates whether the agent is AUTHORISED to send at all.
- *   - fastpath_send handles ring MECHANICS (frozen gate, slot posting)
- *     and assumes the badge was already validated.
- *   - Re-validating the badge here would double the fastpath latency
- *     (~10 ns per extra C-S9 pass) without adding security: the ring's
- *     frozen flag is the only safety gate needed at this layer, because
- *     a frozen ring means the agent was administratively suspended by
- *     the Micro-Supervisor (e.g., after a security fault), rendering
- *     its badge irrelevant regardless of validity.
- *
- * The ring_post() function performs a second frozen check (defence in
- * depth) in case the ring was frozen between the fastpath check and
- * the actual post.
+ * Design rationale: docs/AirymaxOS/30-interfaces/07-ipc-fastpath.md
  */
 
 #include <linux/printk.h>

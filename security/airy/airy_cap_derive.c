@@ -2,40 +2,14 @@
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
- * airy_cap_derive.c — seL4-style CNode 7 derivation operations.
+ * airy_cap_derive.c — seL4-style CNode capability derivation.
  *
- * Implements airy_cap_derive() which dispatches to one of seven
- * capability derivation operations: copy, mint, move, mutate,
- * revoke, delete, rotate.
+ * Dispatches airy_cap_derive() to seven operations: copy, mint, move,
+ * mutate, revoke, delete, rotate. COPY/MINT/MOVE maintain a
+ * left-child right-sibling MDB tree; REVOKE cascades along it. A
+ * 64-bucket hashed spinlock array replaces the former global lock.
  *
- * Design decision — CNodeSaveCaller not implemented (P2-11):
- * seL4 MCS mode adds an 8th operation, SaveCaller, for Reply Cap
- * management (replaces Rotate in MCS). agent-linux intentionally
- * does NOT implement SaveCaller because:
- *   1. The v1.0.1 Capability Folding replaces Reply Cap semantics
- *      with io_uring CQE completion (IORING_OP_URING_CMD done path),
- *      eliminating the need for a dedicated Reply Cap slot.
- *   2. Rotate is retained instead (non-MCS alignment) for badge
- *      rotation under PERM_ROTATE.
- *   3. MCS reply scopes are unnecessary in the io_uring data-plane
- *      model where each SQE/CQE pair is self-contained.
- * Consumers requiring Reply semantics must use io_uring completion,
- * not a capability operation.
- *
- * MDB derivation tree (K9-1 fix): COPY/MINT/MOVE maintain a
- * left-child right-sibling tree via parent_agent/first_child/
- * next_sibling fields.  REVOKE cascades along this tree, providing
- * seL4-aligned recursive revocation semantics.  COPY supports
- * optional permission demotion when new_perms != 0 (P1-10 fix).
- *
- * Locking (P1-11 fix): a 64-bucket hashed spinlock array replaces
- * the former global spinlock.  Non-REVOKE ops acquire 1–3 bucket
- * locks; REVOKE acquires all 64.  This allows concurrent derivation
- * on disjoint agent sets.
- *
- * All operations are performed under the assumption that the caller
- * holds the appropriate authority (validated by the fastpath or
- * slowpath before reaching this point).
+ * Design rationale: docs/AirymaxOS/110-security/03-capability-model.md
  */
 
 #include <linux/random.h>

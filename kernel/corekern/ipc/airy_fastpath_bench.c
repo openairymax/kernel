@@ -2,35 +2,14 @@
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
- * airy_fastpath_bench.c — KUnit micro-benchmark for the Airymax IPC fastpath.
+ * airy_fastpath_bench.c — KUnit micro-benchmark for the IPC fastpath.
  *
- * The v3.6 review flagged the ~10ns Badge check (C-S9, airy_cap_badge_ok())
- * and ~158ns fastpath (airy_ipc_fastpath_send() + airy_ipc_ring_post()) as
- * design estimates without measurement (08-closure-summary-v3.6.md L109,
- * 18-closure-summary-v3.6b.md L151).  This suite replaces those estimates
- * with real numbers collected under KUnit (UML or real hardware).
+ * Measures the real latency of airy_cap_badge_ok() (C-S9), the full
+ * fastpath send, SPSC ring post/consume, and a simulated five-phase
+ * slowpath, replacing earlier design estimates. Samples are batched so
+ * timer overhead stays below 1 ns/op; calls real production functions.
  *
- * Measured metrics (ktime_get_ns, warm-up then batched loop, mean/p50/p99):
- *   a) airy_cap_badge_ok() hit and miss latency          (C-S9 inline)
- *   b) airy_ipc_fastpath_send() full-path latency        (frozen gate + post)
- *   c) airy_ipc_ring_post() / airy_ipc_ring_consume()    (SPSC mem-order cost)
- *   d) simulated 5-phase slowpath                        (phase1/4/5 of
- *      airy_uring_cmd_check(), no io_uring_cmd needed)
- *
- * Methodology:
- *   - Samples are batched (BATCH ops per ktime_get_ns() pair) so the timer
- *     call overhead is amortised well below 1 ns/op resolution.
- *   - mean comes from the batched per-op distribution; p50/p99 use
- *     quickselect (no full sort).  bulk is a single whole-loop timing and
- *     carries no per-batch timer overhead at all.
- *   - An identical empty-loop baseline is measured per metric; the net
- *     mean (raw - baseline) isolates the operation cost from the loop and
- *     the indirect-call overhead shared by every metric.
- *   - The benchmark calls the REAL production functions via the headers the
- *     production code uses (no re-implementation).  It runs against a
- *     dedicated ring (airy_ipc_ring) and a dedicated agent slot
- *     (BENCH_AGENT); the slot is saved/restored around each case so
- *     production agent_caps state is untouched.
+ * Design rationale: docs/AirymaxOS/30-interfaces/07-ipc-fastpath.md
  */
 
 #include <kunit/test.h>
