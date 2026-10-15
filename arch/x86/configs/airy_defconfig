@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # Airymax x86_64 defconfig fragment
-# Requires: make ARCH=x86_64 airy_defconfig
-# This fragment is applied on top of the x86_64 base defconfig.
+# Applied on top of the x86_64 base defconfig:
+#   make ARCH=x86_64 defconfig
+#   scripts/kconfig/merge_config.sh -m .config arch/x86/configs/airy_defconfig
+#   make ARCH=x86_64 olddefconfig
 # CONFIG_SECURITY must be enabled for SECURITY_AIRY to take effect
 # (SECURITY_AIRY depends on SECURITY && IO_URING).
 CONFIG_SECURITY=y
@@ -12,10 +14,11 @@ CONFIG_AIRY_LOG=y
 CONFIG_AIRY_IPC=y
 CONFIG_AIRY_CAP_TABLE_SIZE=1024
 # CONFIG_BPF_LSM is not set
+CONFIG_LSM="landlock,lockdown,yama,loadpin,safesetid,airy,selinux,smack,tomoyo,apparmor"
 CONFIG_IO_URING=y
 CONFIG_SCHED_DEADLINE=y
 # CONFIG_SCHED_CLASS_EXT is not set
 CONFIG_LRU_GEN=y
 CONFIG_LRU_GEN_ENABLED=y
 CONFIG_EVENTFD=y
-CONFIG_DEBUG_INFO_BTF=n
+# CONFIG_DEBUG_INFO_BTF is not set

@@ -11,5 +11,6 @@ CONFIG_AIRY_LOG=y
 CONFIG_AIRY_IPC=y
 CONFIG_AIRY_CAP_TABLE_SIZE=1024
 CONFIG_IO_URING=y
+CONFIG_LSM="landlock,lockdown,yama,loadpin,safesetid,airy,selinux,smack,tomoyo,apparmor"
 CONFIG_BPF=y
 CONFIG_BPF_SYSCALL=y
