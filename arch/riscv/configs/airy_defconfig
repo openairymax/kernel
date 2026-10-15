@@ -2,8 +2,7 @@
 # Airymax RISC-V 64-bit defconfig fragment
 # Requires: make ARCH=riscv defconfig && merge_config.sh -m .config arch/riscv/configs/airy_defconfig
 # This fragment is applied on top of the RISC-V 64-bit base defconfig.
-# CONFIG_SECURITY must be enabled for SECURITY_AIRY to take effect
-# (SECURITY_AIRY depends on SECURITY && IO_URING).
+# SECURITY_AIRY depends on SECURITY && IO_URING; both are set below.
 #
 # RISC-V 64-bit support added in v1.0.1 per multi-architecture requirement
 # (aligned with openEuler multi-arch: x86_64/aarch64/riscv64/loongarch64).
@@ -22,4 +21,19 @@ CONFIG_SCHED_DEADLINE=y
 CONFIG_LRU_GEN=y
 CONFIG_LRU_GEN_ENABLED=y
 CONFIG_EVENTFD=y
-# CONFIG_DEBUG_INFO_BTF is not set
+# BTF/BPF 前置（OS-KER-106 / OS-OBS-012）：pahole 需 DWARF 才能生成 BTF，
+# 且 DEBUG_INFO_REDUCED/SPLIT 与 DEBUG_INFO_BTF 互斥（lib/Kconfig.debug）。
+# airy_lsm 自身不依赖 BPF，此处仅开启内核 BTF/BPF 基线。
+CONFIG_DEBUG_INFO_DWARF4=y
+# CONFIG_DEBUG_INFO_REDUCED is not set
+# CONFIG_DEBUG_INFO_SPLIT is not set
+CONFIG_DEBUG_INFO_BTF=y
+CONFIG_BPF=y
+CONFIG_BPF_SYSCALL=y
+CONFIG_BPF_JIT=y
+# BPF_EVENTS 位于 kernel/trace/Kconfig 的 `if FTRACE` 区块内，依赖
+# (KPROBE_EVENTS || UPROBE_EVENTS) && PERF_EVENTS；显式开启 FTRACE 与
+# KPROBES 保证该链路在各架构 base defconfig 上均成立（OS-KER-106）。
+CONFIG_FTRACE=y
+CONFIG_KPROBES=y
+CONFIG_BPF_EVENTS=y
