@@ -329,6 +329,11 @@ static int bench_init(struct kunit *test)
 	f->hdr.opcode = AIRY_IPC_OP_SEND;
 	f->hdr.capability_badge = AIRY_BADGE_COMPILE(7u, 0x13579BDFu,
 						    AIRY_CAP_PERM_SEND);
+	/*
+	 * The fastpath enforces C-S12, so the fixture header must carry a
+	 * valid digest or every send bails with -AIRY_EIPC_CRC32.
+	 */
+	f->hdr.crc32 = airy_crc32_calc(&f->hdr, NULL);
 	return 0;
 }
 

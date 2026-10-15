@@ -14,6 +14,8 @@
 #define _AIRY_IPC_INTERNAL_H
 
 #include <linux/types.h>
+#include <linux/compiler.h>
+
 #include <linux/airymax/ipc.h>
 
 struct vm_area_struct;
@@ -39,6 +41,34 @@ int airy_ipc_cancel_badged_sends(struct airy_ipc_ring *ring, __u64 badge);
 /* ─── Fastpath ──────────────────────────────────────────────────────── */
 int airy_ipc_fastpath_send(struct airy_ipc_ring *ring,
 			   const struct airy_ipc_msg_hdr *hdr);
+
+/* ─── Fastpath C-S12 integrity digest ───────────────────────────────── */
+/**
+ * airy_crc32_calc() - compute the Layout C v4 header digest.
+ * @hdr:     message header.
+ * @payload: payload bytes, or NULL when @hdr->payload_len is zero.
+ *
+ * Covers bytes [0, offsetof(crc32)) of @hdr followed by @hdr->payload_len
+ * bytes at @payload.  capability_badge lies inside the covered range so a
+ * forged Badge still changes the digest; the crc32 field itself and the
+ * zeroed reserved tail are excluded.
+ *
+ * Return: the reflected IEEE 802.3 CRC-32 (zlib-compatible).
+ */
+__u32 airy_crc32_calc(const struct airy_ipc_msg_hdr *hdr, const void *payload);
+
+/**
+ * airy_crc32_ok() - verify the C-S12 digest before delivery.
+ * @hdr:     message header.
+ * @payload: payload bytes, or NULL on the header-only fastpath.
+ *
+ * Return: AIRY_EOK on match, -EINVAL for a NULL @hdr,
+ *         -AIRY_EIPC_NOTSUPP when a payload is declared but not supplied
+ *         (the header-only fastpath cannot digest it), or
+ *         -AIRY_EIPC_CRC32 on mismatch.
+ */
+__must_check int airy_crc32_ok(const struct airy_ipc_msg_hdr *hdr,
+			       const void *payload);
 
 /* ─── Zero-copy ─────────────────────────────────────────────────────── */
 int airy_ipc_zero_copy_register(unsigned long base, size_t len,

@@ -4,7 +4,7 @@
  *
  * airy_ipc_fastpath.c — Airymax IPC fast-path send.
  *
- * Hot-path send: a single unlikely() check on the ring's frozen flag,
+ * Hot-path send: the C-S0 frozen check and the C-S12 header digest,
  * then delegation to airy_ipc_ring_post(). Not an IPC entry point:
  * the only legal entry is the io_uring IORING_OP_URING_CMD path, after
  * the LSM five-phase check has validated the Badge (C-S9).
@@ -30,26 +30,35 @@
  * hdr:   message header to post (caller ensures valid magic/payload)
  *
  * Returns 0 on success, -EINVAL for null arguments, -AIRY_EIPC_FROZEN
- * if the ring is administratively frozen.
+ * if the ring is administratively frozen, or -AIRY_EIPC_CRC32 when the
+ * C-S12 header digest does not match.
  */
 int airy_ipc_fastpath_send(struct airy_ipc_ring *ring,
 			   const struct airy_ipc_msg_hdr *hdr)
 {
+	int ret;
+
 	if (!ring || !hdr)
 		return -EINVAL;
 
-	/* Fast path: bail out immediately if the ring is quiesced.
-	 * Return -AIRY_EIPC_FROZEN (not generic -EAGAIN) so userland can
-	 * distinguish "ring administratively frozen" from "transient retry".
-	 *
-	 * This is the ONLY safety gate in the fastpath: the caller has
-	 * already passed C-S9 Badge validation (see file-level comment),
-	 * so a valid badge reaching this point is authoritative.  The
-	 * frozen check catches the race where the Micro-Supervisor
-	 * suspends the agent between C-S9 and ring_post.
+	/* C-S0: bail out immediately if the ring is quiesced.  Return
+	 * -AIRY_EIPC_FROZEN (not generic -EAGAIN) so userland can tell
+	 * "ring administratively frozen" from "transient retry".  This
+	 * catches the race where the Micro-Supervisor suspends the agent
+	 * between C-S9 and ring_post.
 	 */
 	if (unlikely(READ_ONCE(ring->frozen)))
 		return -AIRY_EIPC_FROZEN;
+
+	/* C-S12: verify the header digest before the slot write.  The
+	 * fastpath carries no payload (any payload-bearing message
+	 * degrades to slowpath), so the digest covers header[0:52) alone.
+	 * A mismatch means the header was corrupted in flight; drop the
+	 * message rather than deliver it.
+	 */
+	ret = airy_crc32_ok(hdr, NULL);
+	if (unlikely(ret))
+		return ret;
 
 	/* Delegate to ring_post() which performs the actual slot write.
 	 * ring_post() re-checks frozen (defence in depth) and validates
