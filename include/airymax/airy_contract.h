@@ -21,6 +21,7 @@
 #define _AIRY_CONTRACT_H
 
 #include <linux/types.h>
+#include <linux/init.h>
 #include <linux/build_bug.h>
 #include <linux/io_uring.h>
 
@@ -139,5 +140,12 @@ static_assert(AIRY_SYS_SLOTS_MAX == 24, "Airymax syscall slot count must stay 24
  * 内以 ARRAY_SIZE 断言（钩子表为 static，见该文件）。
  */
 static_assert(AIRY_LSM_HOOK_IMPLEMENTED == 7, "Airy LSM must register 7 hooks");
+
+/* ─── 启动期契约快照自检 ────────────────────────────────────────────────
+ * 编译期断言覆盖不到的运行时形态（目标架构实际布局）由 airy_contract_check()
+ * 在启动期实测复核；Airy LSM 在注册钩子前必须先通过该自检，失败即保持
+ * 不启用（fail-closed）。实现见 security/airy/airy_contract_check.c。
+ */
+int __init airy_contract_check(void);
 
 #endif /* _AIRY_CONTRACT_H */

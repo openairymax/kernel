@@ -203,10 +203,21 @@ static_assert(ARRAY_SIZE(airy_hooks) == AIRY_LSM_HOOK_IMPLEMENTED,
 /* ─── Module init ──────────────────────────────────────────────────────── */
 static int __init airy_init(void)
 {
+	int rc;
+
 	if (!airy_enabled) {
 		pr_info("airy: disabled via module parameter\n");
 		return 0;
 	}
+
+	/*
+	 * Attest the [SC] contract snapshot before anything is registered: a
+	 * drifted layout must never reach the fastpath that indexes
+	 * agent_caps[] by hand-computed offsets.
+	 */
+	rc = airy_contract_check();
+	if (rc)
+		return rc;
 
 	/* Initialise global capability table */
 	airy_cap_agent_caps_init();
