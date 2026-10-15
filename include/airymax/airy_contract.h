@@ -146,6 +146,6 @@ static_assert(AIRY_LSM_HOOK_IMPLEMENTED == 7, "Airy LSM must register 7 hooks");
  * 在启动期实测复核；Airy LSM 在注册钩子前必须先通过该自检，失败即保持
  * 不启用（fail-closed）。实现见 security/airy/airy_contract_check.c。
  */
-int __init airy_contract_check(void);
+int airy_contract_check(void);
 
 #endif /* _AIRY_CONTRACT_H */

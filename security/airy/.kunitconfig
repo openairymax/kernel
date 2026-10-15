@@ -1,0 +1,23 @@
+# Airy LSM KUnit suite: P1-4 / P1-5 / P1-8 / P1-10 plus the A-11 [SC]
+# contract snapshot regression.
+#
+# Run with:
+#   ./tools/testing/kunit/kunit.py run --arch=um \
+#       --kunitconfig=security/airy --raw_output=all
+#
+# CONFIG_LSM must list "airy": the LSM framework only reserves the per-task
+# security blob for frameworks named here (or on the kernel command line via
+# lsm=).  Without it DEFINE_LSM(airy).init() is never invoked and every hook
+# observes current->security == NULL, which aborts airy_lsm_test.c at its
+# ASSERT_NOT_NULL.
+
+CONFIG_KUNIT=y
+
+CONFIG_SECURITY=y
+CONFIG_SECURITY_AIRY=y
+CONFIG_AIRY_KUNIT=y
+
+# Airy IPC rides on io_uring; the fastpath and IPC-ring tests need it.
+CONFIG_IO_URING=y
+
+CONFIG_LSM="lockdown,yama,airy"

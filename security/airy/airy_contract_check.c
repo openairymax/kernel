@@ -53,8 +53,13 @@ struct airy_contract_entry {
 		.at_most = true,					\
 	}
 
-/* 契约快照：每行的实测值必须与 [SC] 契约常量一致（或在给定上界内）。 */
-static const struct airy_contract_entry airy_contract_table[] __initconst = {
+/* 契约快照：每行的实测值必须与 [SC] 契约常量一致（或在给定上界内）。
+ *
+ * 表与校验函数刻意不标 __init：boot 阶段由 airy_init() 调用，同时供
+ * airy_contract_test.c 在同一进程内直接驱动，使这条防漂移逻辑可被回归
+ * 测试覆盖，而不是只写在启动路径里无法验证。
+ */
+static const struct airy_contract_entry airy_contract_table[] = {
 	AIRY_CE("ipc_hdr.size", AIRY_IPC_HDR_SIZE,
 		sizeof(struct airy_ipc_msg_hdr)),
 	AIRY_CE("ipc_hdr.opcode_off", 4,
@@ -86,7 +91,7 @@ static const struct airy_contract_entry airy_contract_table[] __initconst = {
 		offsetof(struct airy_task_sec, ipc_ring)),
 };
 
-static int __init airy_contract_verify(void)
+static int airy_contract_verify(void)
 {
 	const struct airy_contract_entry *entry;
 	unsigned int drifted = 0;
@@ -120,7 +125,7 @@ static int __init airy_contract_verify(void)
  *
  * Return: 0 when every invariant holds; -EINVAL when any has drifted.
  */
-int __init airy_contract_check(void)
+int airy_contract_check(void)
 {
 	unsigned int drifted = airy_contract_verify();
 
