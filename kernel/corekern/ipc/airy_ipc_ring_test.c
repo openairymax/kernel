@@ -2,14 +2,15 @@
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
- * airy_ipc_ring_test.c — KUnit regression for the P1-8 cancelBadgedSends fix.
+ * airy_ipc_ring_test.c — KUnit coverage for the IPC ring core.
  *
- * P1-8 implemented airy_ipc_cancel_badged_sends(): the agent-linux
- * analogue of seL4's cancelBadgedSends (endpoint.c:476-489).  It walks
- * the pending region of an SPSC ring and zeroes the magic field of every
- * slot whose capability_badge matches, so airy_ipc_ring_consume() skips
- * them.  These tests verify that cancelled (badged) sends are dropped
- * while unbadged (different-badge) sends are delivered untouched.
+ * Covers the two invariants of the SPSC ring: the capacity/ceiling
+ * contract enforced by airy_ipc_ring_init(), and the cursor semantics
+ * (FIFO order, exact-full/empty detection, wrap-around) guarded by the
+ * release/acquire pairing in airy_ipc_ring_post()/consume().  It also
+ * covers P1-8 airy_ipc_cancel_badged_sends(), the agent-linux analogue
+ * of seL4's cancelBadgedSends (endpoint.c:476-489), which zeroes the
+ * magic field of every pending slot whose capability_badge matches.
  *
  * The ring entry points are non-static (declared in airy_ipc_internal.h),
  * so the test links against airy_ipc_ring.o within the airy_ck_ipc module
@@ -205,6 +206,43 @@ static void init_accepts_default_capacity_test(struct kunit *test)
 	airy_ipc_ring_destroy(&ring);
 }
 
+static void spsc_wrap_around_preserves_fifo_test(struct kunit *test)
+{
+	struct airy_ipc_ring *ring = test->priv;
+	struct airy_ipc_msg_hdr hdr, out;
+	__u64 i;
+
+	/*
+	 * Fill the ring to capacity (entries - 1) with distinct badges.
+	 * This also drives head/tail through the full/empty boundary that
+	 * the release/acquire cursor pairing guards.
+	 */
+	for (i = 1; i < TEST_RING_ENTRIES; i++) {
+		fill_hdr(&hdr, i);
+		KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_post(ring, &hdr));
+	}
+
+	/* One more post must be rejected: the ring is exactly full. */
+	fill_hdr(&hdr, 0xFFFFFFFFFFFFFFFFULL);
+	KUNIT_EXPECT_EQ(test, -ENOSPC, airy_ipc_ring_post(ring, &hdr));
+
+	/* Drain in FIFO order. */
+	for (i = 1; i < TEST_RING_ENTRIES; i++) {
+		KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_consume(ring, &out));
+		KUNIT_EXPECT_EQ(test, i, out.capability_badge);
+	}
+	KUNIT_EXPECT_EQ(test, -ENOMSG, airy_ipc_ring_consume(ring, &out));
+
+	/*
+	 * Posting after a full drain forces both cursors to wrap past the
+	 * mask; the value must still round-trip in order.
+	 */
+	fill_hdr(&hdr, 0xABCDEFULL);
+	KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_post(ring, &hdr));
+	KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_consume(ring, &out));
+	KUNIT_EXPECT_EQ(test, 0xABCDEFULL, out.capability_badge);
+}
+
 static struct kunit_case airy_ipc_ring_cases[] = {
 	KUNIT_CASE(cancel_drops_matching_preserves_other_test),
 	KUNIT_CASE(cancel_preserves_non_matching_badges_test),
@@ -213,6 +251,7 @@ static struct kunit_case airy_ipc_ring_cases[] = {
 	KUNIT_CASE(cancel_multiple_matching_sends_test),
 	KUNIT_CASE(init_rejects_capacity_above_max_test),
 	KUNIT_CASE(init_accepts_default_capacity_test),
+	KUNIT_CASE(spsc_wrap_around_preserves_fifo_test),
 	{}
 };
 

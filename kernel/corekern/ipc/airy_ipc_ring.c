@@ -80,7 +80,16 @@ int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 
 	/* Single-producer advance: head only moves forward by one slot. */
 	next = (ring->head + 1) & ring->mask;
-	if (next == ring->tail) {
+
+	/*
+	 * The fullness check reads the consumer-owned tail with acquire
+	 * semantics, pairing with the smp_store_release() that
+	 * airy_ipc_ring_consume() uses to publish tail.  This orders the
+	 * subsequent slot store after the observed tail, so the producer
+	 * never overwrites a slot the consumer has not yet finished
+	 * reading on weakly-ordered architectures (ARM64, etc.).
+	 */
+	if (next == smp_load_acquire(&ring->tail)) {
 		pr_warn_ratelimited("airy_ipc_ring: ring full (head=%u tail=%u)\n",
 				    ring->head, ring->tail);
 		return -ENOSPC;
@@ -105,7 +114,7 @@ int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 int airy_ipc_ring_consume(struct airy_ipc_ring *ring,
 			  struct airy_ipc_msg_hdr *out)
 {
-	u32 next;
+	__u32 tail;
 
 	if (!ring || !out || !ring->slots)
 		return -EINVAL;
@@ -120,7 +129,7 @@ int airy_ipc_ring_consume(struct airy_ipc_ring *ring,
 	 * new (non-cancelled) messages while we are skipping.
 	 */
 	for (;;) {
-		__u32 tail = ring->tail;
+		tail = READ_ONCE(ring->tail);
 
 		/* Ring empty? */
 		if (smp_load_acquire(&ring->head) == tail)
@@ -134,8 +143,7 @@ int airy_ipc_ring_consume(struct airy_ipc_ring *ring,
 			break;
 
 		/* Cancelled slot — advance tail past it. */
-		next = (tail + 1) & ring->mask;
-		ring->tail = next;
+		smp_store_release(&ring->tail, (tail + 1) & ring->mask);
 	}
 
 	/*
@@ -147,9 +155,15 @@ int airy_ipc_ring_consume(struct airy_ipc_ring *ring,
 	 */
 
 	/* Single-consumer advance: tail only moves forward by one slot. */
-	memcpy(out, &ring->slots[ring->tail], sizeof(*out));
-	next = (ring->tail + 1) & ring->mask;
-	ring->tail = next;
+	memcpy(out, &ring->slots[tail], sizeof(*out));
+
+	/*
+	 * smp_store_release() publishes the slot read above before the tail
+	 * advance and pairs with the smp_load_acquire() in
+	 * airy_ipc_ring_post()'s fullness check, mirroring the head-side
+	 * pairing.
+	 */
+	smp_store_release(&ring->tail, (tail + 1) & ring->mask);
 
 	return 0;
 }
