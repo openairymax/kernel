@@ -39,9 +39,12 @@
 #include <linux/cred.h>
 #include <linux/sched.h>
 #include <linux/sched/signal.h>
+#include <linux/build_bug.h>
 #include <linux/airymax/lsm_types.h>
 #include <linux/airymax/sched.h>
 #include <linux/airymax/error.h>
+
+#include <airymax/airy_contract.h>
 
 #include "airy_cap.h"
 
@@ -192,6 +195,10 @@ static struct security_hook_list airy_hooks[] __ro_after_init = {
 	LSM_HOOK_INIT(inode_alloc_security, airy_inode_alloc),
 	LSM_HOOK_INIT(inode_free_security,  airy_inode_free),
 };
+
+/* [SC] 契约声明注册 7 个钩子；钩子表为 static，一致性只能在本文件内断言。 */
+static_assert(ARRAY_SIZE(airy_hooks) == AIRY_LSM_HOOK_IMPLEMENTED,
+	      "airy_hooks[] must register exactly AIRY_LSM_HOOK_IMPLEMENTED hooks");
 
 /* ─── Module init ──────────────────────────────────────────────────────── */
 static int __init airy_init(void)
