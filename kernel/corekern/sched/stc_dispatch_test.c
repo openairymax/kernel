@@ -128,7 +128,7 @@ static void linux_policy_name_test(struct kunit *test)
 	KUNIT_EXPECT_STREQ(test, "SCHED_BATCH",
 			   stc_linux_policy_name(SCHED_BATCH));
 	KUNIT_EXPECT_STREQ(test, "SCHED_UNKNOWN",
-			   stc_linux_policy_name(0));
+			   stc_linux_policy_name(9999));
 }
 
 static struct kunit_case stc_dispatch_cases[] = {
