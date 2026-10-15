@@ -111,23 +111,6 @@ static inline u16 airy_op_required_perms(u16 opcode)
  */
 __must_check int airy_invoke_hdr_check(const struct airy_ipc_msg_hdr *hdr);
 
-/* Invocation context */
-/**
- * struct airy_invoke_ctx - per-request context for syscall 548 dispatch
- * @cap:    Capability badge presented by the caller (airy_cap_t).
- * @opcode: Dispatch key, copied from the validated msg->opcode.
- * @msg:    Caller message header, already copied into kernel memory.
- *
- * Bundles the immutable inputs of a single airy_sys_call() request so
- * that dispatch handlers share one argument. It is filled only after
- * the message header has passed validation (OS-KER-225).
- */
-struct airy_invoke_ctx {
-	airy_cap_t cap;
-	u16 opcode;
-	const struct airy_ipc_msg_hdr *msg;
-};
-
 /* Dispatch entry points (defined in airy_syscalls.c) */
 /**
  * airy_invoke_op_valid() - test whether an opcode is dispatchable
