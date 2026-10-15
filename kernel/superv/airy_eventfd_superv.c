@@ -17,16 +17,10 @@
 
 #include "../../security/airy/airy_cap.h"
 
-/* ─── Delegates (declared in security/airy/airy_cap.h) ────────────────── */
-extern void airy_eventfd_signal_fault(__u32 fault_code, __u32 agent_id,
-				      __u64 timestamp);
-
 /* ─── Superv-side Wrappers ────────────────────────────────────────────── */
 
 int airy_superv_eventfd_register(struct eventfd_ctx *ctx)
 {
-	/* Delegates to LSM airy_eventfd_register() */
-	extern int airy_eventfd_register(struct eventfd_ctx *ctx);
 	int ret = airy_eventfd_register(ctx);
 
 	if (ret)

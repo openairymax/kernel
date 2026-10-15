@@ -18,11 +18,6 @@
 
 /* struct airy_ipc_ring_freeze_state is defined in airy_cap.h (single-host). */
 
-/* ─── Delegates (declared in security/airy/) ──────────────────────────── */
-extern void airy_ipc_freeze_ring(struct airy_ipc_ring_freeze_state *ring,
-				__u32 reason);
-extern void airy_ipc_thaw_ring(struct airy_ipc_ring_freeze_state *ring);
-
 /* ─── Superv-side Wrappers ────────────────────────────────────────────── */
 
 void airy_superv_ipc_freeze_ring(struct airy_ipc_ring_freeze_state *ring,

@@ -28,9 +28,6 @@
 
 #include "airy_cap.h"
 
-/* ─── Forward declarations ───────────────────────────────────────────── */
-void __init airy_die_notify_init(void);
-
 /* ─── Module parameter ─────────────────────────────────────────────────── */
 static bool airy_enabled __ro_after_init = true;
 module_param(airy_enabled, bool, 0444);

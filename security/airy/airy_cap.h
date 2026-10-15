@@ -15,6 +15,8 @@
 #include <linux/atomic.h>
 #include <linux/cache.h>
 #include <linux/compiler.h>
+#include <linux/init.h>
+#include <linux/notifier.h>
 #include <linux/spinlock.h>
 #include <linux/airymax/lsm_types.h>
 #include <linux/airymax/error.h>
@@ -140,6 +142,31 @@ struct airy_ipc_ring_freeze_state {
 	__u32   freeze_reason;
 	__u64   freeze_timestamp;
 };
+
+/* ─── Cross-TU API: IPC Freeze / EventFD / Die-Notify ─────────────────── */
+/*
+ * Single-host prototypes for symbols consumed across translation units
+ * within security/airy and kernel/superv.  Declaring them here (rather
+ * than as ad-hoc externs at each call site) removes duplicate prototypes
+ * and, more importantly, the silent signature-drift hazard: C does not
+ * diagnose a caller whose local extern disagrees with the real
+ * definition, so each call site must not be free to redeclare the
+ * prototype.
+ */
+struct task_struct;
+
+void airy_ipc_freeze_ring(struct airy_ipc_ring_freeze_state *ring, __u32 reason);
+void airy_ipc_thaw_ring(struct airy_ipc_ring_freeze_state *ring);
+struct airy_ipc_ring_freeze_state *airy_ipc_ring_for_task(struct task_struct *task);
+
+struct eventfd_ctx;
+
+int airy_eventfd_register(struct eventfd_ctx *ctx);
+void airy_eventfd_signal_fault(__u32 fault_code, __u32 agent_id,
+			       __u64 timestamp);
+
+extern struct atomic_notifier_head airy_die_chain;
+void __init airy_die_notify_init(void);
 
 /* ─── Slowpath Capability Check ───────────────────────────────────────── */
 struct io_uring_cmd;

@@ -28,23 +28,6 @@
  */
 ATOMIC_NOTIFIER_HEAD(airy_die_chain);
 
-/* ─── External Declarations ───────────────────────────────────────────── */
-
-/*
- * Functions provided by airy_ipc_freeze.c
- */
-struct airy_ipc_ring_freeze_state;
-extern void airy_ipc_freeze_ring(struct airy_ipc_ring_freeze_state *ring,
-				__u32 reason);
-extern struct airy_ipc_ring_freeze_state *
-			airy_ipc_ring_for_task(struct task_struct *task);
-
-/*
- * Functions provided by airy_eventfd.c
- */
-extern void airy_eventfd_signal_fault(__u32 fault_code, __u32 agent_id,
-				      __u64 timestamp);
-
 /* ─── Die Reason → Fault Code Mapping ─────────────────────────────────── */
 
 /**

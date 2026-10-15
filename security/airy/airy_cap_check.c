@@ -33,9 +33,6 @@
 
 #include "airy_cap.h"
 
-/* Airy security fault notifier chain (defined in airy_die_notify.c) */
-extern struct atomic_notifier_head airy_die_chain;
-
 /* ─── Phase 1: C-S0 Ring Frozen Check ──────────────────────────────────── */
 /*
  * Check whether the agent's IPC ring is frozen.  A frozen ring means
