@@ -74,6 +74,7 @@ struct landlock_ruleset_attr;
 enum landlock_rule_type;
 struct cachestat_range;
 struct cachestat;
+struct airy_ipc_msg_hdr;
 
 #include <linux/types.h>
 #include <linux/aio_abi.h>
@@ -86,6 +87,7 @@ struct cachestat;
 #include <linux/unistd.h>
 #include <linux/quota.h>
 #include <linux/key.h>
+#include <linux/airymax/security_types.h>
 #include <linux/personality.h>
 #include <trace/syscall.h>
 
@@ -1164,6 +1166,18 @@ asmlinkage long sys_mmap_pgoff(unsigned long addr, unsigned long len,
 			unsigned long fd, unsigned long pgoff);
 asmlinkage long sys_old_mmap(struct mmap_arg_struct __user *arg);
 
+/*
+ * Airymax syscalls, needed only by architectures that drive their
+ * sys_call_table off <asm/unistd.h> without CONFIG_ARCH_HAS_SYSCALL_WRAPPER
+ * (loongarch, sw_64): those tables reference the bare sys_airy_sys_*
+ * symbols, which are otherwise declared nowhere.
+ */
+asmlinkage long sys_airy_sys_call(airy_cap_t cap,
+		const struct airy_ipc_msg_hdr __user *msg);
+asmlinkage long sys_airy_sys_rovol_ctl(__u32 op, __u32 pid, __u64 arg);
+asmlinkage long sys_airy_sys_sched_ctl(__u32 op, const char __user *cgroup_path,
+		const char __user *policy);
+asmlinkage long sys_airy_sys_clt_notify(int task_id, __u32 phase);
 
 /*
  * Not a real system call, but a placeholder for syscalls which are
