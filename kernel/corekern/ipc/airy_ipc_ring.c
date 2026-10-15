@@ -41,6 +41,10 @@ int airy_ipc_ring_init(struct airy_ipc_ring *ring, u32 entries)
 	ring->mask   = entries - 1;
 	ring->frozen = 0;
 
+	/* Fresh occupancy accounting: no backlog, no rejections yet. */
+	ring->peak_depth = 0;
+	ring->full_count = 0;
+
 	/* Allocate the message header storage array (one slot per entry). */
 	ring->slots = kcalloc(entries, sizeof(*ring->slots), GFP_KERNEL);
 	if (!ring->slots)
@@ -64,7 +68,7 @@ void airy_ipc_ring_destroy(struct airy_ipc_ring *ring)
 int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 		       const struct airy_ipc_msg_hdr *hdr)
 {
-	u32 next;
+	u32 next, tail, depth;
 
 	if (!ring || !hdr || !ring->slots)
 		return -EINVAL;
@@ -89,11 +93,23 @@ int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 	 * never overwrites a slot the consumer has not yet finished
 	 * reading on weakly-ordered architectures (ARM64, etc.).
 	 */
-	if (next == smp_load_acquire(&ring->tail)) {
+	tail = smp_load_acquire(&ring->tail);
+	if (next == tail) {
+		/* The nightly monitor fails the run on any full rejection. */
+		WRITE_ONCE(ring->full_count, ring->full_count + 1);
 		pr_warn_ratelimited("airy_ipc_ring: ring full (head=%u tail=%u)\n",
-				    ring->head, ring->tail);
+				    ring->head, tail);
 		return -ENOSPC;
 	}
+
+	/*
+	 * Occupancy after this post.  The producer is the only writer of
+	 * the high-water mark, so a WRITE_ONCE() read-modify-write keeps
+	 * it accurate without additional locking.
+	 */
+	depth = (next - tail) & ring->mask;
+	if (depth > READ_ONCE(ring->peak_depth))
+		WRITE_ONCE(ring->peak_depth, depth);
 
 	/* Store the message header into the current slot before advancing. */
 	memcpy(&ring->slots[ring->head], hdr, sizeof(*hdr));
@@ -224,4 +240,42 @@ int airy_ipc_cancel_badged_sends(struct airy_ipc_ring *ring, __u64 badge)
 	pr_debug_ratelimited("%s: cancelled %d message(s)\n",
 		__func__, cancelled);
 	return cancelled;
+}
+
+/* ─── Ring depth statistics (nightly monitor source) ─────────────────── */
+/*
+ * Sample the ring occupancy for the nightly ring-depth monitor
+ * (docs 80-testing §9.3: warn above 80% of capacity, fail the run on
+ * any full rejection).  pct is depth/entries*100: entries is the
+ * declared capacity, so a full ring (depth == entries - 1) reads 99,
+ * never 100.
+ *
+ * Returns 0 and fills @out, or -EINVAL if @ring, @out or @ring->slots
+ * is NULL: an uninitialised ring has no capacity to divide by.
+ */
+int airy_ipc_ring_depth_stats(struct airy_ipc_ring *ring,
+			      struct airy_ipc_ring_depth *out)
+{
+	u32 head, tail, entries;
+
+	if (!ring || !out || !ring->slots)
+		return -EINVAL;
+
+	/*
+	 * A monitor needs each cursor to be a coherent, tear-free load
+	 * and nothing more.  Unlike cancelBadgedSends() this path reads
+	 * no slot data, so it takes no acquire barrier and READ_ONCE()
+	 * suffices to keep the read KCSAN-atomic.
+	 */
+	head = READ_ONCE(ring->head);
+	tail = READ_ONCE(ring->tail);
+	entries = ring->mask + 1;
+
+	out->entries = entries;
+	out->depth = (head - tail) & ring->mask;
+	out->pct = out->depth * 100 / entries;
+	out->peak_depth = READ_ONCE(ring->peak_depth);
+	out->full_count = READ_ONCE(ring->full_count);
+
+	return 0;
 }

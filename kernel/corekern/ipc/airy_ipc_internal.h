@@ -27,7 +27,28 @@ struct airy_ipc_ring {
 	u32	tail;		/* consumer cursor (next read slot)  */
 	u32	mask;		/* capacity-1 (ring size must be 2^N) */
 	u32	frozen;		/* non-zero when ring is quiesced    */
+	u32	peak_depth;	/* high-water mark of pending slots  */
+	u64	full_count;	/* posts rejected because ring full  */
 	struct airy_ipc_msg_hdr *slots;	/* message storage array (entries) */
+};
+
+/**
+ * struct airy_ipc_ring_depth - sampled occupancy of an IPC ring.
+ * @entries:    declared capacity, i.e. the number of slots.
+ * @depth:      messages posted but not yet consumed.
+ * @pct:        @depth as a percentage of @entries (0-99).
+ * @peak_depth: highest @depth reached since the ring was initialised.
+ * @full_count: cumulative posts rejected because the ring was full.
+ *
+ * Sampled by the nightly ring-depth monitor (docs 80-testing §9.3) via
+ * airy_ipc_ring_depth_stats().
+ */
+struct airy_ipc_ring_depth {
+	u32	entries;
+	u32	depth;
+	u32	pct;
+	u32	peak_depth;
+	u64	full_count;
 };
 
 int airy_ipc_ring_init(struct airy_ipc_ring *ring, u32 entries);
@@ -37,6 +58,8 @@ int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 int airy_ipc_ring_consume(struct airy_ipc_ring *ring,
 			  struct airy_ipc_msg_hdr *out);
 int airy_ipc_cancel_badged_sends(struct airy_ipc_ring *ring, __u64 badge);
+int airy_ipc_ring_depth_stats(struct airy_ipc_ring *ring,
+			      struct airy_ipc_ring_depth *out);
 
 /* ─── Fastpath ──────────────────────────────────────────────────────── */
 int airy_ipc_fastpath_send(struct airy_ipc_ring *ring,

@@ -10,7 +10,8 @@
  * release/acquire pairing in airy_ipc_ring_post()/consume().  It also
  * covers P1-8 airy_ipc_cancel_badged_sends(), the agent-linux analogue
  * of seL4's cancelBadgedSends (endpoint.c:476-489), which zeroes the
- * magic field of every pending slot whose capability_badge matches.
+ * magic field of every pending slot whose capability_badge matches, and
+ * the occupancy accounting airy_ipc_ring_depth_stats() samples.
  *
  * The ring entry points are non-static (declared in airy_ipc_internal.h),
  * so the test links against airy_ipc_ring.o within the airy_ck_ipc module
@@ -243,6 +244,86 @@ static void spsc_wrap_around_preserves_fifo_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 0xABCDEFULL, out.capability_badge);
 }
 
+static void depth_stats_init_snapshot_test(struct kunit *test)
+{
+	struct airy_ipc_ring *ring = test->priv;
+	struct airy_ipc_ring_depth d;
+
+	/* A freshly initialised ring is empty and has rejected nothing. */
+	KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_depth_stats(ring, &d));
+	KUNIT_EXPECT_EQ(test, (u32)TEST_RING_ENTRIES, d.entries);
+	KUNIT_EXPECT_EQ(test, (u32)0, d.depth);
+	KUNIT_EXPECT_EQ(test, (u32)0, d.pct);
+	KUNIT_EXPECT_EQ(test, (u32)0, d.peak_depth);
+	KUNIT_EXPECT_EQ(test, (u64)0, d.full_count);
+}
+
+static void depth_stats_tracks_occupancy_test(struct kunit *test)
+{
+	struct airy_ipc_ring *ring = test->priv;
+	struct airy_ipc_msg_hdr hdr, out;
+	struct airy_ipc_ring_depth d;
+
+	fill_hdr(&hdr, 0x1ULL);
+	KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_post(ring, &hdr));
+	fill_hdr(&hdr, 0x2ULL);
+	KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_post(ring, &hdr));
+
+	/* Two of four slots are pending: 50% of the declared capacity. */
+	KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_depth_stats(ring, &d));
+	KUNIT_EXPECT_EQ(test, (u32)2, d.depth);
+	KUNIT_EXPECT_EQ(test, (u32)50, d.pct);
+	KUNIT_EXPECT_EQ(test, (u32)2, d.peak_depth);
+
+	/* Draining lowers depth but must not lower the high-water mark. */
+	KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_consume(ring, &out));
+	KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_depth_stats(ring, &d));
+	KUNIT_EXPECT_EQ(test, (u32)1, d.depth);
+	KUNIT_EXPECT_EQ(test, (u32)25, d.pct);
+	KUNIT_EXPECT_EQ(test, (u32)2, d.peak_depth);
+}
+
+static void depth_stats_counts_full_rejection_test(struct kunit *test)
+{
+	struct airy_ipc_ring *ring = test->priv;
+	struct airy_ipc_msg_hdr hdr;
+	struct airy_ipc_ring_depth d;
+	u32 i;
+
+	/* Fill the ring to its exact-full boundary (entries - 1). */
+	for (i = 1; i < (u32)TEST_RING_ENTRIES; i++) {
+		fill_hdr(&hdr, (__u64)i);
+		KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_post(ring, &hdr));
+	}
+
+	/* The rejected post is the event the nightly monitor fails on. */
+	fill_hdr(&hdr, 0xFFFFULL);
+	KUNIT_EXPECT_EQ(test, -ENOSPC, airy_ipc_ring_post(ring, &hdr));
+
+	KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_depth_stats(ring, &d));
+	KUNIT_EXPECT_EQ(test, (u32)3, d.depth);
+	KUNIT_EXPECT_EQ(test, (u32)75, d.pct);
+	KUNIT_EXPECT_EQ(test, (u32)3, d.peak_depth);
+	KUNIT_EXPECT_EQ(test, (u64)1, d.full_count);
+}
+
+static void depth_stats_null_guards_test(struct kunit *test)
+{
+	struct airy_ipc_ring *ring = test->priv;
+	struct airy_ipc_ring uninit;
+	struct airy_ipc_ring_depth d;
+
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_ipc_ring_depth_stats(NULL, &d));
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_ipc_ring_depth_stats(ring, NULL));
+
+	/*
+	 * A zero-initialised ring has no slot array: sampling it must be
+	 * refused rather than dividing by a bogus capacity.
+	 */
+	memset(&uninit, 0, sizeof(uninit));
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_ipc_ring_depth_stats(&uninit, &d));
+}
+
 static struct kunit_case airy_ipc_ring_cases[] = {
 	KUNIT_CASE(cancel_drops_matching_preserves_other_test),
 	KUNIT_CASE(cancel_preserves_non_matching_badges_test),
@@ -252,6 +333,10 @@ static struct kunit_case airy_ipc_ring_cases[] = {
 	KUNIT_CASE(init_rejects_capacity_above_max_test),
 	KUNIT_CASE(init_accepts_default_capacity_test),
 	KUNIT_CASE(spsc_wrap_around_preserves_fifo_test),
+	KUNIT_CASE(depth_stats_init_snapshot_test),
+	KUNIT_CASE(depth_stats_tracks_occupancy_test),
+	KUNIT_CASE(depth_stats_counts_full_rejection_test),
+	KUNIT_CASE(depth_stats_null_guards_test),
 	{}
 };
 
