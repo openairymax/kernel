@@ -4,17 +4,18 @@
  *
  * airy_ipc_ring_test.c — KUnit coverage for the IPC ring core.
  *
- * Covers the SPSC ring's capacity/ceiling contract (airy_ipc_ring_init),
- * cursor semantics (FIFO order, exact-full/empty detection, wrap-around)
- * guarded by the release/acquire pairing in post()/consume(), the SC
- * rejection codes the post path returns (C-S1 -AIRY_EIPC_MAGIC, C-S6
- * -AIRY_EIPC_KFIFO), P1-8 airy_ipc_cancel_badged_sends() (the agent-linux
- * analogue of seL4's cancelBadgedSends, endpoint.c:476-489), and the
- * occupancy accounting airy_ipc_ring_depth_stats() samples.
+ * Covers the SPSC ring's capacity and teardown contract
+ * (airy_ipc_ring_init/destroy), cursor semantics (FIFO order,
+ * exact-full/empty detection, wrap-around) guarded by the
+ * release/acquire pairing in post()/consume(), the argument and
+ * C-S0/C-S1/C-S6 rejection codes (-EINVAL, -ENOMSG,
+ * -AIRY_EIPC_FROZEN, -AIRY_EIPC_MAGIC, -AIRY_EIPC_KFIFO), P1-8
+ * cancelBadgedSends (the agent-linux analogue of seL4's
+ * cancelBadgedSends, endpoint.c:476-489), and the occupancy
+ * accounting airy_ipc_ring_depth_stats() samples.
  *
- * The ring entry points are non-static (declared in airy_ipc_internal.h),
- * so the test links against airy_ipc_ring.o within the airy_ck_ipc module
- * without including the .c file.
+ * The ring entry points are non-static (airy_ipc_internal.h), so the
+ * test links against airy_ipc_ring.o within the airy_ck_ipc module.
  */
 
 #include <kunit/test.h>
@@ -139,12 +140,6 @@ static void cancel_no_match_leaves_ring_intact_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, present, out.capability_badge);
 }
 
-static void cancel_null_ring_returns_einval_test(struct kunit *test)
-{
-	KUNIT_EXPECT_EQ(test, -EINVAL,
-			airy_ipc_cancel_badged_sends(NULL, 0));
-}
-
 static void cancel_multiple_matching_sends_test(struct kunit *test)
 {
 	struct airy_ipc_ring *ring = test->priv;
@@ -168,6 +163,123 @@ static void cancel_multiple_matching_sends_test(struct kunit *test)
 
 	/* All three were cancelled, so the ring behaves as empty. */
 	KUNIT_EXPECT_EQ(test, -ENOMSG, airy_ipc_ring_consume(ring, &out));
+}
+
+static void cancel_walks_pending_region_across_wrap_test(struct kunit *test)
+{
+	struct airy_ipc_ring *ring = test->priv;
+	struct airy_ipc_msg_hdr hdr, out;
+	const __u64 badge = 0xFEEDULL;
+	u32 i;
+	int ret;
+
+	/*
+	 * Cycle the cursors until both sit on the last slot, so the next
+	 * two posts land on slot (entries - 1) then slot 0: the pending
+	 * region [tail, head) now straddles the wrap point and the
+	 * modular walk in cancelBadgedSends() must cross it.
+	 */
+	for (i = 0; i < (u32)TEST_RING_ENTRIES - 1; i++) {
+		fill_hdr(&hdr, (__u64)i + 1);
+		KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_post(ring, &hdr));
+		KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_consume(ring, &out));
+	}
+
+	fill_hdr(&hdr, 0x1ULL);
+	KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_post(ring, &hdr));
+	fill_hdr(&hdr, badge);
+	KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_post(ring, &hdr));
+
+	ret = airy_ipc_cancel_badged_sends(ring, badge);
+	KUNIT_EXPECT_EQ(test, 1, ret);
+
+	/* The unbadged message survives; the badged one is dropped. */
+	KUNIT_EXPECT_EQ(test, 0, airy_ipc_ring_consume(ring, &out));
+	KUNIT_EXPECT_EQ(test, 0x1ULL, out.capability_badge);
+	KUNIT_EXPECT_EQ(test, -ENOMSG, airy_ipc_ring_consume(ring, &out));
+}
+
+static void init_rejects_bad_capacity_test(struct kunit *test)
+{
+	struct airy_ipc_ring ring;
+
+	memset(&ring, 0, sizeof(ring));
+
+	/*
+	 * Capacity must be a power of two of at least two entries; zero,
+	 * one and three are all refused before any allocation happens.
+	 */
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_ipc_ring_init(&ring, 0));
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_ipc_ring_init(&ring, 1));
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_ipc_ring_init(&ring, 3));
+	KUNIT_EXPECT_NULL(test, ring.slots);
+}
+
+static void destroy_clears_slots_and_tolerates_null_test(struct kunit *test)
+{
+	struct airy_ipc_ring ring;
+
+	memset(&ring, 0, sizeof(ring));
+	KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_init(&ring, TEST_RING_ENTRIES));
+	KUNIT_ASSERT_NOT_NULL(test, ring.slots);
+
+	airy_ipc_ring_destroy(&ring);
+	KUNIT_EXPECT_NULL(test, ring.slots);
+
+	/* Tearing down twice, or a NULL ring, must both be harmless. */
+	airy_ipc_ring_destroy(&ring);
+	KUNIT_EXPECT_NULL(test, ring.slots);
+	airy_ipc_ring_destroy(NULL);
+}
+
+static void entry_null_guards_test(struct kunit *test)
+{
+	struct airy_ipc_ring *ring = test->priv;
+	struct airy_ipc_ring uninit;
+	struct airy_ipc_msg_hdr hdr, out;
+
+	fill_hdr(&hdr, 0x1ULL);
+
+	/* A NULL ring is refused by every entry point. */
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_ipc_ring_post(NULL, &hdr));
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_ipc_ring_consume(NULL, &out));
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_ipc_cancel_badged_sends(NULL, 0));
+
+	/* A NULL buffer on a live ring is refused. */
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_ipc_ring_post(ring, NULL));
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_ipc_ring_consume(ring, NULL));
+
+	/*
+	 * A zero-initialised ring has no slot array; the entry points must
+	 * refuse it rather than dereferencing NULL.
+	 */
+	memset(&uninit, 0, sizeof(uninit));
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_ipc_ring_post(&uninit, &hdr));
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_ipc_ring_consume(&uninit, &out));
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_ipc_cancel_badged_sends(&uninit, 0));
+}
+
+static void frozen_ring_blocks_post_and_consume_test(struct kunit *test)
+{
+	struct airy_ipc_ring *ring = test->priv;
+	struct airy_ipc_msg_hdr hdr, out;
+
+	fill_hdr(&hdr, 0x5A5AULL);
+	KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_post(ring, &hdr));
+
+	/*
+	 * C-S0: a frozen ring refuses both directions yet preserves the
+	 * queued message, so unfreezing restores normal service.
+	 */
+	WRITE_ONCE(ring->frozen, 1);
+	KUNIT_EXPECT_EQ(test, -AIRY_EIPC_FROZEN,
+			airy_ipc_ring_post(ring, &hdr));
+	KUNIT_EXPECT_EQ(test, -AIRY_EIPC_FROZEN,
+			airy_ipc_ring_consume(ring, &out));
+
+	WRITE_ONCE(ring->frozen, 0);
+	KUNIT_EXPECT_EQ(test, 0, airy_ipc_ring_consume(ring, &out));
+	KUNIT_EXPECT_EQ(test, 0x5A5AULL, out.capability_badge);
 }
 
 static void init_rejects_capacity_above_max_test(struct kunit *test)
@@ -346,10 +458,14 @@ static struct kunit_case airy_ipc_ring_cases[] = {
 	KUNIT_CASE(cancel_drops_matching_preserves_other_test),
 	KUNIT_CASE(cancel_preserves_non_matching_badges_test),
 	KUNIT_CASE(cancel_no_match_leaves_ring_intact_test),
-	KUNIT_CASE(cancel_null_ring_returns_einval_test),
 	KUNIT_CASE(cancel_multiple_matching_sends_test),
+	KUNIT_CASE(cancel_walks_pending_region_across_wrap_test),
 	KUNIT_CASE(init_rejects_capacity_above_max_test),
+	KUNIT_CASE(init_rejects_bad_capacity_test),
 	KUNIT_CASE(init_accepts_default_capacity_test),
+	KUNIT_CASE(destroy_clears_slots_and_tolerates_null_test),
+	KUNIT_CASE(entry_null_guards_test),
+	KUNIT_CASE(frozen_ring_blocks_post_and_consume_test),
 	KUNIT_CASE(spsc_wrap_around_preserves_fifo_test),
 	KUNIT_CASE(post_rejects_bad_magic_test),
 	KUNIT_CASE(depth_stats_init_snapshot_test),
@@ -360,7 +476,7 @@ static struct kunit_case airy_ipc_ring_cases[] = {
 };
 
 static struct kunit_suite airy_ipc_ring_suite = {
-	.name = "airy_ipc_ring_p1_8",
+	.name = "airy_ipc_ring",
 	.init = ipc_ring_test_init,
 	.exit = ipc_ring_test_exit,
 	.test_cases = airy_ipc_ring_cases,
