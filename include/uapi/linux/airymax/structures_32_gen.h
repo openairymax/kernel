@@ -35,7 +35,7 @@ static inline __u32 airy_ipc_msg_hdr_get_magic(const struct airy_ipc_msg_hdr *p)
 static inline void airy_ipc_msg_hdr_set_magic(struct airy_ipc_msg_hdr *p, __u32 v)
 {
 	p->magic = (__u32)((p->magic & ~AIRY_IPC_MSG_HDR_MAGIC_MASK) |
-	                  (v & AIRY_IPC_MSG_HDR_MAGIC_MASK));
+			   (v & AIRY_IPC_MSG_HDR_MAGIC_MASK));
 }
 #define AIRY_IPC_MSG_HDR_OPCODE_BITS     16
 #define AIRY_IPC_MSG_HDR_OPCODE_OFFSET   32
@@ -48,7 +48,7 @@ static inline __u16 airy_ipc_msg_hdr_get_opcode(const struct airy_ipc_msg_hdr *p
 static inline void airy_ipc_msg_hdr_set_opcode(struct airy_ipc_msg_hdr *p, __u16 v)
 {
 	p->opcode = (__u16)((p->opcode & ~AIRY_IPC_MSG_HDR_OPCODE_MASK) |
-	                  (v & AIRY_IPC_MSG_HDR_OPCODE_MASK));
+			    (v & AIRY_IPC_MSG_HDR_OPCODE_MASK));
 }
 #define AIRY_IPC_MSG_HDR_FLAGS_BITS     16
 #define AIRY_IPC_MSG_HDR_FLAGS_OFFSET   48
@@ -61,7 +61,7 @@ static inline __u16 airy_ipc_msg_hdr_get_flags(const struct airy_ipc_msg_hdr *p)
 static inline void airy_ipc_msg_hdr_set_flags(struct airy_ipc_msg_hdr *p, __u16 v)
 {
 	p->flags = (__u16)((p->flags & ~AIRY_IPC_MSG_HDR_FLAGS_MASK) |
-	                  (v & AIRY_IPC_MSG_HDR_FLAGS_MASK));
+			   (v & AIRY_IPC_MSG_HDR_FLAGS_MASK));
 }
 #define AIRY_IPC_MSG_HDR_TRACE_ID_BITS     64
 #define AIRY_IPC_MSG_HDR_TRACE_ID_OFFSET   64
@@ -74,7 +74,7 @@ static inline __u64 airy_ipc_msg_hdr_get_trace_id(const struct airy_ipc_msg_hdr 
 static inline void airy_ipc_msg_hdr_set_trace_id(struct airy_ipc_msg_hdr *p, __u64 v)
 {
 	p->trace_id = (__u64)((p->trace_id & ~AIRY_IPC_MSG_HDR_TRACE_ID_MASK) |
-	                  (v & AIRY_IPC_MSG_HDR_TRACE_ID_MASK));
+			      (v & AIRY_IPC_MSG_HDR_TRACE_ID_MASK));
 }
 #define AIRY_IPC_MSG_HDR_TIMESTAMP_NS_BITS     64
 #define AIRY_IPC_MSG_HDR_TIMESTAMP_NS_OFFSET   128
@@ -87,7 +87,7 @@ static inline __u64 airy_ipc_msg_hdr_get_timestamp_ns(const struct airy_ipc_msg_
 static inline void airy_ipc_msg_hdr_set_timestamp_ns(struct airy_ipc_msg_hdr *p, __u64 v)
 {
 	p->timestamp_ns = (__u64)((p->timestamp_ns & ~AIRY_IPC_MSG_HDR_TIMESTAMP_NS_MASK) |
-	                  (v & AIRY_IPC_MSG_HDR_TIMESTAMP_NS_MASK));
+				  (v & AIRY_IPC_MSG_HDR_TIMESTAMP_NS_MASK));
 }
 #define AIRY_IPC_MSG_HDR_SRC_TASK_BITS     64
 #define AIRY_IPC_MSG_HDR_SRC_TASK_OFFSET   192
@@ -100,7 +100,7 @@ static inline __u64 airy_ipc_msg_hdr_get_src_task(const struct airy_ipc_msg_hdr 
 static inline void airy_ipc_msg_hdr_set_src_task(struct airy_ipc_msg_hdr *p, __u64 v)
 {
 	p->src_task = (__u64)((p->src_task & ~AIRY_IPC_MSG_HDR_SRC_TASK_MASK) |
-	                  (v & AIRY_IPC_MSG_HDR_SRC_TASK_MASK));
+			      (v & AIRY_IPC_MSG_HDR_SRC_TASK_MASK));
 }
 #define AIRY_IPC_MSG_HDR_DST_TASK_BITS     64
 #define AIRY_IPC_MSG_HDR_DST_TASK_OFFSET   256
@@ -113,7 +113,7 @@ static inline __u64 airy_ipc_msg_hdr_get_dst_task(const struct airy_ipc_msg_hdr 
 static inline void airy_ipc_msg_hdr_set_dst_task(struct airy_ipc_msg_hdr *p, __u64 v)
 {
 	p->dst_task = (__u64)((p->dst_task & ~AIRY_IPC_MSG_HDR_DST_TASK_MASK) |
-	                  (v & AIRY_IPC_MSG_HDR_DST_TASK_MASK));
+			      (v & AIRY_IPC_MSG_HDR_DST_TASK_MASK));
 }
 #define AIRY_IPC_MSG_HDR_CAPABILITY_BADGE_BITS     64
 #define AIRY_IPC_MSG_HDR_CAPABILITY_BADGE_OFFSET   320
@@ -126,7 +126,7 @@ static inline __u64 airy_ipc_msg_hdr_get_capability_badge(const struct airy_ipc_
 static inline void airy_ipc_msg_hdr_set_capability_badge(struct airy_ipc_msg_hdr *p, __u64 v)
 {
 	p->capability_badge = (__u64)((p->capability_badge & ~AIRY_IPC_MSG_HDR_CAPABILITY_BADGE_MASK) |
-	                  (v & AIRY_IPC_MSG_HDR_CAPABILITY_BADGE_MASK));
+				      (v & AIRY_IPC_MSG_HDR_CAPABILITY_BADGE_MASK));
 }
 #define AIRY_IPC_MSG_HDR_PAYLOAD_LEN_BITS     32
 #define AIRY_IPC_MSG_HDR_PAYLOAD_LEN_OFFSET   384
@@ -139,7 +139,7 @@ static inline __u32 airy_ipc_msg_hdr_get_payload_len(const struct airy_ipc_msg_h
 static inline void airy_ipc_msg_hdr_set_payload_len(struct airy_ipc_msg_hdr *p, __u32 v)
 {
 	p->payload_len = (__u32)((p->payload_len & ~AIRY_IPC_MSG_HDR_PAYLOAD_LEN_MASK) |
-	                  (v & AIRY_IPC_MSG_HDR_PAYLOAD_LEN_MASK));
+				 (v & AIRY_IPC_MSG_HDR_PAYLOAD_LEN_MASK));
 }
 #define AIRY_IPC_MSG_HDR_CRC32_BITS     32
 #define AIRY_IPC_MSG_HDR_CRC32_OFFSET   416
@@ -152,7 +152,7 @@ static inline __u32 airy_ipc_msg_hdr_get_crc32(const struct airy_ipc_msg_hdr *p)
 static inline void airy_ipc_msg_hdr_set_crc32(struct airy_ipc_msg_hdr *p, __u32 v)
 {
 	p->crc32 = (__u32)((p->crc32 & ~AIRY_IPC_MSG_HDR_CRC32_MASK) |
-	                  (v & AIRY_IPC_MSG_HDR_CRC32_MASK));
+			   (v & AIRY_IPC_MSG_HDR_CRC32_MASK));
 }
 AIRY_COMPILE_ASSERT(sizeof(struct airy_ipc_msg_hdr) == 128,
 	"airy_ipc_msg_hdr must be exactly 128 bytes");
@@ -215,7 +215,7 @@ static inline __u32 airy_task_desc_get_magic(const struct airy_task_desc *p)
 static inline void airy_task_desc_set_magic(struct airy_task_desc *p, __u32 v)
 {
 	p->magic = (__u32)((p->magic & ~AIRY_TASK_DESC_MAGIC_MASK) |
-	                  (v & AIRY_TASK_DESC_MAGIC_MASK));
+			   (v & AIRY_TASK_DESC_MAGIC_MASK));
 }
 #define AIRY_TASK_DESC_PRIO_BITS     16
 #define AIRY_TASK_DESC_PRIO_OFFSET   32
@@ -228,7 +228,7 @@ static inline __u16 airy_task_desc_get_prio(const struct airy_task_desc *p)
 static inline void airy_task_desc_set_prio(struct airy_task_desc *p, __u16 v)
 {
 	p->prio = (__u16)((p->prio & ~AIRY_TASK_DESC_PRIO_MASK) |
-	                  (v & AIRY_TASK_DESC_PRIO_MASK));
+			  (v & AIRY_TASK_DESC_PRIO_MASK));
 }
 #define AIRY_TASK_DESC__PAD_BITS     16
 #define AIRY_TASK_DESC__PAD_OFFSET   48
@@ -241,7 +241,7 @@ static inline __u16 airy_task_desc_get__pad(const struct airy_task_desc *p)
 static inline void airy_task_desc_set__pad(struct airy_task_desc *p, __u16 v)
 {
 	p->_pad = (__u16)((p->_pad & ~AIRY_TASK_DESC__PAD_MASK) |
-	                  (v & AIRY_TASK_DESC__PAD_MASK));
+			  (v & AIRY_TASK_DESC__PAD_MASK));
 }
 #define AIRY_TASK_DESC_RUNTIME_NS_BITS     64
 #define AIRY_TASK_DESC_RUNTIME_NS_OFFSET   64
@@ -254,7 +254,7 @@ static inline __u64 airy_task_desc_get_runtime_ns(const struct airy_task_desc *p
 static inline void airy_task_desc_set_runtime_ns(struct airy_task_desc *p, __u64 v)
 {
 	p->runtime_ns = (__u64)((p->runtime_ns & ~AIRY_TASK_DESC_RUNTIME_NS_MASK) |
-	                  (v & AIRY_TASK_DESC_RUNTIME_NS_MASK));
+				(v & AIRY_TASK_DESC_RUNTIME_NS_MASK));
 }
 #define AIRY_TASK_DESC_DEADLINE_NS_BITS     64
 #define AIRY_TASK_DESC_DEADLINE_NS_OFFSET   128
@@ -267,7 +267,7 @@ static inline __u64 airy_task_desc_get_deadline_ns(const struct airy_task_desc *
 static inline void airy_task_desc_set_deadline_ns(struct airy_task_desc *p, __u64 v)
 {
 	p->deadline_ns = (__u64)((p->deadline_ns & ~AIRY_TASK_DESC_DEADLINE_NS_MASK) |
-	                  (v & AIRY_TASK_DESC_DEADLINE_NS_MASK));
+				 (v & AIRY_TASK_DESC_DEADLINE_NS_MASK));
 }
 #define AIRY_TASK_DESC_PERIOD_NS_BITS     64
 #define AIRY_TASK_DESC_PERIOD_NS_OFFSET   192
@@ -280,7 +280,7 @@ static inline __u64 airy_task_desc_get_period_ns(const struct airy_task_desc *p)
 static inline void airy_task_desc_set_period_ns(struct airy_task_desc *p, __u64 v)
 {
 	p->period_ns = (__u64)((p->period_ns & ~AIRY_TASK_DESC_PERIOD_NS_MASK) |
-	                  (v & AIRY_TASK_DESC_PERIOD_NS_MASK));
+			       (v & AIRY_TASK_DESC_PERIOD_NS_MASK));
 }
 #define AIRY_TASK_DESC_VTIME_BITS     32
 #define AIRY_TASK_DESC_VTIME_OFFSET   256
@@ -293,7 +293,7 @@ static inline __u32 airy_task_desc_get_vtime(const struct airy_task_desc *p)
 static inline void airy_task_desc_set_vtime(struct airy_task_desc *p, __u32 v)
 {
 	p->vtime = (__u32)((p->vtime & ~AIRY_TASK_DESC_VTIME_MASK) |
-	                  (v & AIRY_TASK_DESC_VTIME_MASK));
+			   (v & AIRY_TASK_DESC_VTIME_MASK));
 }
 #define AIRY_TASK_DESC_AGENT_ID_BITS     32
 #define AIRY_TASK_DESC_AGENT_ID_OFFSET   288
@@ -306,7 +306,7 @@ static inline __u32 airy_task_desc_get_agent_id(const struct airy_task_desc *p)
 static inline void airy_task_desc_set_agent_id(struct airy_task_desc *p, __u32 v)
 {
 	p->agent_id = (__u32)((p->agent_id & ~AIRY_TASK_DESC_AGENT_ID_MASK) |
-	                  (v & AIRY_TASK_DESC_AGENT_ID_MASK));
+			      (v & AIRY_TASK_DESC_AGENT_ID_MASK));
 }
 #define AIRY_TASK_DESC_SCHED_POLICY_BITS     32
 #define AIRY_TASK_DESC_SCHED_POLICY_OFFSET   320
@@ -319,7 +319,7 @@ static inline __u32 airy_task_desc_get_sched_policy(const struct airy_task_desc 
 static inline void airy_task_desc_set_sched_policy(struct airy_task_desc *p, __u32 v)
 {
 	p->sched_policy = (__u32)((p->sched_policy & ~AIRY_TASK_DESC_SCHED_POLICY_MASK) |
-	                  (v & AIRY_TASK_DESC_SCHED_POLICY_MASK));
+				  (v & AIRY_TASK_DESC_SCHED_POLICY_MASK));
 }
 #define AIRY_TASK_DESC_WEIGHT_BITS     32
 #define AIRY_TASK_DESC_WEIGHT_OFFSET   352
@@ -332,7 +332,7 @@ static inline __u32 airy_task_desc_get_weight(const struct airy_task_desc *p)
 static inline void airy_task_desc_set_weight(struct airy_task_desc *p, __u32 v)
 {
 	p->weight = (__u32)((p->weight & ~AIRY_TASK_DESC_WEIGHT_MASK) |
-	                  (v & AIRY_TASK_DESC_WEIGHT_MASK));
+			    (v & AIRY_TASK_DESC_WEIGHT_MASK));
 }
 #define AIRY_TASK_DESC_STATE_BITS     32
 #define AIRY_TASK_DESC_STATE_OFFSET   384
@@ -345,7 +345,7 @@ static inline __u32 airy_task_desc_get_state(const struct airy_task_desc *p)
 static inline void airy_task_desc_set_state(struct airy_task_desc *p, __u32 v)
 {
 	p->state = (__u32)((p->state & ~AIRY_TASK_DESC_STATE_MASK) |
-	                  (v & AIRY_TASK_DESC_STATE_MASK));
+			   (v & AIRY_TASK_DESC_STATE_MASK));
 }
 AIRY_COMPILE_ASSERT(sizeof(struct airy_task_desc) == 64,
 	"airy_task_desc must be exactly 64 bytes");
