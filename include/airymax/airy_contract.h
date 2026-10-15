@@ -124,6 +124,22 @@ static_assert(sizeof(struct airy_task_sec) == 48, "airy_task_sec must stay 48 by
 static_assert(offsetof(struct airy_task_sec, ipc_ring) == 40,
 	      "airy_task_sec ipc_ring offset must stay 40");
 
+/* ─── LSM blob 尺寸与 inode 安全上下文 ────────────────────────────────
+ * airy_lsm.c 以 sizeof 设定 lsm_blob_sizes（.lbs_task/.lbs_inode），并按
+ * airy_blob_sizes.lbs_* 手工定位每次 task/inode 的 security blob；blob
+ * 尺寸或 inode 布局漂移会让钩子在错误偏移上读写，静默破坏内存。
+ * AIRY_CAP_MAX_AGENTS 是 agent_caps[] 能力表的编译期数组上界，改动它即
+ * 改变内核静态数据的尺寸。
+ */
+static_assert(sizeof(struct airy_inode_sec) == 8,
+	      "airy_inode_sec blob must stay 8 bytes");
+static_assert(offsetof(struct airy_inode_sec, cap_required) == 0,
+	      "airy_inode_sec cap_required offset must stay 0");
+static_assert(offsetof(struct airy_inode_sec, owner_agent) == 4,
+	      "airy_inode_sec owner_agent offset must stay 4");
+static_assert(AIRY_CAP_MAX_AGENTS == 1024,
+	      "agent capability table must stay 1024 slots");
+
 /* ─── syscall 号段（548-551 核心 + 552-571 预留） ──────────────────────
  * 号段是 ABI；arch 接线（A-30..A-36）与用户态 SDK 都以此为唯一权威。
  */

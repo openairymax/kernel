@@ -65,11 +65,28 @@ static void airy_contract_badge_tiling_test(struct kunit *test)
 			(AIRY_BADGE_RANDTAG_MASK & AIRY_BADGE_PERMS_MASK));
 }
 
+static void airy_contract_blob_capacity_test(struct kunit *test)
+{
+	/*
+	 * airy_lsm.c sizes its LSM blobs from sizeof(struct airy_inode_sec)
+	 * and indexes inode security by fixed offsets; the capability table
+	 * is a compile-time array bounded by AIRY_CAP_MAX_AGENTS. Both are
+	 * layout the hooks read and write directly.
+	 */
+	KUNIT_EXPECT_EQ(test, 8, (int)sizeof(struct airy_inode_sec));
+	KUNIT_EXPECT_EQ(test, 0,
+			(int)offsetof(struct airy_inode_sec, cap_required));
+	KUNIT_EXPECT_EQ(test, 4,
+			(int)offsetof(struct airy_inode_sec, owner_agent));
+	KUNIT_EXPECT_EQ(test, 1024, AIRY_CAP_MAX_AGENTS);
+}
+
 static struct kunit_case airy_contract_cases[] = {
 	KUNIT_CASE(airy_contract_accept_test),
 	KUNIT_CASE(airy_contract_abi_version_test),
 	KUNIT_CASE(airy_contract_ipc_cmd_budget_test),
 	KUNIT_CASE(airy_contract_badge_tiling_test),
+	KUNIT_CASE(airy_contract_blob_capacity_test),
 	{}
 };
 

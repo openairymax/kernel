@@ -89,6 +89,12 @@ static const struct airy_contract_entry airy_contract_table[] = {
 	AIRY_CE("task_sec.size", 48, sizeof(struct airy_task_sec)),
 	AIRY_CE("task_sec.ipc_ring_off", 40,
 		offsetof(struct airy_task_sec, ipc_ring)),
+	AIRY_CE("inode_sec.size", 8, sizeof(struct airy_inode_sec)),
+	AIRY_CE("inode_sec.cap_required_off", 0,
+		offsetof(struct airy_inode_sec, cap_required)),
+	AIRY_CE("inode_sec.owner_agent_off", 4,
+		offsetof(struct airy_inode_sec, owner_agent)),
+	AIRY_CE("cap_max_agents", 1024, AIRY_CAP_MAX_AGENTS),
 };
 
 static int airy_contract_verify(void)
