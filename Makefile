@@ -368,7 +368,11 @@ include $(srctree)/scripts/Kbuild.include
 # Read KERNELRELEASE from include/config/kernel.release (if it exists)
 KERNELRELEASE = $(call read-file, include/config/kernel.release)
 KERNELVERSION = $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if $(SUBLEVEL),.$(SUBLEVEL)))$(EXTRAVERSION)
+
+include $(srctree)/Makefile.airymaxos
+
 export VERSION PATCHLEVEL SUBLEVEL KERNELRELEASE KERNELVERSION
+export AIRYMAXOS_LTS AIRYMAXOS_MAJOR AIRYMAXOS_MINOR AIRYMAXOS_RELEASE
 
 include $(srctree)/scripts/subarch.include
 
@@ -1257,7 +1261,14 @@ define filechk_version.h
 	((c) > 255 ? 255 : (c)))';                                       \
 	echo \#define LINUX_VERSION_MAJOR $(VERSION);                    \
 	echo \#define LINUX_VERSION_PATCHLEVEL $(PATCHLEVEL);            \
-	echo \#define LINUX_VERSION_SUBLEVEL $(SUBLEVEL)
+	echo \#define LINUX_VERSION_SUBLEVEL $(SUBLEVEL);                \
+	echo \#define AIRYMAXOS_LTS $(AIRYMAXOS_LTS);                    \
+	echo \#define AIRYMAXOS_MAJOR $(AIRYMAXOS_MAJOR);                \
+	echo \#define AIRYMAXOS_MINOR $(AIRYMAXOS_MINOR);                \
+	echo '#define AIRYMAXOS_VERSION(a,b) (((a) << 8) + (b))';        \
+	echo \#define AIRYMAXOS_VERSION_CODE $(shell                     \
+	expr $(AIRYMAXOS_MAJOR) \* 256 + $(AIRYMAXOS_MINOR));            \
+	echo \#define AIRYMAXOS_RELEASE \"$(AIRYMAXOS_RELEASE)\"
 endef
 
 $(version_h): PATCHLEVEL := $(or $(PATCHLEVEL), 0)

@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-2.0
+# /**
+#  * Makefile.airymaxos - agent-linux 供应商版本定义
+#  *
+#  * 仅承载版本四元组（OS-STD-049）；特性开关走 Kconfig，禁止塞入此文件。
+#  * 顶层 Makefile 经 `include $(srctree)/Makefile.airymaxos` 引入，
+#  * 再由 filechk_version.h 注入为 C 宏（AIRYMAXOS_LTS / _MAJOR / _MINOR）。
+#  *
+#  * 对齐 Linux 6.6 顶层 Makefile 的 VERSION/PATCHLEVEL/SUBLEVEL 机制
+#  * @since 0.0.3
+#  */
+AIRYMAXOS_LTS     = 0
+AIRYMAXOS_MAJOR   = 0
+AIRYMAXOS_MINOR   = 3
+AIRYMAXOS_RELEASE = ""
+
+# 注入的 C 宏（由 filechk_version.h 生成到 include/generated/uapi/linux/version.h）
+# #define AIRYMAXOS_LTS           <LTS>
+# #define AIRYMAXOS_MAJOR         <MAJOR>
+# #define AIRYMAXOS_MINOR         <MINOR>
+# #define AIRYMAXOS_VERSION(a,b)  (((a) << 8) + (b))
+# #define AIRYMAXOS_VERSION_CODE  (MAJOR * 256 + MINOR)
+# #define AIRYMAXOS_RELEASE       "<RELEASE>"
