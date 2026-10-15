@@ -5,18 +5,13 @@
  * airy_invoke_test.c — KUnit coverage for the syscall 548 control-plane
  * entry defined in airy_syscalls.c.
  *
- * Two layers are exercised.  The header contract (airy_invoke_hdr_check,
- * C-S1/C-S3/C-S4/C-S10) must accept a well-formed Layout C v4 header and
- * reject each field independently with the [SC] magnitude that
- * 07-ipc-fastpath.md §3.1 assigns to its C-S check; this keeps the syscall
- * entry from admitting a header the data-plane fastpath would have refused.
- * The dispatch skeleton (airy_invoke_dispatch) must then refuse exactly the
- * opcodes outside airy_op_required_perms() and enforce the documented
- * ordering: NULL, then header, then opcode, and only afterwards badge
- * authorisation.  The badge path itself is not covered here — it
- * dereferences current->security and reads the global capability slots,
- * neither of which is hermetic under KUnit; it is owned by the capability
- * suites.
+ * Two layers are exercised: the Layout C v4 header contract
+ * (airy_invoke_hdr_check, C-S1/C-S3/C-S4/C-S10) and the opcode plus
+ * ordering rules of the dispatch skeleton (airy_invoke_dispatch).
+ *
+ * The badge path is deliberately left out — it dereferences
+ * current->security and reads the global capability slots, neither of
+ * which is hermetic under KUnit; the capability suites own it.
  */
 
 #include <kunit/test.h>
