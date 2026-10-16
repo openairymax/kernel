@@ -13,7 +13,8 @@
  * serves both halves of the badge lifecycle: install (airy_badge_install)
  * and cascading revocation (airy_badge_revoke). Valid opcodes of the
  * data and bootstrap planes are answered -AIRY_ENOTSUP rather than
- * served here; 549 and 550 answer -AIRY_ENOTSUP as well, while 551
+ * served here; 550 answers -AIRY_ENOTSUP as well, while 549 validates
+ * its MemoryRoVol op contract through airy_rovol_serve() and 551
  * records the phase an agent notified through airy_clt_serve().
  */
 
@@ -31,6 +32,7 @@
 #include "../../security/airy/airy_cap.h"
 #include "airy_invoke.h"
 #include "airy_clt.h"
+#include "airy_rovol.h"
 
 /*
  * airy_invoke_hdr_check — validate the fixed 128-byte IPC message header.
@@ -354,24 +356,23 @@ SYSCALL_DEFINE2(airy_sys_call, airy_cap_t, cap,
 }
 
 /*
- * SYSCALL 549: airy_sys_rovol_ctl — Memory RoVol (rotation/volume) control.
- * @op:  Operation code.
+ * SYSCALL 549: airy_sys_rovol_ctl — MemoryRoVol (rotation/volume) control.
+ * @op:  MemoryRoVol operation code (AIRY_ROVOL_*).
  * @pid: Target process/task ID.
  * @arg: Operation-specific argument.
  *
- * M1 scaffolding: returns -AIRY_ENOTSUP pending M5 memory tiering
- * (MemoryRovol) integration. Basic parameter validation (op != 0) is
- * performed as a lightweight contract check. Justified by OS-IRON-004
- * progressive development; not an IRON-2 violation.
+ * A thin wrapper over airy_rovol_serve(), which owns the entry decision:
+ * classify the op space with airy_rovol_kind() and then either refuse an
+ * undefined op with -AIRY_EINVAL or answer a recognised op with
+ * -AIRY_ENOTSUP, since the snapshot/restore/migrate backends it names
+ * belong to milestone M5 (04-memory.md §4.8). Keeping the decision in one
+ * non-static place lets KUnit drive it directly instead of through the
+ * syscall ABI. @pid and @arg are part of the frozen 3-argument ABI but
+ * carry no meaning until those backends exist, so they are not examined.
  */
 SYSCALL_DEFINE3(airy_sys_rovol_ctl, __u32, op, __u32, pid, __u64, arg)
 {
-	/* Basic parameter validation — op must be non-zero. */
-	if (op == 0)
-		return -EINVAL;
-
-	/* M1 scaffolding: M5 memory tiering dispatch pending. */
-	return -AIRY_ENOTSUP;
+	return airy_rovol_serve(op);
 }
 
 /*

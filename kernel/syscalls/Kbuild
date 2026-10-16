@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 obj-$(CONFIG_AIRY_SYSCALL) += airy_syscalls.o
 obj-$(CONFIG_AIRY_SYSCALL) += airy_clt.o
+obj-$(CONFIG_AIRY_SYSCALL) += airy_rovol.o
 
 # KUnit regression for the syscall 548 control-plane entry: the
 # C-S1/C-S3/C-S4/C-S10 header contract, the opcode plane classifier and
