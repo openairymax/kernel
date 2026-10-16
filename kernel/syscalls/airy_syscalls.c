@@ -13,7 +13,8 @@
  * serves both halves of the badge lifecycle: install (airy_badge_install)
  * and cascading revocation (airy_badge_revoke). Valid opcodes of the
  * data and bootstrap planes are answered -AIRY_ENOTSUP rather than
- * served here; syscalls 549-551 answer -AIRY_ENOTSUP as well.
+ * served here; syscalls 549-551 answer -AIRY_ENOTSUP as well, except that
+ * 551 answers a reserved phase operation with -AIRY_ECOG_PHASE.
  */
 
 #include <linux/syscalls.h>
@@ -30,6 +31,7 @@
 
 #include "../../security/airy/airy_cap.h"
 #include "airy_invoke.h"
+#include "airy_clt.h"
 
 /*
  * airy_invoke_hdr_check — validate the fixed 128-byte IPC message header.
@@ -401,21 +403,22 @@ SYSCALL_DEFINE3(airy_sys_sched_ctl, __u32, op,
 /*
  * SYSCALL 551: airy_sys_clt_notify — Cognition Lifecycle notification.
  * @task_id: Task identifier for the cognition agent.
- * @phase:   Cognition phase (AIRY_COG_PERCEPT / THINK / ACT).
+ * @phase:   Unified operation code: 0/1/2 are the CoreLoopThree phases
+ *           PERCEPT/THINK/ACT, AIRY_COG_PHASE_MAX upwards is reserved for
+ *           the kthread-class operations owned by module F.
  *
- * M1 scaffolding: returns -AIRY_ENOTSUP pending M5 cognition subsystem
- * (CoreLoopThree kthread) integration. Phase range validation
- * (phase < AIRY_COG_PHASE_MAX) and task_id sign check are performed
- * as lightweight contract checks. Justified by OS-IRON-004 progressive
- * development; not an IRON-2 violation.
+ * The phase space is classified by airy_clt_kind(): a reserved operation is
+ * answered -AIRY_ECOG_PHASE, the [SC] magnitude for an invalid cognition
+ * phase, so it is refused explicitly rather than awaited. The phase table
+ * behind airy_clt_notify() is not wired into this entry yet.
  */
 SYSCALL_DEFINE2(airy_sys_clt_notify, int, task_id, __u32, phase)
 {
-	if (phase >= AIRY_COG_PHASE_MAX)
-		return -EINVAL;
+	if (airy_clt_kind(phase) == AIRY_CLT_CLASS_RESERVED)
+		return -AIRY_ECOG_PHASE;
+
 	if (task_id < 0)
 		return -EINVAL;
 
-	/* M1 scaffolding: M5 cognition subsystem dispatch pending. */
 	return -AIRY_ENOTSUP;
 }

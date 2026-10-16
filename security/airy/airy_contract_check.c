@@ -27,6 +27,7 @@
 
 #include <linux/airymax/ipc.h>
 #include <linux/airymax/lsm_types.h>
+#include <linux/airymax/cognition_types.h>
 
 #include <airymax/airy_contract.h>
 
@@ -95,6 +96,10 @@ static const struct airy_contract_entry airy_contract_table[] = {
 	AIRY_CE("inode_sec.owner_agent_off", 4,
 		offsetof(struct airy_inode_sec, owner_agent)),
 	AIRY_CE("cap_max_agents", 1024, AIRY_CAP_MAX_AGENTS),
+	AIRY_CE("cog.phase_percept", 0, AIRY_COG_PERCEPT),
+	AIRY_CE("cog.phase_think", 1, AIRY_COG_THINK),
+	AIRY_CE("cog.phase_act", 2, AIRY_COG_ACT),
+	AIRY_CE("cog.phase_max", 3, AIRY_COG_PHASE_MAX),
 };
 
 static int airy_contract_verify(void)

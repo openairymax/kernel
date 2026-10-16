@@ -29,6 +29,7 @@
 #include <linux/airymax/syscalls.h>
 #include <linux/airymax/security_types.h>
 #include <linux/airymax/lsm_types.h>
+#include <linux/airymax/cognition_types.h>
 
 /* 契约 ABI 版本快照：Layout C v4（对齐 ipc.h 文件头注释与 07-ipc-fastpath.md §5.7）。 */
 #define AIRY_CONTRACT_ABI_VERSION	4
@@ -150,6 +151,17 @@ static_assert(AIRY_SYS_CLT_NOTIFY == 551, "AIRY_SYS_CLT_NOTIFY must stay 551");
 static_assert(AIRY_SYS_RESERVED_BASE == 552, "reserved syscall base must stay 552");
 static_assert(AIRY_SYS_RESERVED_END == 571, "reserved syscall end must stay 571");
 static_assert(AIRY_SYS_SLOTS_MAX == 24, "Airymax syscall slot count must stay 24");
+
+/* ─── 认知阶段号段：syscall 551 phase 取值边界 ──────────────────────────
+ * 551 的 phase 是统一操作码：0/1/2 为 CoreLoopThree 三阶段，AIRY_COG_PHASE_MAX
+ * 起为保留给模块 F 的 kthread 类 op（本版本外）。核内 airy_clt_kind() 与
+ * 551 入口的边界判定都以此为准；阶段常量漂移会让「拒绝保留区」与「接受
+ * 第一阶段」的边界静默分叉。
+ */
+static_assert(AIRY_COG_PERCEPT == 0, "cognition phase PERCEPT must stay 0");
+static_assert(AIRY_COG_THINK == 1, "cognition phase THINK must stay 1");
+static_assert(AIRY_COG_ACT == 2, "cognition phase ACT must stay 2");
+static_assert(AIRY_COG_PHASE_MAX == 3, "cognition phase count must stay 3");
 
 /* ─── 纯 C LSM 钩子数 ────────────────────────────────────────────────
  * 契约声明注册 7 个钩子；其与 airy_hooks[] 实际条数的一致性在 airy_lsm.c
