@@ -181,4 +181,27 @@ __must_check int airy_invoke_dispatch(airy_cap_t cap,
  */
 __must_check int airy_badge_install(const struct airy_ipc_msg_hdr *msg);
 
+/**
+ * airy_badge_revoke() - revoke an agent's badge and its derived subtree
+ * @msg: Kernel-resident copy of the caller message header. Only @dst_task
+ *       is read; the rest of the header contract is enforced by
+ *       airy_invoke_dispatch() before the call.
+ *
+ * Handler for AIRY_IPC_OP_FREEZE, the control-plane carrier for
+ * REVOKE_BADGE in 140-application-development/07-syscall-registry.md §4.2.
+ * @dst_task names the root of the revocation subtree; the cascade itself —
+ * bump the root's epoch, clear its RandomTag and repeat for every
+ * revocable descendant — is delegated to airy_cap_derive() so the
+ * derivation tree has a single revocation authority
+ * (110-security/03-capability-model.md §3.5).
+ *
+ * Exposed to KUnit so the revocation contract has a direct test hook; it
+ * is not a second dispatch entry point.
+ *
+ * Return: AIRY_EOK on success; -EINVAL when @msg is NULL;
+ *         -AIRY_ECAP_OVERFLOW for an out-of-range target; -AIRY_ECAP_MISSING
+ *         when the target has no registered badge.
+ */
+__must_check int airy_badge_revoke(const struct airy_ipc_msg_hdr *msg);
+
 #endif /* _AIRY_INVOKE_H */

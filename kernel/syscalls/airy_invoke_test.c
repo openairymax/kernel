@@ -5,15 +5,17 @@
  * airy_invoke_test.c — KUnit coverage for the syscall 548 control-plane
  * entry defined in airy_syscalls.c.
  *
- * Three layers are exercised: the Layout C v4 header contract
+ * Four layers are exercised: the Layout C v4 header contract
  * (airy_invoke_hdr_check, C-S1/C-S3/C-S4/C-S10), the opcode plus ordering
- * rules of the dispatch skeleton (airy_invoke_dispatch), and the badge
- * install handler (airy_badge_install, the sec_d COMPILE_BADGE half).
+ * rules of the dispatch skeleton (airy_invoke_dispatch), and the two halves
+ * of the badge lifecycle — install (airy_badge_install, the sec_d
+ * COMPILE_BADGE half) and revocation (airy_badge_revoke, the sec_d
+ * REVOKE_BADGE half).
  *
- * airy_badge_install() reads only the message header and the global
- * capability slot table — never current->security — so it is hermetic
- * under KUnit: the suite parks the run in one reserved slot, saves the
- * live contents in the test context and restores them on exit.
+ * Both handlers read only the message header and the global capability
+ * slot table — never current->security — so they are hermetic under KUnit:
+ * the suite parks the run in one reserved slot, saves the live contents in
+ * the test context and restores them on exit.
  */
 
 #include <kunit/test.h>
@@ -76,6 +78,16 @@ static struct airy_ipc_msg_hdr badge_msg(__u64 dst, __u64 badge)
 		.opcode = AIRY_IPC_OP_CAP_RESPONSE,
 		.dst_task = dst,
 		.capability_badge = badge,
+	};
+}
+
+/* Build a FREEZE (REVOKE_BADGE) header naming target agent @dst. */
+static struct airy_ipc_msg_hdr freeze_msg(__u64 dst)
+{
+	return (struct airy_ipc_msg_hdr){
+		.magic = AIRY_IPC_MAGIC,
+		.opcode = AIRY_IPC_OP_FREEZE,
+		.dst_task = dst,
 	};
 }
 
@@ -308,6 +320,56 @@ static void airy_badge_install_ok_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, badge, slot->badge);
 }
 
+static void airy_badge_revoke_reject_test(struct kunit *test)
+{
+	struct airy_cap_slot *slot = &agent_caps[AIRY_TEST_AGENT];
+	struct airy_ipc_msg_hdr hdr = freeze_msg(AIRY_TEST_AGENT);
+
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_badge_revoke(NULL));
+
+	/* Out-of-range target is refused before the slot is inspected. */
+	hdr.dst_task = AIRY_CAP_MAX_AGENTS;
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_OVERFLOW, airy_badge_revoke(&hdr));
+
+	/*
+	 * An empty slot holds no badge, so airy_cap_lookup() yields NULL and
+	 * the cascade is refused with -AIRY_ECAP_MISSING.
+	 */
+	hdr = freeze_msg(AIRY_TEST_AGENT);
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_MISSING, airy_badge_revoke(&hdr));
+
+	/* Every rejection must leave the parked slot untouched. */
+	KUNIT_EXPECT_EQ(test, AIRY_CAP_NULL, slot->badge);
+	KUNIT_EXPECT_EQ(test, AIRY_TEST_EPOCH, slot->epoch);
+}
+
+static void airy_badge_revoke_ok_test(struct kunit *test)
+{
+	const u64 badge = AIRY_BADGE_COMPILE(AIRY_TEST_EPOCH, 0x1234ABCDu,
+					     AIRY_CAP_PERM_SEND);
+	struct airy_cap_slot *slot = &agent_caps[AIRY_TEST_AGENT];
+	struct airy_ipc_msg_hdr hdr = badge_msg(AIRY_TEST_AGENT, badge);
+
+	KUNIT_ASSERT_EQ(test, AIRY_EOK, airy_badge_install(&hdr));
+
+	/* The freshly installed badge authenticates on the fastpath. */
+	KUNIT_ASSERT_EQ(test, AIRY_EOK,
+			airy_cap_badge_ok(badge, AIRY_TEST_AGENT,
+					  AIRY_CAP_PERM_SEND));
+
+	hdr = freeze_msg(AIRY_TEST_AGENT);
+	KUNIT_ASSERT_EQ(test, AIRY_EOK, airy_badge_revoke(&hdr));
+
+	/* Revocation bumps the epoch and clears the RandomTag. */
+	KUNIT_EXPECT_EQ(test, AIRY_TEST_EPOCH + 1u, slot->epoch);
+	KUNIT_EXPECT_EQ(test, 0, slot->randtag);
+
+	/* The pre-revocation badge is now stale against the slot epoch. */
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_EPOCH,
+			airy_cap_badge_ok(badge, AIRY_TEST_AGENT,
+					  AIRY_CAP_PERM_SEND));
+}
+
 static struct kunit_case airy_invoke_cases[] = {
 	KUNIT_CASE(airy_invoke_hdr_accept_test),
 	KUNIT_CASE(airy_invoke_hdr_magic_test),
@@ -322,6 +384,8 @@ static struct kunit_case airy_invoke_cases[] = {
 	KUNIT_CASE(airy_invoke_dispatch_order_test),
 	KUNIT_CASE(airy_badge_install_reject_test),
 	KUNIT_CASE(airy_badge_install_ok_test),
+	KUNIT_CASE(airy_badge_revoke_reject_test),
+	KUNIT_CASE(airy_badge_revoke_ok_test),
 	{}
 };
 

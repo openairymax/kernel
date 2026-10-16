@@ -10,11 +10,10 @@
  *
  * airy_sys_call (548) is the sec_d-only capability management entry
  * (30-interfaces/01-syscalls.md §1.4). It dispatches on msg->opcode and
- * serves the capability bootstrap by installing a sec_d-compiled badge
- * into the target slot (airy_badge_install); every other opcode answers
- * -AIRY_ENOTSUP, the [SC] magnitude that replaces the POSIX -ENOSYS
- * rejected by OS-DEV-801's gate, until its M2-M5 handler lands
- * (20-modules/01-kernel.md 15.2). Syscalls 549-551 do the same.
+ * serves both halves of the badge lifecycle: install (airy_badge_install)
+ * and cascading revocation (airy_badge_revoke). Every other opcode answers
+ * -AIRY_ENOTSUP until its M2-M5 handler lands (20-modules/01-kernel.md
+ * 15.2); syscalls 549-551 do the same.
  */
 
 #include <linux/syscalls.h>
@@ -196,6 +195,45 @@ __must_check int airy_badge_install(const struct airy_ipc_msg_hdr *msg)
 }
 
 /*
+ * airy_badge_revoke — revoke an agent's badge and its derived subtree.
+ * @msg: Kernel-resident copy of the caller message header.
+ *
+ * Handler for AIRY_IPC_OP_FREEZE, which is the control-plane carrier for
+ * REVOKE_BADGE (30-interfaces/01-syscalls.md §1.4). Only msg->dst_task is
+ * read: it names the root of the revocation subtree. The header contract,
+ * the opcode contract and the caller's own badge have already been
+ * enforced by airy_invoke_dispatch(), so this function adds exactly one
+ * thing — a bound check on the target slot index — before handing the
+ * cascade to airy_cap_derive().
+ *
+ * The cascade is deliberate. airy_cap_derive(AIRY_CAP_OP_REVOKE) bumps the
+ * target slot's epoch, clears its RandomTag and repeats both for every
+ * revocable descendant in the MDB derivation tree (seL4 cteRevoke
+ * alignment, 110-security/03-capability-model.md §3.5). Revoking only the
+ * target's own epoch would leave capabilities it had already derived —
+ * and the authority they carry — alive after the parent is gone.
+ *
+ * Return: AIRY_EOK on success; -EINVAL when @msg is NULL;
+ *         -AIRY_ECAP_OVERFLOW for an out-of-range target; -AIRY_ECAP_MISSING
+ *         when the target has no registered badge, so there is nothing to
+ *         revoke.
+ */
+__must_check int airy_badge_revoke(const struct airy_ipc_msg_hdr *msg)
+{
+	__u32 agent_id;
+
+	if (unlikely(!msg))
+		return -EINVAL;
+
+	if (unlikely(msg->dst_task >= AIRY_CAP_MAX_AGENTS))
+		return -AIRY_ECAP_OVERFLOW;
+
+	agent_id = (__u32)msg->dst_task;
+
+	return airy_cap_derive(agent_id, 0, AIRY_CAP_OP_REVOKE, 0);
+}
+
+/*
  * airy_invoke_dispatch — validate and dispatch a syscall 548 request.
  * @cap: Capability badge presented by the caller.
  * @msg: Kernel-resident copy of the caller message header.
@@ -211,9 +249,10 @@ __must_check int airy_badge_install(const struct airy_ipc_msg_hdr *msg)
  * -AIRY_ECAP_PERM before any handler runs (OS-KER-225).
  *
  * Once authenticated the request is routed to the matching handler:
- * AIRY_IPC_OP_CAP_RESPONSE reaches airy_badge_install(), while the
- * remaining valid opcodes answer -AIRY_ENOTSUP until their M2-M5 handlers
- * land (OS-IRON-004 progressive development).
+ * AIRY_IPC_OP_CAP_RESPONSE reaches airy_badge_install() and
+ * AIRY_IPC_OP_FREEZE reaches airy_badge_revoke(); the remaining valid
+ * opcodes answer -AIRY_ENOTSUP until their M2-M5 handlers land
+ * (OS-IRON-004 progressive development).
  */
 __must_check int airy_invoke_dispatch(airy_cap_t cap,
 				      const struct airy_ipc_msg_hdr *msg)
@@ -252,8 +291,12 @@ __must_check int airy_invoke_dispatch(airy_cap_t cap,
 		/* Cancel pending IPC operation — M2 handler pending */
 		return -AIRY_ENOTSUP;
 	case AIRY_IPC_OP_FREEZE:
-		/* Freeze IPC ring — supervisor-only, M2 handler pending */
-		return -AIRY_ENOTSUP;
+		/*
+		 * sec_d REVOKE_BADGE (registry §4.2): the control-plane use
+		 * of the FREEZE opcode. Ring freezing itself runs on the
+		 * io_uring data plane and does not enter this path.
+		 */
+		return airy_badge_revoke(msg);
 	case AIRY_IPC_OP_CAP_RESPONSE:
 		/* sec_d COMPILE_BADGE — install into the target slot */
 		return airy_badge_install(msg);
