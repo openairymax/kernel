@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
 obj-$(CONFIG_AIRY_SYSCALL) += airy_syscalls.o
+obj-$(CONFIG_AIRY_SYSCALL) += airy_clt.o
 
 # KUnit regression for the syscall 548 control-plane entry: the
 # C-S1/C-S3/C-S4/C-S10 header contract, the opcode plane classifier and
@@ -10,3 +11,10 @@ obj-$(CONFIG_AIRY_SYSCALL) += airy_syscalls.o
 # airy_invoke_op_valid(), airy_invoke_dispatch(), airy_badge_install() and
 # airy_badge_revoke() defined in airy_syscalls.c.
 obj-$(CONFIG_AIRY_KUNIT) += airy_invoke_test.o
+
+# KUnit regression for the syscall 551 phase record: the boundary
+# contract of airy_clt_notify(), the read-back of airy_clt_query() and
+# the AIRY_CLT_PHASE_UNSET sentinel that marks a never-notified agent.
+# airy_clt_test.c links against the non-static airy_clt_notify() and
+# airy_clt_query() defined in airy_clt.c.
+obj-$(CONFIG_AIRY_KUNIT) += airy_clt_test.o

@@ -66,7 +66,7 @@ static inline enum airy_clt_class airy_clt_kind(__u32 op)
  */
 #define AIRY_CLT_PHASE_UNSET	0xFFFFFFFFu
 
-/* Notification entry points (defined in airy_syscalls.c) */
+/* Notification entry points (defined in airy_clt.c) */
 /**
  * airy_clt_notify - record a CoreLoopThree phase notification
  * @task_id: Target cognition agent identity.
