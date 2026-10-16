@@ -6,13 +6,13 @@
  * defined in airy_clt.c.
  *
  * The record is pure kernel state with no dependency on current and no
- * caller-owned lock, so the suite drives airy_clt_notify() directly and
- * observes it through airy_clt_query(). It then checks the boundary
- * contract the 551 entry relies on: every [SC] CoreLoopThree phase is
- * accepted as notified without transition ordering, the reserved
- * operation space stays outside the record, a negative identity is
- * refused with -EINVAL, and an identity outside the agent table is
- * refused with -AIRY_ECAP_OVERFLOW.
+ * caller-owned lock, so the suite drives the 551 entry airy_clt_serve()
+ * and its write half airy_clt_notify() directly, observing both through
+ * airy_clt_query(). It checks the boundary contract: every [SC]
+ * CoreLoopThree phase is accepted as notified without transition
+ * ordering, the reserved operation space is refused fail-closed before
+ * the identity is examined, a negative identity is refused with -EINVAL,
+ * and an out-of-table identity is refused with -AIRY_ECAP_OVERFLOW.
  *
  * One reserved slot is parked for the run and restored on exit so the
  * suite leaves the table exactly as it found it.
@@ -181,6 +181,59 @@ static void airy_clt_query_reject_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, AIRY_CLT_PHASE_UNSET, out);
 }
 
+static void airy_clt_serve_phase_test(struct kunit *test)
+{
+	__u32 out = AIRY_CLT_PHASE_UNSET;
+
+	/* The entry decision accepts every [SC] phase and records it. */
+	KUNIT_ASSERT_EQ(test, AIRY_EOK,
+			airy_clt_serve(AIRY_CLT_TEST_AGENT, AIRY_COG_THINK));
+	KUNIT_ASSERT_EQ(test, AIRY_EOK,
+			airy_clt_query(AIRY_CLT_TEST_AGENT, &out));
+	KUNIT_EXPECT_EQ(test, AIRY_COG_THINK, out);
+}
+
+static void airy_clt_serve_reserved_test(struct kunit *test)
+{
+	__u32 out = AIRY_CLT_PHASE_UNSET;
+
+	KUNIT_ASSERT_EQ(test, AIRY_EOK,
+			airy_clt_serve(AIRY_CLT_TEST_AGENT, AIRY_COG_ACT));
+
+	/* A reserved kthread-class op is refused, never recorded. */
+	KUNIT_EXPECT_EQ(test, -AIRY_ECOG_PHASE,
+			airy_clt_serve(AIRY_CLT_TEST_AGENT, AIRY_COG_PHASE_MAX));
+	KUNIT_EXPECT_EQ(test, -AIRY_ECOG_PHASE,
+			airy_clt_serve(AIRY_CLT_TEST_AGENT, 0xffffffffu));
+
+	/* The refused op must leave the parked slot untouched. */
+	KUNIT_ASSERT_EQ(test, AIRY_EOK,
+			airy_clt_query(AIRY_CLT_TEST_AGENT, &out));
+	KUNIT_EXPECT_EQ(test, AIRY_COG_ACT, out);
+}
+
+static void airy_clt_serve_identity_test(struct kunit *test)
+{
+	/* A phase op still carries the notify identity contract. */
+	KUNIT_EXPECT_EQ(test, -EINVAL,
+			airy_clt_serve(-1, AIRY_COG_PERCEPT));
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_OVERFLOW,
+			airy_clt_serve(AIRY_CAP_MAX_AGENTS, AIRY_COG_PERCEPT));
+}
+
+static void airy_clt_serve_priority_test(struct kunit *test)
+{
+	/*
+	 * Fail-closed ordering: the phase space is classified before the
+	 * identity is examined, so a reserved op with an invalid identity
+	 * answers -AIRY_ECOG_PHASE rather than the identity error.
+	 */
+	KUNIT_EXPECT_EQ(test, -AIRY_ECOG_PHASE,
+			airy_clt_serve(-1, AIRY_COG_PHASE_MAX));
+	KUNIT_EXPECT_EQ(test, -AIRY_ECOG_PHASE,
+			airy_clt_serve(AIRY_CAP_MAX_AGENTS, AIRY_COG_PHASE_MAX));
+}
+
 static struct kunit_case airy_clt_cases[] = {
 	KUNIT_CASE(airy_clt_initial_unset_test),
 	KUNIT_CASE(airy_clt_phase_accept_test),
@@ -189,6 +242,10 @@ static struct kunit_case airy_clt_cases[] = {
 	KUNIT_CASE(airy_clt_notify_reject_test),
 	KUNIT_CASE(airy_clt_notify_last_agent_test),
 	KUNIT_CASE(airy_clt_query_reject_test),
+	KUNIT_CASE(airy_clt_serve_phase_test),
+	KUNIT_CASE(airy_clt_serve_reserved_test),
+	KUNIT_CASE(airy_clt_serve_identity_test),
+	KUNIT_CASE(airy_clt_serve_priority_test),
 	{}
 };
 

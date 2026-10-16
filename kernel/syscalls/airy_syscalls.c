@@ -13,8 +13,8 @@
  * serves both halves of the badge lifecycle: install (airy_badge_install)
  * and cascading revocation (airy_badge_revoke). Valid opcodes of the
  * data and bootstrap planes are answered -AIRY_ENOTSUP rather than
- * served here; syscalls 549-551 answer -AIRY_ENOTSUP as well, except that
- * 551 answers a reserved phase operation with -AIRY_ECOG_PHASE.
+ * served here; 549 and 550 answer -AIRY_ENOTSUP as well, while 551
+ * records the phase an agent notified through airy_clt_serve().
  */
 
 #include <linux/syscalls.h>
@@ -26,7 +26,6 @@
 #include <linux/airymax/syscalls.h>
 #include <linux/airymax/sched.h>
 #include <linux/airymax/security_types.h>
-#include <linux/airymax/cognition_types.h>
 #include <linux/airymax/error.h>
 
 #include "../../security/airy/airy_cap.h"
@@ -407,18 +406,12 @@ SYSCALL_DEFINE3(airy_sys_sched_ctl, __u32, op,
  *           PERCEPT/THINK/ACT, AIRY_COG_PHASE_MAX upwards is reserved for
  *           the kthread-class operations owned by module F.
  *
- * The phase space is classified by airy_clt_kind(): a reserved operation is
- * answered -AIRY_ECOG_PHASE, the [SC] magnitude for an invalid cognition
- * phase, so it is refused explicitly rather than awaited. The phase table
- * behind airy_clt_notify() is not wired into this entry yet.
+ * A thin wrapper over airy_clt_serve(), which owns the entry decision:
+ * classify the phase space with airy_clt_kind() and then record through
+ * airy_clt_notify(). Keeping the decision in one non-static place lets
+ * KUnit drive it directly instead of through the syscall ABI.
  */
 SYSCALL_DEFINE2(airy_sys_clt_notify, int, task_id, __u32, phase)
 {
-	if (airy_clt_kind(phase) == AIRY_CLT_CLASS_RESERVED)
-		return -AIRY_ECOG_PHASE;
-
-	if (task_id < 0)
-		return -EINVAL;
-
-	return -AIRY_ENOTSUP;
+	return airy_clt_serve(task_id, phase);
 }

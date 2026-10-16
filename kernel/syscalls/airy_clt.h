@@ -68,6 +68,24 @@ static inline enum airy_clt_class airy_clt_kind(__u32 op)
 
 /* Notification entry points (defined in airy_clt.c) */
 /**
+ * airy_clt_serve - serve the phase half of syscall 551
+ * @task_id: Target cognition agent identity.
+ * @phase:   Unified 551 operation code.
+ *
+ * The single definition of the 551 entry decision, kept non-static so
+ * KUnit drives it directly instead of through the syscall ABI. It
+ * classifies @phase with airy_clt_kind() first — validation precedes
+ * mutation — so the reserved kthread-class space is refused with
+ * -AIRY_ECOG_PHASE, the [SC] magnitude for an invalid cognition phase,
+ * before the identity is examined and the table is touched. Only a
+ * CoreLoopThree phase reaches airy_clt_notify().
+ *
+ * Return: AIRY_EOK on success; -AIRY_ECOG_PHASE when @phase is reserved
+ *         for module F; otherwise what airy_clt_notify() returns.
+ */
+__must_check int airy_clt_serve(int task_id, __u32 phase);
+
+/**
  * airy_clt_notify - record a CoreLoopThree phase notification
  * @task_id: Target cognition agent identity.
  * @phase:   CoreLoopThree phase (AIRY_COG_PERCEPT/THINK/ACT).

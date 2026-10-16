@@ -104,3 +104,27 @@ __must_check int airy_clt_query(int task_id, __u32 *phase)
 
 	return AIRY_EOK;
 }
+
+/* ─── Syscall 551 entry policy ────────────────────────────────────────── */
+
+/**
+ * airy_clt_serve - Serve the phase half of syscall 551.
+ * @task_id: Target cognition agent identity.
+ * @phase:   Unified 551 operation code.
+ *
+ * Classifies @phase before anything else, so a value reserved for the
+ * module F kthread (AIRY_COG_PHASE_MAX and upwards) is refused with
+ * -AIRY_ECOG_PHASE without the phase table or the identity being
+ * examined. Only a CoreLoopThree phase is handed to airy_clt_notify(),
+ * which owns the identity range check and the write.
+ *
+ * Return: AIRY_EOK on success; -AIRY_ECOG_PHASE when @phase is reserved;
+ *         otherwise what airy_clt_notify() returns.
+ */
+__must_check int airy_clt_serve(int task_id, __u32 phase)
+{
+	if (unlikely(airy_clt_kind(phase) == AIRY_CLT_CLASS_RESERVED))
+		return -AIRY_ECOG_PHASE;
+
+	return airy_clt_notify(task_id, phase);
+}
