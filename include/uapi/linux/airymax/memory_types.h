@@ -33,6 +33,24 @@ enum airy_mem_level {
 #define AIRY_PAGE_CLASS_SHMEM    0x04  /* Shared memory page */
 #define AIRY_PAGE_CLASS_AGENT    0x08  /* Agent-private page */
 
+/* ─── MemoryRoVol Control Opcodes (airy_sys_rovol_ctl, syscall 549) ────
+ * op numbering authority: 140-application-development/07-syscall-registry.md
+ * §4.3/§6.2 (0x01-0x0A). 0 is invalid and rejected before dispatch.
+ */
+enum airy_rovol_op {
+	AIRY_ROVOL_SNAPSHOT     = 0x01,  /* Capture process memory snapshot */
+	AIRY_ROVOL_RESTORE      = 0x02,  /* Restore memory from snapshot */
+	AIRY_ROVOL_MIGRATE      = 0x03,  /* Cross-node / cross-tier migration */
+	AIRY_ROVOL_TIER_SET     = 0x04,  /* Set page tier (CXL policy) */
+	AIRY_ROVOL_MGLRU_CONFIG = 0x05,  /* Configure Multi-Gen LRU */
+	AIRY_ROVOL_LIST         = 0x06,  /* List snapshots */
+	AIRY_ROVOL_DELETE       = 0x07,  /* Delete snapshot */
+	AIRY_ROVOL_DEMOTE       = 0x08,  /* Demote page (hot -> cold tier) */
+	AIRY_ROVOL_PROMOTE      = 0x09,  /* Promote page (cold -> hot tier) */
+	AIRY_ROVOL_TIER_GET     = 0x0A,  /* Query page tier */
+	AIRY_ROVOL_OP_MAX                /* Exclusive upper bound (= 0x0B) */
+};
+
 /* ─── [DSL] Degraded Survival Layer Fallback Block ──────────────────────
  * When AIRY_SC_FALLBACK is defined, MemoryRoVol L2-L4 tiering is
  * unavailable; only L1 (hot tier, anonymous pages) is accessible. All
@@ -56,6 +74,9 @@ enum airy_mem_level {
 	#define AIRY_DSL_PAGE_CLASS_FILE   AIRY_PAGE_CLASS_ANON
 	#define AIRY_DSL_PAGE_CLASS_SHMEM  AIRY_PAGE_CLASS_ANON
 	#define AIRY_DSL_PAGE_CLASS_AGENT  AIRY_PAGE_CLASS_ANON
+
+	/* MemoryRoVol control unavailable: no rovol op is served. */
+	#define AIRY_DSL_ROVOL_OPS         0
 
 	#warning "AIRY_SC_FALLBACK active: memory_types.h degraded to L1 hot tier only, MemoryRoVol L2-L4 unavailable"
 #endif /* AIRY_SC_FALLBACK */
