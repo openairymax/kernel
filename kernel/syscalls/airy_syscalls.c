@@ -13,9 +13,9 @@
  * serves both halves of the badge lifecycle: install (airy_badge_install)
  * and cascading revocation (airy_badge_revoke). Valid opcodes of the
  * data and bootstrap planes are answered -AIRY_ENOTSUP rather than
- * served here; 550 answers -AIRY_ENOTSUP as well, while 549 validates
- * its MemoryRoVol op contract through airy_rovol_serve() and 551
- * records the phase an agent notified through airy_clt_serve().
+ * served here; 549 validates its MemoryRoVol op contract through
+ * airy_rovol_serve(), 550 its sched_tac op contract through
+ * airy_sched_serve(), and 551 records the notified phase.
  */
 
 #include <linux/syscalls.h>
@@ -33,6 +33,7 @@
 #include "airy_invoke.h"
 #include "airy_clt.h"
 #include "airy_rovol.h"
+#include "airy_sched.h"
 
 /*
  * airy_invoke_hdr_check — validate the fixed 128-byte IPC message header.
@@ -377,27 +378,25 @@ SYSCALL_DEFINE3(airy_sys_rovol_ctl, __u32, op, __u32, pid, __u64, arg)
 
 /*
  * SYSCALL 550: airy_sys_sched_ctl — Scheduler control.
- * @op:          Operation code.
+ * @op:          sched_tac operation code (AIRY_SCHED_*).
  * @cgroup_path: User-space path to the target cgroup.
  * @policy:      User-space scheduling policy string.
  *
- * M1 scaffolding: returns -AIRY_ENOTSUP pending M3 sched_tac dispatch
- * integration. Basic parameter validation (op != 0, pointer nullity)
- * is performed as a lightweight contract check. Justified by
- * OS-IRON-004 progressive development; not an IRON-2 violation.
+ * A thin wrapper over airy_sched_serve(), which owns the entry decision:
+ * classify the op space with airy_sched_kind() and then either refuse an
+ * undefined op with -AIRY_EINVAL or answer a recognised op with
+ * -AIRY_ENOTSUP, since the policy/budget/latency/priority/vtime/yield
+ * backends it names belong to milestone M3 (01-kernel.md §9.1). Keeping
+ * the decision in one non-static place lets KUnit drive it directly
+ * instead of through the syscall ABI. @cgroup_path and @policy are part
+ * of the frozen 3-argument ABI but carry no meaning until those backends
+ * exist, so they are not examined.
  */
 SYSCALL_DEFINE3(airy_sys_sched_ctl, __u32, op,
 		const char __user *, cgroup_path,
 		const char __user *, policy)
 {
-	/* Basic parameter validation. */
-	if (op == 0)
-		return -EINVAL;
-	if (!cgroup_path || !policy)
-		return -EINVAL;
-
-	/* M1 scaffolding: M3 sched_tac dispatch pending. */
-	return -AIRY_ENOTSUP;
+	return airy_sched_serve(op);
 }
 
 /*
