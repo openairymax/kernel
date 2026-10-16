@@ -8,12 +8,13 @@
  * The numbers sit above the x32 historical range (512-547); the registry
  * is the SSoT in 140-application-development/07-syscall-registry.md.
  *
- * Milestone M1 scaffolding: every entry performs its argument contract
- * checks and then reports -AIRY_ENOTSUP for operations whose handlers
- * land in M2-M5 (20-modules/01-kernel.md 15.2). -AIRY_ENOTSUP is the
- * [SC] "operation not supported" magnitude from error.h; it replaces the
- * POSIX -ENOSYS, which upstream reserves for an invalid syscall number
- * and which OS-DEV-801's checkpatch gate rejects.
+ * airy_sys_call (548) is the sec_d-only capability management entry
+ * (30-interfaces/01-syscalls.md §1.4). It dispatches on msg->opcode and
+ * serves the capability bootstrap by installing a sec_d-compiled badge
+ * into the target slot (airy_badge_install); every other opcode answers
+ * -AIRY_ENOTSUP, the [SC] magnitude that replaces the POSIX -ENOSYS
+ * rejected by OS-DEV-801's gate, until its M2-M5 handler lands
+ * (20-modules/01-kernel.md 15.2). Syscalls 549-551 do the same.
  */
 
 #include <linux/syscalls.h>
@@ -99,6 +100,102 @@ bool airy_invoke_op_valid(u16 opcode)
 }
 
 /*
+ * airy_badge_chk — validate the shape of a sec_d-compiled badge.
+ * @badge: 64-bit badge as composed by AIRY_BADGE_COMPILE().
+ *
+ * Pure value check with no state access, kept separate from the slot
+ * write so the shape rules stay trivially auditable and the handler's
+ * complexity stays low. Four properties must hold for any badge the
+ * kernel is willing to seal into a slot:
+ *
+ *   - a zero badge is the "no capability" sentinel (AIRY_CAP_NULL), not
+ *     a capability (-AIRY_ECAP_BADGE);
+ *   - epoch 0 denotes an uninitialised slot, never a live grant, so it
+ *     can never authorise anything (-AIRY_ECAP_EPOCH);
+ *   - a zero RandomTag would make the badge forgeable by construction
+ *     (-AIRY_ECAP_BADGE);
+ *   - the reserved permission bits (AIRY_CAP_PERM_RESERVED) are not
+ *     interpreted by any check, so a badge carrying them would smuggle
+ *     authority the capability model does not define (-AIRY_ECAP_BADGE).
+ *
+ * -AIRY_ECAP_FORGED is deliberately not used here: that magnitude is
+ * reserved for airy_cap_badge_ok(), which compares a presented badge
+ * against a live slot.
+ */
+static __must_check int airy_badge_chk(u64 badge)
+{
+	if (unlikely(badge == AIRY_CAP_NULL))
+		return -AIRY_ECAP_BADGE;
+
+	if (unlikely(AIRY_BADGE_EPOCH(badge) == 0))
+		return -AIRY_ECAP_EPOCH;
+
+	if (unlikely(AIRY_BADGE_RANDTAG(badge) == 0))
+		return -AIRY_ECAP_BADGE;
+
+	if (unlikely(AIRY_BADGE_PERMS(badge) & AIRY_CAP_PERM_RESERVED))
+		return -AIRY_ECAP_BADGE;
+
+	return AIRY_EOK;
+}
+
+/*
+ * airy_badge_install — install a sec_d-compiled badge into an agent slot.
+ * @msg: Kernel-resident copy of the caller message header.
+ *
+ * Handler for AIRY_IPC_OP_CAP_RESPONSE (COMPILE_BADGE in
+ * 07-syscall-registry.md §4.2). Only msg->capability_badge and
+ * msg->dst_task are read; the header field contract, the opcode contract
+ * and the caller's own badge have already been enforced by
+ * airy_invoke_dispatch(), so this function performs exactly three steps:
+ *
+ *   1. bound-check the target slot index against the slot table;
+ *   2. check the badge's shape (airy_badge_chk);
+ *   3. require the badge epoch to agree with the target slot's live epoch
+ *      before handing the write to airy_cap_register().
+ *
+ * Step 3 is what makes revocation stick: airy_cap_epoch_bump() raises the
+ * slot epoch on revoke, so a badge compiled before the bump no longer
+ * matches and cannot resurrect the capability. It equally rejects a badge
+ * compiled for an epoch the slot has not reached yet. The same rule
+ * guards the CAP_REQUEST bootstrap in airy_cap_check.c, so both
+ * capability entry points share one epoch contract.
+ *
+ * The slot-occupancy decision is left to airy_cap_register(), which tests
+ * and writes the slot under the per-bucket lock; re-checking occupancy
+ * here would only add a TOCTOU window that the primitive already closes.
+ *
+ * Return: AIRY_EOK on success; -EINVAL when @msg is NULL; -AIRY_ECAP_OVERFLOW
+ *         for an out-of-range target; -AIRY_ECAP_* for a malformed or stale
+ *         badge; -AIRY_EEXIST when the target slot is already occupied.
+ */
+__must_check int airy_badge_install(const struct airy_ipc_msg_hdr *msg)
+{
+	__u32 agent_id;
+	__u64 badge;
+	int ret;
+
+	if (unlikely(!msg))
+		return -EINVAL;
+
+	if (unlikely(msg->dst_task >= AIRY_CAP_MAX_AGENTS))
+		return -AIRY_ECAP_OVERFLOW;
+
+	agent_id = (__u32)msg->dst_task;
+	badge = msg->capability_badge;
+
+	ret = airy_badge_chk(badge);
+	if (unlikely(ret))
+		return ret;
+
+	if (unlikely(AIRY_BADGE_EPOCH(badge) !=
+		     (__u64)READ_ONCE(agent_caps[agent_id].epoch)))
+		return -AIRY_ECAP_EPOCH;
+
+	return airy_cap_register(agent_id, badge);
+}
+
+/*
  * airy_invoke_dispatch — validate and dispatch a syscall 548 request.
  * @cap: Capability badge presented by the caller.
  * @msg: Kernel-resident copy of the caller message header.
@@ -112,6 +209,11 @@ bool airy_invoke_op_valid(u16 opcode)
  * derived from msg->opcode by airy_op_required_perms(), so an authentic
  * badge that lacks the operation's permission is rejected with
  * -AIRY_ECAP_PERM before any handler runs (OS-KER-225).
+ *
+ * Once authenticated the request is routed to the matching handler:
+ * AIRY_IPC_OP_CAP_RESPONSE reaches airy_badge_install(), while the
+ * remaining valid opcodes answer -AIRY_ENOTSUP until their M2-M5 handlers
+ * land (OS-IRON-004 progressive development).
  */
 __must_check int airy_invoke_dispatch(airy_cap_t cap,
 				      const struct airy_ipc_msg_hdr *msg)
@@ -152,9 +254,15 @@ __must_check int airy_invoke_dispatch(airy_cap_t cap,
 	case AIRY_IPC_OP_FREEZE:
 		/* Freeze IPC ring — supervisor-only, M2 handler pending */
 		return -AIRY_ENOTSUP;
-	case AIRY_IPC_OP_CAP_REQUEST:
 	case AIRY_IPC_OP_CAP_RESPONSE:
-		/* Capability bootstrap — handled via io_uring_cmd, M2 pending */
+		/* sec_d COMPILE_BADGE — install into the target slot */
+		return airy_badge_install(msg);
+	case AIRY_IPC_OP_CAP_REQUEST:
+		/*
+		 * Bootstrap request — the unprivileged half of the pair is
+		 * served by the io_uring_cmd path (airy_cap_check.c
+		 * phase2_cap_request), not by this sec_d-only syscall.
+		 */
 		return -AIRY_ENOTSUP;
 	default:
 		return -AIRY_EIPC_OPCODE;
@@ -173,9 +281,10 @@ __must_check int airy_invoke_dispatch(airy_cap_t cap,
  * — instead of repeating the magic check here — leaves exactly one
  * definition of the header contract.
  *
- * M1 scaffolding: valid opcodes still return -AIRY_ENOTSUP pending M2
- * handler landings. Justified by OS-IRON-004 progressive development;
- * not an IRON-2 violation.
+ * AIRY_IPC_OP_CAP_RESPONSE (the sec_d COMPILE_BADGE half) is fully served
+ * here through airy_badge_install(); the remaining valid opcodes answer
+ * -AIRY_ENOTSUP pending their M2-M5 handler landings (OS-IRON-004
+ * progressive development).
  */
 SYSCALL_DEFINE2(airy_sys_call, airy_cap_t, cap,
 		const struct airy_ipc_msg_hdr __user *, msg)

@@ -45,12 +45,20 @@
  *
  * SEND, SEND_BATCH and CANCEL operate on the IPC stream and require
  * AIRY_CAP_PERM_SEND; RECV requires AIRY_CAP_PERM_RECV; FREEZE is a
- * supervisory action requiring AIRY_CAP_PERM_SUPERVISE. The capability
- * bootstrap pair CAP_REQUEST/CAP_RESPONSE carries no permission of its
- * own and maps to AIRY_CAP_PERM_NONE. Every other opcode yields
- * AIRY_OP_PERMS_INVALID.
+ * supervisory action requiring AIRY_CAP_PERM_SUPERVISE.
  *
- * SSoT: 110-security/03-capability-model.md §2.6.1.
+ * CAP_RESPONSE installs a compiled badge into another agent's slot, so it
+ * is a supervisory action too and also requires AIRY_CAP_PERM_SUPERVISE.
+ * Syscall 548 is the sec_d-only capability management entry
+ * (30-interfaces/01-syscalls.md §1.4); mapping CAP_RESPONSE to
+ * AIRY_CAP_PERM_NONE would let any registered agent mint a badge for any
+ * peer and would turn the entry into a privilege-escalation primitive.
+ * CAP_REQUEST is the unprivileged half of that pair — the requester holds
+ * no capability yet — and maps to AIRY_CAP_PERM_NONE. Every other opcode
+ * yields AIRY_OP_PERMS_INVALID.
+ *
+ * SSoT: 110-security/03-capability-model.md §2.6.1 (badge composition);
+ *       30-interfaces/01-syscalls.md §1.4 (sec_d-only management entry).
  *
  * Return: the required permission mask, or AIRY_OP_PERMS_INVALID when
  *         @opcode is outside the dispatch contract.
@@ -69,11 +77,14 @@ static inline u16 airy_op_required_perms(u16 opcode)
 	if (opcode >= AIRY_IPC_OP_SEND && opcode <= AIRY_IPC_OP_FREEZE)
 		return op_perms[opcode - AIRY_IPC_OP_SEND];
 
-	if (opcode == AIRY_IPC_OP_CAP_REQUEST ||
-	    opcode == AIRY_IPC_OP_CAP_RESPONSE)
+	switch (opcode) {
+	case AIRY_IPC_OP_CAP_REQUEST:
 		return AIRY_CAP_PERM_NONE;
-
-	return AIRY_OP_PERMS_INVALID;
+	case AIRY_IPC_OP_CAP_RESPONSE:
+		return AIRY_CAP_PERM_SUPERVISE;
+	default:
+		return AIRY_OP_PERMS_INVALID;
+	}
 }
 
 /* Message header contract validation */
@@ -140,11 +151,34 @@ bool airy_invoke_op_valid(u16 opcode);
  * operation's permission is rejected with -AIRY_ECAP_PERM.
  *
  * Return: 0 on success; -AIRY_EIPC_OPCODE on a malformed or unknown
- *         opcode; -AIRY_ECAP_* when badge validation fails;
- *         -AIRY_ENOTSUP while the handler for a valid opcode has not
- *         yet landed.
+ *         opcode; -AIRY_ECAP_* when badge validation fails; -AIRY_ENOTSUP
+ *         while the handler for a valid opcode has not yet landed.
  */
 __must_check int airy_invoke_dispatch(airy_cap_t cap,
 				      const struct airy_ipc_msg_hdr *msg);
+
+/* Control-plane handlers (defined in airy_syscalls.c) */
+/**
+ * airy_badge_install() - install a sec_d-compiled badge into an agent slot
+ * @msg: Kernel-resident copy of the caller message header. Only
+ *       @capability_badge and @dst_task are read; the rest of the header
+ *       contract is enforced by airy_invoke_dispatch() before the call.
+ *
+ * Handler for AIRY_IPC_OP_CAP_RESPONSE, the sec_d half of the capability
+ * bootstrap pair (COMPILE_BADGE in
+ * 140-application-development/07-syscall-registry.md §4.2). It validates
+ * the shape of the compiled badge, requires its epoch to agree with the
+ * target slot's live epoch — which is what denies epoch regression and
+ * the resurrection of a revoked capability — and then hands the slot
+ * write to airy_cap_register().
+ *
+ * Exposed to KUnit so the badge install contract has a direct test hook;
+ * it is not a second dispatch entry point.
+ *
+ * Return: AIRY_EOK on success; -EINVAL when @msg is NULL; -AIRY_ECAP_*
+ *         for an out-of-range target or a malformed/stale badge;
+ *         -AIRY_EEXIST when the target slot is already occupied.
+ */
+__must_check int airy_badge_install(const struct airy_ipc_msg_hdr *msg);
 
 #endif /* _AIRY_INVOKE_H */

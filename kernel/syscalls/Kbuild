@@ -2,8 +2,9 @@
 obj-$(CONFIG_AIRY_SYSCALL) += airy_syscalls.o
 
 # KUnit regression for the syscall 548 control-plane entry: the
-# C-S1/C-S3/C-S4/C-S10 header contract and the opcode/ordering rules of the
-# dispatch skeleton.  airy_invoke_test.c links against the non-static
-# airy_invoke_hdr_check(), airy_invoke_op_valid() and airy_invoke_dispatch()
+# C-S1/C-S3/C-S4/C-S10 header contract, the opcode/ordering rules of the
+# dispatch skeleton, and the CAP_RESPONSE badge-install handler.
+# airy_invoke_test.c links against the non-static airy_invoke_hdr_check(),
+# airy_invoke_op_valid(), airy_invoke_dispatch() and airy_badge_install()
 # defined in airy_syscalls.c.
 obj-$(CONFIG_AIRY_KUNIT) += airy_invoke_test.o

@@ -5,13 +5,15 @@
  * airy_invoke_test.c — KUnit coverage for the syscall 548 control-plane
  * entry defined in airy_syscalls.c.
  *
- * Two layers are exercised: the Layout C v4 header contract
- * (airy_invoke_hdr_check, C-S1/C-S3/C-S4/C-S10) and the opcode plus
- * ordering rules of the dispatch skeleton (airy_invoke_dispatch).
+ * Three layers are exercised: the Layout C v4 header contract
+ * (airy_invoke_hdr_check, C-S1/C-S3/C-S4/C-S10), the opcode plus ordering
+ * rules of the dispatch skeleton (airy_invoke_dispatch), and the badge
+ * install handler (airy_badge_install, the sec_d COMPILE_BADGE half).
  *
- * The badge path is deliberately left out — it dereferences
- * current->security and reads the global capability slots, neither of
- * which is hermetic under KUnit; the capability suites own it.
+ * airy_badge_install() reads only the message header and the global
+ * capability slot table — never current->security — so it is hermetic
+ * under KUnit: the suite parks the run in one reserved slot, saves the
+ * live contents in the test context and restores them on exit.
  */
 
 #include <kunit/test.h>
@@ -23,7 +25,59 @@
 #include <linux/airymax/error.h>
 #include <linux/airymax/ipc.h>
 
+#include "../../security/airy/airy_cap.h"
 #include "airy_invoke.h"
+
+/*
+ * airy_badge_install() touches only the global capability slot table, so
+ * every case runs against one reserved slot whose live contents are
+ * restored on exit. AIRY_TEST_AGENT (1023) is the last slot and is not
+ * claimed by the derivation (1020/1021) or LSM (1022) suites.
+ */
+#define AIRY_TEST_AGENT	1023u
+#define AIRY_TEST_EPOCH	1u
+
+struct badge_install_ctx {
+	struct airy_cap_slot saved_slot;
+};
+
+static int badge_install_test_init(struct kunit *test)
+{
+	struct badge_install_ctx *ctx;
+	struct airy_cap_slot *slot = &agent_caps[AIRY_TEST_AGENT];
+
+	ctx = kunit_kzalloc(test, sizeof(*ctx), GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, ctx);
+	test->priv = ctx;
+
+	/* Park an empty slot at the epoch boot initialisation leaves in place. */
+	ctx->saved_slot = *slot;
+	memset(slot, 0, sizeof(*slot));
+	WRITE_ONCE(slot->epoch, AIRY_TEST_EPOCH);
+
+	return 0;
+}
+
+static void badge_install_test_exit(struct kunit *test)
+{
+	struct badge_install_ctx *ctx = test->priv;
+
+	if (!ctx)
+		return;
+
+	agent_caps[AIRY_TEST_AGENT] = ctx->saved_slot;
+}
+
+/* Build a CAP_RESPONSE header carrying @badge for target agent @dst. */
+static struct airy_ipc_msg_hdr badge_msg(__u64 dst, __u64 badge)
+{
+	return (struct airy_ipc_msg_hdr){
+		.magic = AIRY_IPC_MAGIC,
+		.opcode = AIRY_IPC_OP_CAP_RESPONSE,
+		.dst_task = dst,
+		.capability_badge = badge,
+	};
+}
 
 static void airy_invoke_hdr_accept_test(struct kunit *test)
 {
@@ -184,6 +238,76 @@ static void airy_invoke_dispatch_order_test(struct kunit *test)
 			airy_invoke_dispatch(AIRY_CAP_NULL, &unknown));
 }
 
+static void airy_badge_install_reject_test(struct kunit *test)
+{
+	const u64 good = AIRY_BADGE_COMPILE(AIRY_TEST_EPOCH, 0x1234ABCDu,
+					    AIRY_CAP_PERM_SEND);
+	struct airy_cap_slot *slot = &agent_caps[AIRY_TEST_AGENT];
+	struct airy_ipc_msg_hdr hdr = badge_msg(AIRY_TEST_AGENT, good);
+
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_badge_install(NULL));
+
+	/* Out-of-range target is refused before the badge is inspected. */
+	hdr.dst_task = AIRY_CAP_MAX_AGENTS;
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_OVERFLOW, airy_badge_install(&hdr));
+
+	/* A zero badge is the "no capability" sentinel. */
+	hdr = badge_msg(AIRY_TEST_AGENT, AIRY_CAP_NULL);
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_BADGE, airy_badge_install(&hdr));
+
+	/* Epoch 0 marks an uninitialised slot, never a live grant. */
+	hdr = badge_msg(AIRY_TEST_AGENT,
+			AIRY_BADGE_COMPILE(0, 0x1234ABCDu, AIRY_CAP_PERM_SEND));
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_EPOCH, airy_badge_install(&hdr));
+
+	/* A zero RandomTag would make the badge forgeable by construction. */
+	hdr = badge_msg(AIRY_TEST_AGENT,
+			AIRY_BADGE_COMPILE(AIRY_TEST_EPOCH, 0,
+					   AIRY_CAP_PERM_SEND));
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_BADGE, airy_badge_install(&hdr));
+
+	/* Reserved permission bits name authority no check interprets. */
+	hdr = badge_msg(AIRY_TEST_AGENT,
+			AIRY_BADGE_COMPILE(AIRY_TEST_EPOCH, 0x1234ABCDu,
+					   AIRY_CAP_PERM_RESERVED));
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_BADGE, airy_badge_install(&hdr));
+
+	/* A badge minted for a future epoch must not seal here. */
+	hdr = badge_msg(AIRY_TEST_AGENT,
+			AIRY_BADGE_COMPILE(AIRY_TEST_EPOCH + 1u, 0x1234ABCDu,
+					   AIRY_CAP_PERM_SEND));
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_EPOCH, airy_badge_install(&hdr));
+
+	/* Every rejection must leave the parked slot untouched. */
+	KUNIT_EXPECT_EQ(test, AIRY_CAP_NULL, slot->badge);
+	KUNIT_EXPECT_EQ(test, AIRY_TEST_EPOCH, slot->epoch);
+}
+
+static void airy_badge_install_ok_test(struct kunit *test)
+{
+	const u64 badge = AIRY_BADGE_COMPILE(AIRY_TEST_EPOCH, 0x1234ABCDu,
+					     AIRY_CAP_PERM_SEND |
+					     AIRY_CAP_PERM_RECV);
+	struct airy_cap_slot *slot = &agent_caps[AIRY_TEST_AGENT];
+	struct airy_ipc_msg_hdr hdr = badge_msg(AIRY_TEST_AGENT, badge);
+
+	KUNIT_ASSERT_EQ(test, AIRY_EOK, airy_badge_install(&hdr));
+
+	KUNIT_EXPECT_EQ(test, badge, slot->badge);
+	KUNIT_EXPECT_EQ(test, AIRY_TEST_AGENT, slot->agent_id);
+	KUNIT_EXPECT_EQ(test, AIRY_TEST_EPOCH, slot->epoch);
+	KUNIT_EXPECT_EQ(test, 0x1234ABCDu, slot->randtag);
+	KUNIT_EXPECT_EQ(test, AIRY_CAP_PERM_SEND | AIRY_CAP_PERM_RECV,
+			slot->perms);
+
+	/* Single-shot slot: a second grant is refused, not overwritten. */
+	hdr = badge_msg(AIRY_TEST_AGENT,
+			AIRY_BADGE_COMPILE(AIRY_TEST_EPOCH, 0x5A5A5A5Au,
+					   AIRY_CAP_PERM_RECV));
+	KUNIT_EXPECT_EQ(test, -AIRY_EEXIST, airy_badge_install(&hdr));
+	KUNIT_EXPECT_EQ(test, badge, slot->badge);
+}
+
 static struct kunit_case airy_invoke_cases[] = {
 	KUNIT_CASE(airy_invoke_hdr_accept_test),
 	KUNIT_CASE(airy_invoke_hdr_magic_test),
@@ -196,11 +320,15 @@ static struct kunit_case airy_invoke_cases[] = {
 	KUNIT_CASE(airy_invoke_op_valid_reject_test),
 	KUNIT_CASE(airy_invoke_dispatch_entry_test),
 	KUNIT_CASE(airy_invoke_dispatch_order_test),
+	KUNIT_CASE(airy_badge_install_reject_test),
+	KUNIT_CASE(airy_badge_install_ok_test),
 	{}
 };
 
 static struct kunit_suite airy_invoke_suite = {
 	.name = "airy_invoke_syscall_548",
+	.init = badge_install_test_init,
+	.exit = badge_install_test_exit,
 	.test_cases = airy_invoke_cases,
 };
 
