@@ -11,9 +11,9 @@
  * airy_sys_call (548) is the sec_d-only capability management entry
  * (30-interfaces/01-syscalls.md §1.4). It dispatches on msg->opcode and
  * serves both halves of the badge lifecycle: install (airy_badge_install)
- * and cascading revocation (airy_badge_revoke). Every other opcode answers
- * -AIRY_ENOTSUP until its M2-M5 handler lands (20-modules/01-kernel.md
- * 15.2); syscalls 549-551 do the same.
+ * and cascading revocation (airy_badge_revoke). Valid opcodes of the
+ * data and bootstrap planes are answered -AIRY_ENOTSUP rather than
+ * served here; syscalls 549-551 answer -AIRY_ENOTSUP as well.
  */
 
 #include <linux/syscalls.h>
@@ -88,14 +88,14 @@ __must_check int airy_invoke_hdr_check(const struct airy_ipc_msg_hdr *hdr)
  * airy_invoke_op_valid — test whether an opcode is dispatchable.
  * @opcode: IPC opcode from the [SC] AIRY_IPC_OP_* space.
  *
- * The dispatchable set is defined solely by airy_op_required_perms():
- * an opcode is valid exactly when the mapping recognises it. Keeping a
- * second opcode list here would let the two drift apart and silently
- * admit an unauthenticated operation (OS-KER-225).
+ * The dispatchable set is defined solely by airy_op_plane(): an opcode is
+ * valid exactly when it belongs to one of the three opcode planes.
+ * Keeping a second opcode list here would let the two drift apart and
+ * silently admit an unauthenticated operation (OS-KER-225).
  */
 bool airy_invoke_op_valid(u16 opcode)
 {
-	return airy_op_required_perms(opcode) != AIRY_OP_PERMS_INVALID;
+	return airy_op_plane(opcode) != AIRY_PLANE_INVALID;
 }
 
 /*
@@ -250,9 +250,13 @@ __must_check int airy_badge_revoke(const struct airy_ipc_msg_hdr *msg)
  *
  * Once authenticated the request is routed to the matching handler:
  * AIRY_IPC_OP_CAP_RESPONSE reaches airy_badge_install() and
- * AIRY_IPC_OP_FREEZE reaches airy_badge_revoke(); the remaining valid
- * opcodes answer -AIRY_ENOTSUP until their M2-M5 handlers land
- * (OS-IRON-004 progressive development).
+ * AIRY_IPC_OP_FREEZE reaches airy_badge_revoke(). Every remaining valid
+ * opcode belongs to a plane this sec_d-only entry does not serve — the
+ * io_uring data plane (SEND/SEND_BATCH/RECV/CANCEL) or the io_uring_cmd
+ * bootstrap (CAP_REQUEST) — and is answered -AIRY_ENOTSUP, the [SC]
+ * magnitude for "recognised but not offered here". That refusal is a
+ * deliberate statement of ownership, not a placeholder: no later stage
+ * routes those opcodes through 548.
  */
 __must_check int airy_invoke_dispatch(airy_cap_t cap,
 				      const struct airy_ipc_msg_hdr *msg)
@@ -280,16 +284,6 @@ __must_check int airy_invoke_dispatch(airy_cap_t cap,
 		return ret;
 
 	switch (msg->opcode) {
-	case AIRY_IPC_OP_SEND:
-	case AIRY_IPC_OP_SEND_BATCH:
-		/* IPC send path — M2 handler pending */
-		return -AIRY_ENOTSUP;
-	case AIRY_IPC_OP_RECV:
-		/* IPC receive path — M2 handler pending */
-		return -AIRY_ENOTSUP;
-	case AIRY_IPC_OP_CANCEL:
-		/* Cancel pending IPC operation — M2 handler pending */
-		return -AIRY_ENOTSUP;
 	case AIRY_IPC_OP_FREEZE:
 		/*
 		 * sec_d REVOKE_BADGE (registry §4.2): the control-plane use
@@ -300,15 +294,18 @@ __must_check int airy_invoke_dispatch(airy_cap_t cap,
 	case AIRY_IPC_OP_CAP_RESPONSE:
 		/* sec_d COMPILE_BADGE — install into the target slot */
 		return airy_badge_install(msg);
-	case AIRY_IPC_OP_CAP_REQUEST:
+	default:
 		/*
-		 * Bootstrap request — the unprivileged half of the pair is
-		 * served by the io_uring_cmd path (airy_cap_check.c
-		 * phase2_cap_request), not by this sec_d-only syscall.
+		 * SEND/SEND_BATCH/RECV/CANCEL carry the IPC stream on the
+		 * io_uring data plane, whose C-S9 inline Badge check
+		 * performs their authorisation; CAP_REQUEST is the
+		 * unprivileged half of the bootstrap pair, served by the
+		 * io_uring_cmd path (airy_cap_check.c
+		 * phase2_cap_request). Neither plane routes through this
+		 * sec_d-only syscall, so the request is refused
+		 * explicitly rather than awaited.
 		 */
 		return -AIRY_ENOTSUP;
-	default:
-		return -AIRY_EIPC_OPCODE;
 	}
 }
 
@@ -324,10 +321,11 @@ __must_check int airy_invoke_dispatch(airy_cap_t cap,
  * — instead of repeating the magic check here — leaves exactly one
  * definition of the header contract.
  *
- * AIRY_IPC_OP_CAP_RESPONSE (the sec_d COMPILE_BADGE half) is fully served
- * here through airy_badge_install(); the remaining valid opcodes answer
- * -AIRY_ENOTSUP pending their M2-M5 handler landings (OS-IRON-004
- * progressive development).
+ * AIRY_IPC_OP_CAP_RESPONSE (the sec_d COMPILE_BADGE half) and
+ * AIRY_IPC_OP_FREEZE (the sec_d REVOKE_BADGE half) are fully served here
+ * through airy_badge_install() and airy_badge_revoke(). The remaining
+ * valid opcodes belong to the io_uring data plane or the io_uring_cmd
+ * bootstrap and are answered -AIRY_ENOTSUP, since 548 is not their entry.
  */
 SYSCALL_DEFINE2(airy_sys_call, airy_cap_t, cap,
 		const struct airy_ipc_msg_hdr __user *, msg)

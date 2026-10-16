@@ -6,11 +6,12 @@
  * (airy_sys_call). The dispatch key is the single dimension
  * msg->opcode, whose authoritative values are the [SC]
  * AIRY_IPC_OP_* macros in <linux/airymax/ipc.h>; this header
- * declares the dispatch skeleton but never redefines them.
- * High-rate IPC data moves through io_uring (IORING_OP_URING_CMD)
- * and does not enter this path.
+ * never redefines them. Those values span three planes — CTL
+ * (served here), DATA (io_uring IORING_OP_URING_CMD) and BOOT
+ * (the io_uring_cmd capability bootstrap) — so 548 answers only
+ * its own plane instead of standing in for the others.
  *
- * SSoT: 140-application-development/07-syscall-registry.md §4.2.
+ * SSoT: 140-application-development/07-syscall-registry.md §4.1-§4.2.
  */
 
 #ifndef _AIRY_INVOKE_H
@@ -38,10 +39,9 @@
  * Side-effect-free translation of a control-plane opcode into the
  * capability permission mask the caller must hold. The result is fed to
  * airy_cap_badge_ok() so that authorization, not merely badge
- * authenticity, is enforced before any handler runs. It is also the
- * single source of truth for which opcodes are dispatchable at all:
- * airy_invoke_op_valid() accepts exactly the opcodes that do not map to
- * AIRY_OP_PERMS_INVALID.
+ * authenticity, is enforced before any handler runs. Which opcodes are
+ * dispatchable at all is owned by airy_op_plane(); this mapping only
+ * answers what an already-recognised opcode demands.
  *
  * SEND, SEND_BATCH and CANCEL operate on the IPC stream and require
  * AIRY_CAP_PERM_SEND; RECV requires AIRY_CAP_PERM_RECV; FREEZE is a
@@ -87,6 +87,62 @@ static inline u16 airy_op_required_perms(u16 opcode)
 	}
 }
 
+/* Opcode plane classification */
+/*
+ * The [SC] AIRY_IPC_OP_* values are not all served by syscall 548; they
+ * split by ownership into three planes, and a fourth state for values
+ * outside the contract. Keeping the split explicit stops 548 from being
+ * read as the owner of every opcode, and stops a future edit from
+ * believing a data- or bootstrap-plane opcode is merely "not yet
+ * implemented here".
+ *
+ *   CTL  — capability management served by 548 itself;
+ *   DATA — IPC stream transfer owned by the io_uring data plane, whose
+ *          C-S9 inline Badge check authorises independently of 548;
+ *   BOOT — capability bootstrap served by the io_uring_cmd path
+ *          (airy_cap_check.c phase2_cap_request), never by 548;
+ *   INVALID — outside the [SC] AIRY_IPC_OP_* dispatch contract.
+ */
+enum airy_plane {
+	AIRY_PLANE_CTL,
+	AIRY_PLANE_DATA,
+	AIRY_PLANE_BOOT,
+	AIRY_PLANE_INVALID,
+};
+
+/**
+ * airy_op_plane() - classify an opcode by the plane that serves it
+ * @opcode: Dispatch key from the [SC] AIRY_IPC_OP_* space.
+ *
+ * Pure classifier with no state and no dependency on current, so KUnit
+ * drives it directly and airy_invoke_op_valid() can delegate to it. It
+ * is the single source of truth for opcode validity: an opcode is
+ * dispatchable exactly when its plane is not AIRY_PLANE_INVALID.
+ *
+ * SSoT: 140-application-development/07-syscall-registry.md §4.1-§4.2
+ *       (op-dispatch principle and data-plane cmd_op ownership).
+ *
+ * Return: the plane that owns @opcode, or AIRY_PLANE_INVALID when it is
+ *         not part of the dispatch contract.
+ */
+static inline enum airy_plane airy_op_plane(u16 opcode)
+{
+	switch (opcode) {
+	case AIRY_IPC_OP_FREEZE:
+	case AIRY_IPC_OP_CAP_RESPONSE:
+		return AIRY_PLANE_CTL;
+	case AIRY_IPC_OP_SEND:
+	case AIRY_IPC_OP_RECV:
+	case AIRY_IPC_OP_SEND_BATCH:
+	case AIRY_IPC_OP_CANCEL:
+		return AIRY_PLANE_DATA;
+	case AIRY_IPC_OP_CAP_REQUEST:
+		return AIRY_PLANE_BOOT;
+	default:
+		return AIRY_PLANE_INVALID;
+	}
+}
+
 /* Message header contract validation */
 /**
  * airy_invoke_hdr_check() - validate the fixed 128-byte IPC message header
@@ -111,8 +167,8 @@ static inline u16 airy_op_required_perms(u16 opcode)
  *            through fields the kernel never interprets.
  *
  * The opcode is deliberately not checked here: its validity is owned by
- * airy_op_required_perms()/airy_invoke_op_valid() so that the dispatchable
- * set has exactly one definition (see airy_invoke_dispatch()).
+ * airy_op_plane()/airy_invoke_op_valid() so that the dispatchable set has
+ * exactly one definition (see airy_invoke_dispatch()).
  *
  * SSoT: 30-interfaces/07-ipc-fastpath.md §3.1 (C-S1/C-S3/C-S4/C-S10);
  *       30-interfaces/08-sc-error-contract.md §2.3 (error magnitudes).
@@ -129,7 +185,8 @@ __must_check int airy_invoke_hdr_check(const struct airy_ipc_msg_hdr *hdr);
  *
  * Tells the caller whether @opcode belongs to the control-plane
  * dispatch set. Unknown opcodes must be rejected with -AIRY_EIPC_OPCODE
- * before any state is touched.
+ * before any state is touched. Delegates to airy_op_plane() so the
+ * dispatchable set has one definition.
  *
  * Return: true if @opcode is dispatchable, false otherwise.
  */
@@ -150,9 +207,16 @@ bool airy_invoke_op_valid(u16 opcode);
  * airy_op_required_perms(), so a badge that is authentic but lacks the
  * operation's permission is rejected with -AIRY_ECAP_PERM.
  *
- * Return: 0 on success; -AIRY_EIPC_OPCODE on a malformed or unknown
- *         opcode; -AIRY_ECAP_* when badge validation fails; -AIRY_ENOTSUP
- *         while the handler for a valid opcode has not yet landed.
+ * Only the CTL plane is served here. A valid opcode owned by the data or
+ * bootstrap plane is answered -AIRY_ENOTSUP: those planes carry their own
+ * authorisation (the io_uring fastpath C-S9 inline Badge check and the
+ * io_uring_cmd bootstrap respectively) and never route through 548, so
+ * there is no handler to wait for.
+ *
+ * Return: 0 on success; -AIRY_EIPC_OPCODE for an opcode outside the
+ *         [SC] AIRY_IPC_OP_* space; -AIRY_ECAP_* when badge validation
+ *         fails; -AIRY_ENOTSUP for a valid opcode belonging to a plane
+ *         this control-plane entry does not serve.
  */
 __must_check int airy_invoke_dispatch(airy_cap_t cap,
 				      const struct airy_ipc_msg_hdr *msg);

@@ -5,12 +5,12 @@
  * airy_invoke_test.c — KUnit coverage for the syscall 548 control-plane
  * entry defined in airy_syscalls.c.
  *
- * Four layers are exercised: the Layout C v4 header contract
- * (airy_invoke_hdr_check, C-S1/C-S3/C-S4/C-S10), the opcode plus ordering
- * rules of the dispatch skeleton (airy_invoke_dispatch), and the two halves
- * of the badge lifecycle — install (airy_badge_install, the sec_d
- * COMPILE_BADGE half) and revocation (airy_badge_revoke, the sec_d
- * REVOKE_BADGE half).
+ * Five layers are exercised: the Layout C v4 header contract
+ * (airy_invoke_hdr_check, C-S1/C-S3/C-S4/C-S10); the opcode plane
+ * classifier (airy_op_plane) and its agreement with the permission
+ * mapping (airy_op_required_perms); the opcode/ordering rules of the
+ * dispatch entry (airy_invoke_dispatch); and the two badge lifecycle
+ * halves — install (COMPILE_BADGE) and revocation (REVOKE_BADGE).
  *
  * Both handlers read only the message header and the global capability
  * slot table — never current->security — so they are hermetic under KUnit:
@@ -214,6 +214,94 @@ static void airy_invoke_op_valid_reject_test(struct kunit *test)
 	}
 }
 
+static void airy_op_plane_test(struct kunit *test)
+{
+	/* The two opcodes syscall 548 serves itself. */
+	KUNIT_EXPECT_EQ(test, AIRY_PLANE_CTL,
+			airy_op_plane(AIRY_IPC_OP_FREEZE));
+	KUNIT_EXPECT_EQ(test, AIRY_PLANE_CTL,
+			airy_op_plane(AIRY_IPC_OP_CAP_RESPONSE));
+
+	/* The IPC stream carried on the io_uring data plane. */
+	KUNIT_EXPECT_EQ(test, AIRY_PLANE_DATA,
+			airy_op_plane(AIRY_IPC_OP_SEND));
+	KUNIT_EXPECT_EQ(test, AIRY_PLANE_DATA,
+			airy_op_plane(AIRY_IPC_OP_RECV));
+	KUNIT_EXPECT_EQ(test, AIRY_PLANE_DATA,
+			airy_op_plane(AIRY_IPC_OP_SEND_BATCH));
+	KUNIT_EXPECT_EQ(test, AIRY_PLANE_DATA,
+			airy_op_plane(AIRY_IPC_OP_CANCEL));
+
+	/* The unprivileged half of the bootstrap pair. */
+	KUNIT_EXPECT_EQ(test, AIRY_PLANE_BOOT,
+			airy_op_plane(AIRY_IPC_OP_CAP_REQUEST));
+}
+
+static void airy_op_plane_hole_test(struct kunit *test)
+{
+	static const u16 holes[] = {
+		0x0000,	/* below the contiguous SEND..FREEZE block */
+		0x0006,	/* first hole above FREEZE */
+		0x000f,	/* last hole below CAP_REQUEST */
+		0x0012,	/* first hole above CAP_RESPONSE */
+		0xffff,	/* outside the u16 opcode contract */
+	};
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(holes); i++)
+		KUNIT_EXPECT_EQ_MSG(test, AIRY_PLANE_INVALID,
+				    airy_op_plane(holes[i]),
+				    "0x%04x must be INVALID", holes[i]);
+}
+
+static void airy_op_plane_ctl_test(struct kunit *test)
+{
+	unsigned int ctl = 0;
+	unsigned int op;
+
+	/*
+	 * 548 is authoritative for exactly the CTL plane. Scanning the whole
+	 * u16 opcode space proves that no other value — present or future —
+	 * is silently promoted into the control plane.
+	 */
+	for (op = 0; op <= 0xffffu; op++) {
+		if (airy_op_plane((u16)op) != AIRY_PLANE_CTL)
+			continue;
+
+		ctl++;
+		KUNIT_EXPECT_TRUE_MSG(test,
+				      op == AIRY_IPC_OP_FREEZE ||
+				      op == AIRY_IPC_OP_CAP_RESPONSE,
+				      "0x%04x wrongly classified CTL", op);
+	}
+
+	KUNIT_EXPECT_EQ(test, 2u, ctl);
+}
+
+static void airy_op_valid_plane_invariant_test(struct kunit *test)
+{
+	unsigned int op;
+
+	/*
+	 * airy_op_plane() and airy_op_required_perms() are two independent
+	 * encodings of the opcode contract, and airy_invoke_op_valid() must
+	 * agree with both. Proving the three agree on every u16 value turns
+	 * their consistency into a machine-checked invariant instead of a
+	 * comment, so a later edit can only move them together.
+	 */
+	for (op = 0; op <= 0xffffu; op++) {
+		bool valid = airy_invoke_op_valid((u16)op);
+		bool plane = airy_op_plane((u16)op) != AIRY_PLANE_INVALID;
+		bool perms = airy_op_required_perms((u16)op) !=
+			     AIRY_OP_PERMS_INVALID;
+
+		KUNIT_ASSERT_EQ_MSG(test, plane, valid,
+				    "0x%04x validity disagreement", op);
+		KUNIT_ASSERT_EQ_MSG(test, perms, plane,
+				    "0x%04x perms/plane disagreement", op);
+	}
+}
+
 static void airy_invoke_dispatch_entry_test(struct kunit *test)
 {
 	const struct airy_ipc_msg_hdr bad_magic = {
@@ -380,6 +468,10 @@ static struct kunit_case airy_invoke_cases[] = {
 	KUNIT_CASE(airy_invoke_hdr_null_test),
 	KUNIT_CASE(airy_invoke_op_valid_accept_test),
 	KUNIT_CASE(airy_invoke_op_valid_reject_test),
+	KUNIT_CASE(airy_op_plane_test),
+	KUNIT_CASE(airy_op_plane_hole_test),
+	KUNIT_CASE(airy_op_plane_ctl_test),
+	KUNIT_CASE(airy_op_valid_plane_invariant_test),
 	KUNIT_CASE(airy_invoke_dispatch_entry_test),
 	KUNIT_CASE(airy_invoke_dispatch_order_test),
 	KUNIT_CASE(airy_badge_install_reject_test),
