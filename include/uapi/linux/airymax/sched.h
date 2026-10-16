@@ -104,6 +104,23 @@ enum airy_agent_state {
 #define AIRY_SCHED_POLICY_EEVDF      3
 #define AIRY_SCHED_POLICY_BESTEFFORT 4
 
+/* ─── sched_tac Control Opcodes (airy_sys_sched_ctl, syscall 550) ───────
+ * op numbering authority: 140-application-development/07-syscall-registry.md
+ * §4.4/§6.2 (0x01-0x07). 0 is invalid and rejected before dispatch.
+ * The AIRY_SCHED_* identifier space carries opcodes; scheduling policy
+ * values use the disjoint AIRY_SCHED_POLICY_* space above.
+ */
+enum airy_sched_op {
+	AIRY_SCHED_SET_POLICY   = 0x01,  /* Set sched_tac policy */
+	AIRY_SCHED_GET_POLICY   = 0x02,  /* Query current policy */
+	AIRY_SCHED_SET_BUDGET   = 0x03,  /* Inject SCHED_DEADLINE budget */
+	AIRY_SCHED_GET_LATENCY  = 0x04,  /* Query scheduling latency */
+	AIRY_SCHED_SET_PRIORITY = 0x05,  /* Set agent priority [0,139] */
+	AIRY_SCHED_GET_VTIME    = 0x06,  /* Query agent virtual time */
+	AIRY_SCHED_YIELD        = 0x07,  /* Yield CPU voluntarily */
+	AIRY_SCHED_OP_MAX                /* Exclusive upper bound (= 0x08) */
+};
+
 /* ─── [DSL] Degraded Survival Layer Fallback Block ──────────────────────
  * When AIRY_SC_FALLBACK is defined, sched_tac three-tier scheduling is
  * unavailable and all agents fall back to Linux 6.6 default EEVDF
@@ -121,6 +138,9 @@ enum airy_agent_state {
 
 	/* vtime decay collapses to identity (no weighted decay in fallback). */
 	#define AIRY_DSL_VTIME_DECAY(vtime, weight)  (vtime)
+
+	/* sched_tac control unavailable: no sched op is served. */
+	#define AIRY_DSL_SCHED_OPS       0
 
 	#warning "AIRY_SC_FALLBACK active: sched.h degraded to EEVDF default only, sched_tac three-tier unavailable"
 #endif /* AIRY_SC_FALLBACK */
