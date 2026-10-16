@@ -11,17 +11,17 @@
  * to resolve the name clash with security/airy/airy_eventfd.c.
  */
 
-#include <linux/eventfd.h>
 #include <linux/printk.h>
+
 #include <linux/airymax/error.h>
 
 #include "../../security/airy/airy_cap.h"
 
 /* ─── Superv-side Wrappers ────────────────────────────────────────────── */
 
-int airy_superv_eventfd_register(struct eventfd_ctx *ctx)
+int airy_superv_eventfd_register(int efd)
 {
-	int ret = airy_eventfd_register(ctx);
+	int ret = airy_eventfd_register(efd);
 
 	if (ret)
 		pr_warn_ratelimited("airy_superv: eventfd register failed: %d\n", ret);

@@ -17,6 +17,7 @@
 
 #include <linux/atomic.h>
 #include <linux/compiler.h>
+#include <linux/err.h>
 #include <linux/eventfd.h>
 #include <linux/spinlock.h>
 
@@ -144,55 +145,64 @@ static DEFINE_SPINLOCK(fault_eventfd_lock);
 /* ─── EventFD Registration ────────────────────────────────────────────── */
 
 /**
- * airy_eventfd_register - Register an eventfd context for fault notification.
- * @ctx: The eventfd context to register (may be NULL to unregister).
+ * airy_eventfd_register - Bind an eventfd to receive fault notifications.
+ * @efd: File descriptor of the eventfd the Macro-Supervisor listens on.
  *
- * The Macro-Supervisor calls this to register its eventfd descriptor.
- * Only one context may be registered at a time. Passing NULL unregisters
- * the current context.
+ * Takes a reference on the eventfd behind @efd and installs it as the
+ * single notification target, replacing any previously registered one.
+ * Replacing rather than rejecting is deliberate: a supervising agent
+ * that restarts must be able to take over the notification without a
+ * deregistration handshake, and the superseded context is dropped here
+ * so the swap cannot leak it.
  *
- * Reference ownership: the caller must obtain @ctx via eventfd_ctx_fdget()
- * (or equivalent) which takes a reference. On successful registration the
- * kernel steals that reference — the caller MUST NOT call eventfd_ctx_put()
- * after a successful register. On unregister (ctx == NULL or replacement)
- * the kernel releases the reference via eventfd_ctx_put(). On failure
- * (-AIRY_EBUSY) the caller retains ownership and is responsible for the
- * put. Linux 6.6 does not export eventfd_ctx_get(), so the reference
- * transfer is done by pointer ownership rather than refcount increment.
+ * Reference ownership: on success this module owns the reference taken
+ * by eventfd_ctx_fdget() and releases it on the next register or on
+ * airy_eventfd_unregister(). On failure nothing is altered and the
+ * caller keeps its own descriptor untouched.
  *
- * Return: 0 on success, -AIRY_EBUSY if a different context is already
- *         registered.
+ * Return: 0 on success, -EBADF if @efd is not open, -EINVAL if @efd does
+ *         not refer to an eventfd.
  */
-int airy_eventfd_register(struct eventfd_ctx *ctx)
+int airy_eventfd_register(int efd)
 {
+	struct eventfd_ctx *ctx, *old;
 	unsigned long flags;
-	int ret = 0;
+
+	ctx = eventfd_ctx_fdget(efd);
+	if (IS_ERR(ctx))
+		return PTR_ERR(ctx);
 
 	spin_lock_irqsave(&fault_eventfd_lock, flags);
-
-	if (ctx == NULL) {
-		/* Unregister: release the current context */
-		if (fault_eventfd_ctx) {
-			eventfd_ctx_put(fault_eventfd_ctx);
-			fault_eventfd_ctx = NULL;
-		}
-	} else if (fault_eventfd_ctx == NULL) {
-		/*
-		 * Register: steal the caller's reference (Linux 6.6 has no
-		 * eventfd_ctx_get export; ownership transfer replaces the
-		 * refcount increment).
-		 */
-		fault_eventfd_ctx = ctx;
-	} else if (fault_eventfd_ctx == ctx) {
-		/* Re-registering the same context — no-op */
-	} else {
-		/* A different context is already registered */
-		ret = -AIRY_EBUSY;
-	}
-
+	old = fault_eventfd_ctx;
+	fault_eventfd_ctx = ctx;
 	spin_unlock_irqrestore(&fault_eventfd_lock, flags);
 
-	return ret;
+	if (old)
+		eventfd_ctx_put(old);
+
+	return 0;
+}
+
+/**
+ * airy_eventfd_unregister - Stop delivering fault notifications.
+ *
+ * Drops the registered eventfd context, if any, so that subsequent
+ * faults are recorded in the airy_fev_* detail ring only. The
+ * Macro-Supervisor calls this when it tears its listener down; it is
+ * also the deterministic reset point used by the KUnit suite.
+ */
+void airy_eventfd_unregister(void)
+{
+	struct eventfd_ctx *old;
+	unsigned long flags;
+
+	spin_lock_irqsave(&fault_eventfd_lock, flags);
+	old = fault_eventfd_ctx;
+	fault_eventfd_ctx = NULL;
+	spin_unlock_irqrestore(&fault_eventfd_lock, flags);
+
+	if (old)
+		eventfd_ctx_put(old);
 }
 
 /* ─── Fault Signal ────────────────────────────────────────────────────── */

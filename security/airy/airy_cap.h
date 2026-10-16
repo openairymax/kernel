@@ -200,9 +200,8 @@ void airy_ipc_freeze_ring(struct airy_ipc_ring_freeze_state *ring, __u32 reason)
 void airy_ipc_thaw_ring(struct airy_ipc_ring_freeze_state *ring);
 struct airy_ipc_ring_freeze_state *airy_ipc_ring_for_task(struct task_struct *task);
 
-struct eventfd_ctx;
-
-int airy_eventfd_register(struct eventfd_ctx *ctx);
+int airy_eventfd_register(int efd);
+void airy_eventfd_unregister(void);
 void airy_eventfd_signal_fault(__u32 fault_code, __u32 agent_id,
 			       __u64 timestamp);
 

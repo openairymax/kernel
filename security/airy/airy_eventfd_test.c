@@ -2,15 +2,17 @@
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
- * airy_eventfd_test.c — KUnit coverage for the fault event detail ring
- * (airy_fev_*, A-20).
+ * airy_eventfd_test.c — KUnit coverage for the fault notification path
+ * (airy_fev_*, airy_eventfd_*, A-20).
  *
  * The eventfd counter carries only a packed (fault_code, agent_id) pair,
  * so the full detail a woken Macro-Supervisor drains lives in this
  * bounded ring. These cases pin its FIFO order and its best-effort loss
  * contract: post() never blocks and never overwrites a detail that has
  * not been fetched, and a full or contended ring drops the detail
- * instead of stalling the NMI-safe caller.
+ * instead of stalling the NMI-safe caller. The registration cases pin
+ * the fd-facing contract: a bad descriptor is rejected without touching
+ * the installed target, and unregistering is idempotent.
  */
 
 #include <kunit/test.h>
@@ -179,6 +181,52 @@ static void airy_fev_reset_lost_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, -AIRY_ENOENT, airy_fev_fetch(&out));
 }
 
+static void airy_eventfd_register_bad_fd_test(struct kunit *test)
+{
+	airy_eventfd_unregister();
+
+	KUNIT_EXPECT_EQ(test, -EBADF, airy_eventfd_register(-1));
+}
+
+static void airy_eventfd_register_repeat_bad_fd_test(struct kunit *test)
+{
+	airy_eventfd_unregister();
+
+	KUNIT_EXPECT_EQ(test, -EBADF, airy_eventfd_register(-1));
+	KUNIT_EXPECT_EQ(test, -EBADF, airy_eventfd_register(-1));
+}
+
+static void airy_eventfd_signal_unregistered_test(struct kunit *test)
+{
+	struct airy_fault_event out;
+
+	airy_eventfd_unregister();
+	airy_fev_reset();
+
+	airy_eventfd_signal_fault(AIRY_FAULT_ABNORMAL_CAP, 7u, 99u);
+
+	KUNIT_ASSERT_EQ(test, 0, airy_fev_fetch(&out));
+	KUNIT_EXPECT_EQ(test, AIRY_FAULT_ABNORMAL_CAP, out.fault_code);
+	KUNIT_EXPECT_EQ(test, 7u, out.agent_id);
+	KUNIT_EXPECT_EQ(test, (__u64)99u, out.timestamp_ns);
+	KUNIT_EXPECT_EQ(test, 0u, airy_fev_lost());
+}
+
+static void airy_eventfd_unregister_idle_test(struct kunit *test)
+{
+	struct airy_fault_event out;
+
+	airy_eventfd_unregister();
+	airy_eventfd_unregister();
+	airy_fev_reset();
+
+	airy_eventfd_signal_fault(AIRY_FAULT_TIMEOUT, 3u, 5u);
+
+	KUNIT_ASSERT_EQ(test, 0, airy_fev_fetch(&out));
+	KUNIT_EXPECT_EQ(test, AIRY_FAULT_TIMEOUT, out.fault_code);
+	KUNIT_EXPECT_EQ(test, 3u, out.agent_id);
+}
+
 static struct kunit_case airy_eventfd_cases[] = {
 	KUNIT_CASE(airy_fev_post_null_test),
 	KUNIT_CASE(airy_fev_fetch_null_test),
@@ -196,4 +244,17 @@ static struct kunit_suite airy_eventfd_suite = {
 	.test_cases = airy_eventfd_cases,
 };
 
-kunit_test_suites(&airy_eventfd_suite);
+static struct kunit_case airy_eventfd_reg_cases[] = {
+	KUNIT_CASE(airy_eventfd_register_bad_fd_test),
+	KUNIT_CASE(airy_eventfd_register_repeat_bad_fd_test),
+	KUNIT_CASE(airy_eventfd_signal_unregistered_test),
+	KUNIT_CASE(airy_eventfd_unregister_idle_test),
+	{}
+};
+
+static struct kunit_suite airy_eventfd_reg_suite = {
+	.name = "airy_eventfd_register",
+	.test_cases = airy_eventfd_reg_cases,
+};
+
+kunit_test_suites(&airy_eventfd_suite, &airy_eventfd_reg_suite);
