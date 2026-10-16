@@ -12,7 +12,9 @@
  * not been fetched, and a full or contended ring drops the detail
  * instead of stalling the NMI-safe caller. The registration cases pin
  * the fd-facing contract: a bad descriptor is rejected without touching
- * the installed target, and unregistering is idempotent.
+ * the installed target, and unregistering is idempotent. One case drives
+ * the signal entry point itself past the ring capacity to pin that the
+ * retained details stay FIFO and the loss is counted exactly once.
  */
 
 #include <kunit/test.h>
@@ -244,11 +246,36 @@ static struct kunit_suite airy_eventfd_suite = {
 	.test_cases = airy_eventfd_cases,
 };
 
+static void airy_eventfd_signal_ring_full_test(struct kunit *test)
+{
+	struct airy_fault_event out;
+	__u32 i;
+
+	airy_eventfd_unregister();
+	airy_fev_reset();
+
+	for (i = 0; i < AIRY_FEV_RING_NR + 1u; i++)
+		airy_eventfd_signal_fault(AIRY_FAULT_RING_CORRUPT, i, i);
+
+	KUNIT_EXPECT_EQ(test, 1u, airy_fev_lost());
+
+	for (i = 0; i < AIRY_FEV_RING_NR; i++) {
+		KUNIT_ASSERT_EQ(test, 0, airy_fev_fetch(&out));
+		KUNIT_EXPECT_EQ(test, AIRY_FEV_RING_ID_NONE, out.ring_id);
+		KUNIT_EXPECT_EQ(test, AIRY_FAULT_RING_CORRUPT, out.fault_code);
+		KUNIT_EXPECT_EQ(test, i, out.agent_id);
+		KUNIT_EXPECT_EQ(test, (__u64)i, out.timestamp_ns);
+	}
+
+	KUNIT_EXPECT_EQ(test, -AIRY_ENOENT, airy_fev_fetch(&out));
+}
+
 static struct kunit_case airy_eventfd_reg_cases[] = {
 	KUNIT_CASE(airy_eventfd_register_bad_fd_test),
 	KUNIT_CASE(airy_eventfd_register_repeat_bad_fd_test),
 	KUNIT_CASE(airy_eventfd_signal_unregistered_test),
 	KUNIT_CASE(airy_eventfd_unregister_idle_test),
+	KUNIT_CASE(airy_eventfd_signal_ring_full_test),
 	{}
 };
 

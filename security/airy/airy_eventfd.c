@@ -19,6 +19,8 @@
 #include <linux/compiler.h>
 #include <linux/err.h>
 #include <linux/eventfd.h>
+#include <linux/printk.h>
+#include <linux/ratelimit.h>
 #include <linux/spinlock.h>
 
 #include <linux/airymax/error.h>
@@ -220,7 +222,10 @@ void airy_eventfd_unregister(void)
  * silently dropped by eventfd_signal().
  *
  * Ring loss is best-effort and never suppresses the signal: a full or
- * contended ring drops only the detail and bumps airy_fev_lost().
+ * contended ring drops only the detail and bumps airy_fev_lost(). A full
+ * ring additionally logs a rate-limited warning, because it is the one
+ * loss the reader can act on by draining faster; a contended ring is not
+ * logged so the NMI re-entry path cannot flood the log.
  *
  * This function is safe to call from any context (including NMI and
  * die notifier) because both paths are non-blocking and never sleep.
@@ -245,8 +250,19 @@ void airy_eventfd_signal_fault(__u32 fault_code, __u32 agent_id,
 	unsigned long flags;
 	struct eventfd_ctx *ctx;
 	__u64 event_val;
+	int ret;
 
-	airy_fev_post(&ev);
+	/*
+	 * Best-effort detail capture: a dropped detail never suppresses
+	 * the wakeup below, because the Macro-Supervisor still learns of
+	 * the fault from the counter. Only a full ring is reported here;
+	 * a contended ring (-AIRY_EBUSY) is normal when a fault re-enters
+	 * from NMI and is left to airy_fev_lost() to avoid log flooding.
+	 */
+	ret = airy_fev_post(&ev);
+	if (ret == -AIRY_ENOMEM)
+		pr_warn_ratelimited("airy: fault event queue full, "
+				    "detail lost\n");
 
 	/*
 	 * Pack the fault event into the __u64 eventfd counter value:

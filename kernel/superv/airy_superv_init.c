@@ -32,11 +32,14 @@ static int __init airy_superv_init(void)
 		return ret;
 	}
 
-	/* 2. Eventfd context and IPC ring freeze are initialised lazily:
-	 *    - eventfd context is registered by userspace via
-	 *      airy_sys_clt_notify() syscall (AIRY_SYS_CLT_NOTIFY, number 551)
-	 *    - IPC ring freeze is triggered on first ring creation
-	 *      via airy_superv_ipc_freeze_ring()
+	/* 2. The eventfd context and the IPC ring freeze state are attached
+	 *    lazily, not from init:
+	 *    - airy_eventfd_register() installs the eventfd context once the
+	 *      Macro-Supervisor binds its fault listener; there is no
+	 *      userspace entry point for it yet, so until then the context
+	 *      stays NULL and faults are recorded in the airy_fev_* ring.
+	 *    - the IPC ring freeze path acts on a task's ring once that ring
+	 *      is created and attached to the task's security blob.
 	 *
 	 *    die_notifier is registered by the "airy" LSM during
 	 *    security_initcall, not here. */
