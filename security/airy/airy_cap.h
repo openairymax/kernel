@@ -143,6 +143,47 @@ struct airy_ipc_ring_freeze_state {
 	__u64   freeze_timestamp;
 };
 
+/* ─── Fault Event Detail Ring (SSoT 09-agent-supervisor §5.1) ─────────── */
+/*
+ * struct airy_fault_event is the detail record the Micro-Supervisor hands
+ * to the Macro-Supervisor.  The eventfd counter can only carry a packed
+ * (fault_code, agent_id) pair, so the detail is queued in a bounded ring
+ * that the Macro-Supervisor drains after the eventfd wakes it.
+ *
+ * airy_fev_* is the fault-event ring API ("fev" = fault event):
+ *   - airy_fev_post()  records a detail; never blocks (NMI/die-safe)
+ *   - airy_fev_fetch() drains one detail (single consumer)
+ *   - airy_fev_reset() empties the ring; init and test teardown only
+ *   - airy_fev_lost()  details dropped because the ring was full or busy
+ *
+ * Both callers of airy_eventfd_signal_fault() run where blocking is
+ * illegal, so post() drops instead of waiting: it returns -AIRY_EBUSY
+ * when the ring lock is contended and -AIRY_ENOMEM when the ring is
+ * full.  Per SSoT §5.2 that loss is best-effort — the eventfd signal
+ * itself is still delivered.
+ */
+#define AIRY_FEV_RING_NR	64U
+#define AIRY_FEV_RING_MASK	(AIRY_FEV_RING_NR - 1U)
+
+/*
+ * ring_id used when a fault is not bound to one IPC ring (e.g. an oops
+ * freezes every ring).  Matches the SSoT §4.2 example call.
+ */
+#define AIRY_FEV_RING_ID_NONE	0U
+
+struct airy_fault_event {
+	__u32 ring_id;
+	__u32 fault_code;
+	__u64 timestamp_ns;
+	__u32 agent_id;
+	__u32 pad;
+};
+
+int airy_fev_post(const struct airy_fault_event *ev);
+int airy_fev_fetch(struct airy_fault_event *ev);
+void airy_fev_reset(void);
+unsigned int airy_fev_lost(void);
+
 /* ─── Cross-TU API: IPC Freeze / EventFD / Die-Notify ─────────────────── */
 /*
  * Single-host prototypes for symbols consumed across translation units
