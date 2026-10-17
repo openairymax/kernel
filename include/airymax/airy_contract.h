@@ -30,6 +30,7 @@
 #include <linux/airymax/security_types.h>
 #include <linux/airymax/lsm_types.h>
 #include <linux/airymax/cognition_types.h>
+#include <linux/airymax/log_types.h>
 
 /* 契约 ABI 版本快照：Layout C v4（对齐 ipc.h 文件头注释与 07-ipc-fastpath.md §5.7）。 */
 #define AIRY_CONTRACT_ABI_VERSION	4
@@ -140,6 +141,40 @@ static_assert(offsetof(struct airy_inode_sec, owner_agent) == 4,
 	      "airy_inode_sec owner_agent offset must stay 4");
 static_assert(AIRY_CAP_MAX_AGENTS == 1024,
 	      "agent capability table must stay 1024 slots");
+
+/* ─── A-ULP 日志记录：环形缓冲按固定槽步长读写 ───────
+ * airy_log_ring.c 以 AIRY_LOG_RECORD_SIZE 为槽步长，
+ * airy_log_reserve() 把记录指针交给生产者按偏移写入。
+ * 尺寸、payload 容量或对齐漂移会让环形缓冲跨记录覆写；
+ * level 空间漂移则会让越界值被当成合法枚举写入。
+ */
+static_assert(sizeof(struct airy_log_record) == AIRY_LOG_RECORD_SIZE,
+	      "airy_log_record must stay 128 bytes");
+static_assert(offsetof(struct airy_log_record, magic) == 0,
+	      "airy_log_record magic offset must stay 0");
+static_assert(offsetof(struct airy_log_record, level) == 4,
+	      "airy_log_record level offset must stay 4");
+static_assert(offsetof(struct airy_log_record, facility) == 6,
+	      "airy_log_record facility offset must stay 6");
+static_assert(offsetof(struct airy_log_record, timestamp_ns) == 8,
+	      "airy_log_record timestamp_ns offset must stay 8");
+static_assert(offsetof(struct airy_log_record, caller_id) == 16,
+	      "airy_log_record caller_id offset must stay 16");
+static_assert(offsetof(struct airy_log_record, payload_len) == 20,
+	      "airy_log_record payload_len offset must stay 20");
+static_assert(offsetof(struct airy_log_record, payload) == 24,
+	      "airy_log_record payload offset must stay 24");
+static_assert(sizeof(((struct airy_log_record *)0)->payload) == 96,
+	      "airy_log_record payload must stay 96 bytes");
+static_assert(offsetof(struct airy_log_record, reserved) == 120,
+	      "airy_log_record reserved offset must stay 120");
+static_assert(_Alignof(struct airy_log_record) == 64,
+	      "airy_log_record must stay cacheline-aligned");
+static_assert(AIRY_LOG_MAGIC == 0x414C4F47,
+	      "log record magic must stay 'ALOG'");
+static_assert(AIRY_LOG_DEBUG == 0, "log level DEBUG must stay 0");
+static_assert(AIRY_LOG_FATAL == 4, "log level FATAL must stay 4");
+static_assert(AIRY_LOG_LEVEL_MAX == 5, "log level space must stay 5 entries");
 
 /* ─── syscall 号段（548-551 核心 + 552-571 预留） ──────────────────────
  * 号段是 ABI；arch 接线（A-30..A-36）与用户态 SDK 都以此为唯一权威。

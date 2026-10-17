@@ -18,6 +18,7 @@
 #include <linux/types.h>
 
 #include <linux/airymax/ipc.h>
+#include <linux/airymax/log_types.h>
 
 #include <airymax/airy_contract.h>
 
@@ -81,12 +82,30 @@ static void airy_contract_blob_capacity_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 1024, AIRY_CAP_MAX_AGENTS);
 }
 
+static void airy_log_layout(struct kunit *test)
+{
+	/*
+	 * airy_log_ring.c strides the ring by AIRY_LOG_RECORD_SIZE and hands
+	 * out the record pointer for producers to fill by offset. The slot
+	 * size, payload extent and alignment must stay exactly as contracted.
+	 */
+	KUNIT_EXPECT_EQ(test, (int)AIRY_LOG_RECORD_SIZE,
+			(int)sizeof(struct airy_log_record));
+	KUNIT_EXPECT_EQ(test, 4, (int)offsetof(struct airy_log_record, level));
+	KUNIT_EXPECT_EQ(test, 24, (int)offsetof(struct airy_log_record, payload));
+	KUNIT_EXPECT_EQ(test, 96,
+			(int)sizeof(((struct airy_log_record *)0)->payload));
+	KUNIT_EXPECT_EQ(test, 64, (int)_Alignof(struct airy_log_record));
+	KUNIT_EXPECT_EQ(test, 5, (int)AIRY_LOG_LEVEL_MAX);
+}
+
 static struct kunit_case airy_contract_cases[] = {
 	KUNIT_CASE(airy_contract_accept_test),
 	KUNIT_CASE(airy_contract_abi_version_test),
 	KUNIT_CASE(airy_contract_ipc_cmd_budget_test),
 	KUNIT_CASE(airy_contract_badge_tiling_test),
 	KUNIT_CASE(airy_contract_blob_capacity_test),
+	KUNIT_CASE(airy_log_layout),
 	{}
 };
 

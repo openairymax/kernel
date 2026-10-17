@@ -28,6 +28,7 @@
 #include <linux/airymax/ipc.h>
 #include <linux/airymax/lsm_types.h>
 #include <linux/airymax/cognition_types.h>
+#include <linux/airymax/log_types.h>
 
 #include <airymax/airy_contract.h>
 
@@ -98,6 +99,22 @@ static const struct airy_contract_entry airy_contract_table[] = {
 	AIRY_CE("cap_max_agents", 1024, AIRY_CAP_MAX_AGENTS),
 	AIRY_CE("sec_d_task_id", AIRY_CAP_MAX_AGENTS - 1,
 		AIRY_SEC_D_TASK_ID),
+	AIRY_CE("log_record.size", AIRY_LOG_RECORD_SIZE,
+		sizeof(struct airy_log_record)),
+	AIRY_CE("log_record.magic_off", 0,
+		offsetof(struct airy_log_record, magic)),
+	AIRY_CE("log_record.level_off", 4,
+		offsetof(struct airy_log_record, level)),
+	AIRY_CE("log_record.facility_off", 6,
+		offsetof(struct airy_log_record, facility)),
+	AIRY_CE("log_record.payload_off", 24,
+		offsetof(struct airy_log_record, payload)),
+	AIRY_CE("log_record.payload_size", 96,
+		sizeof(((struct airy_log_record *)0)->payload)),
+	AIRY_CE("log_record.reserved_off", 120,
+		offsetof(struct airy_log_record, reserved)),
+	AIRY_CE("log_record.align", 64, _Alignof(struct airy_log_record)),
+	AIRY_CE("log_record.levels", 5, AIRY_LOG_LEVEL_MAX),
 	AIRY_CE("cog.phase_percept", 0, AIRY_COG_PERCEPT),
 	AIRY_CE("cog.phase_think", 1, AIRY_COG_THINK),
 	AIRY_CE("cog.phase_act", 2, AIRY_COG_ACT),

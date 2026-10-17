@@ -46,6 +46,14 @@ const int airy_log_level_map[] = {
 };
 EXPORT_SYMBOL_GPL(airy_log_level_map);
 
+/* 表以指定初始化器逐项铺满 LOGLEVEL_EMERG..LOGLEVEL_DEBUG；若 kern_levels.h
+ * 挪动起点或终点，未覆盖的槽会静默取 0（AIRY_LOG_DEBUG）。把覆盖范围在
+ * 编译期钉死，使映射表与 airy_log_kern_to_level() 的边界判定同源。
+ */
+static_assert(LOGLEVEL_EMERG == 0, "printk level space must start at 0");
+static_assert(ARRAY_SIZE(airy_log_level_map) == LOGLEVEL_DEBUG + 1,
+	      "printk level map must cover LOGLEVEL_EMERG..LOGLEVEL_DEBUG");
+
 /* ─── Map a printk level to the A-ULP 5-level enumeration ───────────────
  * @kern_level: printk level (LOGLEVEL_EMERG..LOGLEVEL_DEBUG, or
  *              LOGLEVEL_DEFAULT for the system default).
@@ -66,27 +74,17 @@ EXPORT_SYMBOL_GPL(airy_log_kern_to_level);
  *              LOGLEVEL_DEFAULT for the system default).
  * @fmt:        printf-style format string.
  *
- * The printk level is forwarded to vprintk_emit() UNCHANGED so that
- * the standard printk filtering and console_loglevel semantics still
- * apply.  The A-ULP level is computed via airy_log_kern_to_level()
- * so the mapping is exercised and available; callers that need the
- * A-ULP category (e.g. for ring-buffer routing with rec->level)
- * should call airy_log_kern_to_level() directly.
+ * The printk level is forwarded to vprintk_emit() UNCHANGED so that the
+ * standard printk filtering and console_loglevel semantics still apply.
+ * Callers that need the A-ULP category of a record (e.g. for ring-buffer
+ * routing) map it through the exported airy_log_kern_to_level().
  */
 void airy_log_emit(int kern_level, const char *fmt, ...)
 {
 	va_list args;
-	int airy_level __maybe_unused;
 
 	if (kern_level < 0 || kern_level > LOGLEVEL_DEBUG)
 		kern_level = LOGLEVEL_DEFAULT;
-
-	/* Map the printk 8-level to the A-ULP 5-level.  The result is
-	 * not passed to vprintk_emit() because printk filtering relies
-	 * on the original 8-level value.  It is, however, available to
-	 * any caller via the exported airy_log_kern_to_level().
-	 */
-	airy_level = airy_log_kern_to_level(kern_level);
 
 	va_start(args, fmt);
 	vprintk_emit(0, kern_level, NULL, fmt, args);
