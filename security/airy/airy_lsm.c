@@ -25,6 +25,7 @@
 #include <linux/airymax/error.h>
 
 #include <airymax/airy_contract.h>
+#include <airymax/airy_trace.h>
 
 #include "airy_cap.h"
 
@@ -203,6 +204,17 @@ static int __init airy_init(void)
 
 	/* Register die notifier at INT_MAX priority (airy_die_notify.c) */
 	airy_die_notify_init();
+
+	/*
+	 * Agent behaviour tracing is a mandatory observability baseline
+	 * (OS-OBS-081), so a failed instance is reported as a failed LSM
+	 * init rather than silently dropped.
+	 */
+#if IS_ENABLED(CONFIG_AIRY_AGENT_TRACING)
+	rc = airy_trace_init();
+	if (rc)
+		return rc;
+#endif
 
 	pr_info("airy: Airymax Pure-C LSM initialised\n");
 	return 0;

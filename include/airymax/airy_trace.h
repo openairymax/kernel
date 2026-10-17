@@ -50,13 +50,15 @@ enum airy_trace_reason {
 _Static_assert(AIRY_AGENT_STATE_MAX == 8,
 	       "airy trace tracks the 8 [SC] agent lifecycle states");
 
-/* Instance lifecycle (defined in airy_trace.c). */
+/* Instance lifecycle (defined in kernel/corekern/airy/airy_trace.c). */
 /**
  * airy_trace_init - create the independent agent_trace ftrace instance
  *
- * Creates instances/agent_trace under the tracing root and sizes its
- * ring buffer, so agent events are recorded apart from the global
- * stream (01-ftrace-framework.md §7.3). Non-static so both the LSM
+ * Registers the independent instance so agent events are recorded
+ * apart from the global stream (01-ftrace-framework.md §7.3); the
+ * directory is materialised under instances/ once the tracing
+ * filesystem comes up, and its buffer size is then set from
+ * userspace (08-agent-tracing.md §3.3). Non-static so both the LSM
  * init path and KUnit drive the same instance.
  *
  * Return: 0 on success; -Exxx when the instance cannot be created.

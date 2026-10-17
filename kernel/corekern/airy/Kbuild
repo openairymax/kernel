@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Airymax agent tracing (kernel/corekern/airy).
+#
+# Compiled when CONFIG_AIRY_AGENT_TRACING=y. airy_trace.o is the single
+# CREATE_TRACE_POINTS translation unit for include/trace/events/airy.h:
+# it defines the tracepoint objects that the emit sites reference, so it
+# must be present whenever any emitter is built.
+
+obj-y += airy_trace.o

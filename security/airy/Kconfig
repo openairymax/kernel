@@ -52,6 +52,20 @@ config AIRY_LOG
 	  Airymax unified logging and printk ring buffer. Selected
 	  automatically by SECURITY_AIRY.
 
+config AIRY_AGENT_TRACING
+	bool "Airymax agent behaviour tracing (kernel/corekern/airy)"
+	depends on SECURITY_AIRY
+	depends on TRACING
+	default y
+	help
+	  Register the independent agent_trace ftrace instance and the airy
+	  event class that records agent state transitions, scheduling, IPC
+	  and supervision decisions (OS-KER-171). Every Agent is required to
+	  be observable, so this is a mandatory baseline rather than an
+	  optional debug facility (OS-OBS-081).
+
+	  If unsure, say Y.
+
 config AIRY_CAP_TABLE_SIZE
 	int "Airy capability table size"
 	depends on SECURITY_AIRY
