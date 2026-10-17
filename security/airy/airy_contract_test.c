@@ -20,6 +20,7 @@
 #include <linux/airymax/ipc.h>
 #include <linux/airymax/log_types.h>
 #include <linux/airymax/sched.h>
+#include <linux/airymax/memory_types.h>
 
 #include <airymax/airy_contract.h>
 
@@ -119,6 +120,29 @@ static void airy_task_chk(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 0x08, (int)AIRY_SCHED_OP_MAX);
 }
 
+static void airy_mem_chk(struct kunit *test)
+{
+	/*
+	 * airy_mem_tier_of() classifies a gfp hint by the low nibble, and
+	 * the rovol dispatcher rejects opcodes at AIRY_ROVOL_OP_MAX. Both
+	 * number spaces are user-visible ABI and must stay as contracted.
+	 */
+	KUNIT_EXPECT_EQ(test, 0, (int)AIRY_MEM_HOT);
+	KUNIT_EXPECT_EQ(test, 3, (int)AIRY_MEM_PMEM);
+	KUNIT_EXPECT_EQ(test, 4, (int)AIRY_MEM_LEVEL_MAX);
+	KUNIT_EXPECT_EQ(test, 0x01, (int)AIRY_GFP_HOT);
+	KUNIT_EXPECT_EQ(test, 0x08, (int)AIRY_GFP_PMEM);
+	KUNIT_EXPECT_EQ(test, 0x0f,
+			(int)(AIRY_GFP_HOT | AIRY_GFP_WARM | AIRY_GFP_COLD |
+			      AIRY_GFP_PMEM));
+	KUNIT_EXPECT_EQ(test, 0x0f,
+			(int)(AIRY_PAGE_CLASS_ANON | AIRY_PAGE_CLASS_FILE |
+			      AIRY_PAGE_CLASS_SHMEM | AIRY_PAGE_CLASS_AGENT));
+	KUNIT_EXPECT_EQ(test, 0x01, (int)AIRY_ROVOL_SNAPSHOT);
+	KUNIT_EXPECT_EQ(test, 0x0A, (int)AIRY_ROVOL_TIER_GET);
+	KUNIT_EXPECT_EQ(test, 0x0B, (int)AIRY_ROVOL_OP_MAX);
+}
+
 static struct kunit_case airy_contract_cases[] = {
 	KUNIT_CASE(airy_contract_accept_test),
 	KUNIT_CASE(airy_contract_abi_version_test),
@@ -127,6 +151,7 @@ static struct kunit_case airy_contract_cases[] = {
 	KUNIT_CASE(airy_contract_blob_capacity_test),
 	KUNIT_CASE(airy_log_layout),
 	KUNIT_CASE(airy_task_chk),
+	KUNIT_CASE(airy_mem_chk),
 	{}
 };
 

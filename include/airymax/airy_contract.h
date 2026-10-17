@@ -32,6 +32,7 @@
 #include <linux/airymax/cognition_types.h>
 #include <linux/airymax/log_types.h>
 #include <linux/airymax/sched.h>
+#include <linux/airymax/memory_types.h>
 
 /* 契约 ABI 版本快照：Layout C v4（对齐 ipc.h 文件头注释与 07-ipc-fastpath.md §5.7）。 */
 #define AIRY_CONTRACT_ABI_VERSION	4
@@ -238,6 +239,35 @@ static_assert(AIRY_SCHED_POLICY_DEADLINE == 1,
 	      "sched policy space must start at 1");
 static_assert(AIRY_SCHED_POLICY_BESTEFFORT == 4,
 	      "sched policy space must end at 4");
+
+/* ─── 内存分层、GFP 掩码与 rovol 操作码 ──────────
+ * airy_mem_tier_of() 只取 gfp 低 4 位判定层级；四个 GFP 标志必须
+ * 恰好铺满该半字节并与 L1-L4 一一对应。页面分类共用同一半字节，
+ * 铺满后新增类别才不会与既有类别碰撞。rovol 操作码 0x01..0x0A
+ * 是 syscall 549 的合法域，0 与 >=MAX 在分发前拒绝。
+ */
+static_assert(AIRY_MEM_HOT == 0, "memory tier HOT must stay L1");
+static_assert(AIRY_MEM_WARM == 1, "memory tier WARM must stay L2");
+static_assert(AIRY_MEM_COLD == 2, "memory tier COLD must stay L3");
+static_assert(AIRY_MEM_PMEM == 3, "memory tier PMEM must stay L4");
+static_assert(AIRY_MEM_LEVEL_MAX == 4, "memory tier space must stay 4 levels");
+static_assert(AIRY_GFP_HOT == 0x01, "GFP hot flag must stay bit 0");
+static_assert(AIRY_GFP_WARM == 0x02, "GFP warm flag must stay bit 1");
+static_assert(AIRY_GFP_COLD == 0x04, "GFP cold flag must stay bit 2");
+static_assert(AIRY_GFP_PMEM == 0x08, "GFP pmem flag must stay bit 3");
+static_assert((AIRY_GFP_HOT | AIRY_GFP_WARM | AIRY_GFP_COLD |
+	       AIRY_GFP_PMEM) == 0x0f,
+	      "GFP tier flags must tile the low nibble");
+static_assert(AIRY_PAGE_CLASS_ANON == 0x01, "page class ANON must stay bit 0");
+static_assert(AIRY_PAGE_CLASS_FILE == 0x02, "page class FILE must stay bit 1");
+static_assert(AIRY_PAGE_CLASS_SHMEM == 0x04, "page class SHMEM must stay bit 2");
+static_assert(AIRY_PAGE_CLASS_AGENT == 0x08, "page class AGENT must stay bit 3");
+static_assert((AIRY_PAGE_CLASS_ANON | AIRY_PAGE_CLASS_FILE |
+	       AIRY_PAGE_CLASS_SHMEM | AIRY_PAGE_CLASS_AGENT) == 0x0f,
+	      "page classes must tile the low nibble");
+static_assert(AIRY_ROVOL_SNAPSHOT == 0x01, "rovol op SNAPSHOT must stay 0x01");
+static_assert(AIRY_ROVOL_TIER_GET == 0x0A, "rovol op TIER_GET must stay 0x0A");
+static_assert(AIRY_ROVOL_OP_MAX == 0x0B, "rovol op space must stay 0x0B");
 
 /* ─── syscall 号段（548-551 核心 + 552-571 预留） ──────────────────────
  * 号段是 ABI；arch 接线（A-30..A-36）与用户态 SDK 都以此为唯一权威。
