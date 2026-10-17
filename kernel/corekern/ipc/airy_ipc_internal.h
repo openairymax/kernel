@@ -21,12 +21,16 @@
 struct vm_area_struct;
 struct page;
 
+/* Ring is not pinned to a CPU: the C-S5 home-CPU test always passes. */
+#define AIRY_IPC_CPU_ANY	(-1)
+
 /* ─── Ring Buffer ────────────────────────────────────────────────────── */
 struct airy_ipc_ring {
 	u32	head;		/* producer cursor (next write slot) */
 	u32	tail;		/* consumer cursor (next read slot)  */
 	u32	mask;		/* capacity-1 (ring size must be 2^N) */
 	u32	frozen;		/* non-zero when ring is quiesced    */
+	int	home_cpu;	/* C-S5 owner CPU, or AIRY_IPC_CPU_ANY */
 	u32	peak_depth;	/* high-water mark of pending slots  */
 	u64	full_count;	/* posts rejected because ring full  */
 	struct airy_ipc_msg_hdr *slots;	/* message storage array (entries) */
@@ -53,6 +57,23 @@ struct airy_ipc_ring_depth {
 
 int airy_ipc_ring_init(struct airy_ipc_ring *ring, u32 entries);
 void airy_ipc_ring_destroy(struct airy_ipc_ring *ring);
+
+/**
+ * airy_ipc_ring_bind() - pin a ring to its fastpath owner CPU.
+ * @ring: initialised ring.
+ * @cpu:  CPU index the ring's consumer runs on.
+ *
+ * C-S5 only lets the lock-free fastpath run when the sender executes on
+ * the same CPU as the ring consumer.  A bound ring reports every other
+ * sender with -EAGAIN so the caller can degrade to the slowpath; an
+ * unbound ring accepts posts from any CPU.
+ *
+ * Return: 0 on success, -EINVAL for a NULL or uninitialised @ring or an
+ *         out-of-range @cpu, -EBUSY when @ring is already pinned to a
+ *         different CPU.
+ */
+int airy_ipc_ring_bind(struct airy_ipc_ring *ring, int cpu);
+
 int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 		       const struct airy_ipc_msg_hdr *hdr);
 int airy_ipc_ring_consume(struct airy_ipc_ring *ring,

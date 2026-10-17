@@ -9,7 +9,9 @@
  * exact-full/empty detection, wrap-around) guarded by the
  * release/acquire pairing in post()/consume(), the argument and
  * C-S0/C-S1/C-S6 rejection codes (-EINVAL, -ENOMSG,
- * -AIRY_EIPC_FROZEN, -AIRY_EIPC_MAGIC, -AIRY_EIPC_KFIFO), P1-8
+ * -AIRY_EIPC_FROZEN, -AIRY_EIPC_MAGIC, -AIRY_EIPC_KFIFO), the C-S5
+ * owner-CPU pin that degrades foreign senders to -EAGAIN ahead of the
+ * C-S6 fullness check, P1-8
  * cancelBadgedSends (the agent-linux analogue of seL4's
  * cancelBadgedSends, endpoint.c:476-489), and the occupancy
  * accounting airy_ipc_ring_depth_stats() samples.
@@ -19,8 +21,10 @@
  */
 
 #include <kunit/test.h>
+#include <linux/cpumask.h>
 #include <linux/err.h>
 #include <linux/errno.h>
+#include <linux/smp.h>
 #include <linux/string.h>
 #include <linux/types.h>
 #include <linux/airymax/error.h>
@@ -454,6 +458,102 @@ static void depth_stats_null_guards_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, -EINVAL, airy_ipc_ring_depth_stats(&uninit, &d));
 }
 
+static void bind_rejects_bad_arguments_test(struct kunit *test)
+{
+	struct airy_ipc_ring *ring = test->priv;
+	struct airy_ipc_ring uninit;
+
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_ipc_ring_bind(NULL, 0));
+
+	memset(&uninit, 0, sizeof(uninit));
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_ipc_ring_bind(&uninit, 0));
+
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_ipc_ring_bind(ring, -1));
+	KUNIT_EXPECT_EQ(test, -EINVAL,
+			airy_ipc_ring_bind(ring, nr_cpu_ids));
+}
+
+static void bind_pins_owner_cpu_test(struct kunit *test)
+{
+	struct airy_ipc_ring *ring = test->priv;
+	int cpu = smp_processor_id();
+
+	KUNIT_EXPECT_EQ(test, AIRY_IPC_CPU_ANY, READ_ONCE(ring->home_cpu));
+	KUNIT_EXPECT_EQ(test, 0, airy_ipc_ring_bind(ring, cpu));
+	KUNIT_EXPECT_EQ(test, cpu, READ_ONCE(ring->home_cpu));
+
+	/* Re-pinning to the same CPU is a no-op, not a failure. */
+	KUNIT_EXPECT_EQ(test, 0, airy_ipc_ring_bind(ring, cpu));
+
+	/*
+	 * A ring serves one consumer for its lifetime.  UML runs with a
+	 * single CPU, so only exercise the conflict when another exists.
+	 */
+	if (nr_cpu_ids > 1)
+		KUNIT_EXPECT_EQ(test, -EBUSY,
+				airy_ipc_ring_bind(ring,
+						   (cpu + 1) % nr_cpu_ids));
+}
+
+static void bind_local_cpu_accepts_post_test(struct kunit *test)
+{
+	struct airy_ipc_ring *ring = test->priv;
+	struct airy_ipc_msg_hdr hdr, out;
+
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_ipc_ring_bind(ring, smp_processor_id()));
+
+	fill_hdr(&hdr, 0xB0BULL);
+	KUNIT_EXPECT_EQ(test, 0, airy_ipc_ring_post(ring, &hdr));
+
+	KUNIT_EXPECT_EQ(test, 0, airy_ipc_ring_consume(ring, &out));
+	KUNIT_EXPECT_EQ(test, (__u64)0xB0BULL, out.capability_badge);
+}
+
+static void bind_foreign_cpu_degrades_test(struct kunit *test)
+{
+	struct airy_ipc_ring *ring = test->priv;
+	struct airy_ipc_msg_hdr hdr;
+	struct airy_ipc_ring_depth d;
+
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_ipc_ring_bind(ring, smp_processor_id()));
+
+	/*
+	 * Force the owner off this CPU: a legal pin cannot be produced on
+	 * a uniprocessor, so inject the field directly.
+	 */
+	WRITE_ONCE(ring->home_cpu, smp_processor_id() + 1);
+
+	fill_hdr(&hdr, 0x1ULL);
+	KUNIT_EXPECT_EQ(test, -EAGAIN, airy_ipc_ring_post(ring, &hdr));
+
+	/* A degraded post must leave the ring untouched. */
+	KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_depth_stats(ring, &d));
+	KUNIT_EXPECT_EQ(test, (u32)0, d.depth);
+	KUNIT_EXPECT_EQ(test, (u64)0, d.full_count);
+}
+
+static void bind_precedes_full_check_test(struct kunit *test)
+{
+	struct airy_ipc_ring *ring = test->priv;
+	struct airy_ipc_msg_hdr hdr;
+	u32 i;
+
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_ipc_ring_bind(ring, smp_processor_id()));
+
+	for (i = 1; i < (u32)TEST_RING_ENTRIES; i++) {
+		fill_hdr(&hdr, (__u64)i);
+		KUNIT_ASSERT_EQ(test, 0, airy_ipc_ring_post(ring, &hdr));
+	}
+
+	/* C-S5 runs before C-S6: a foreign sender degrades on a full ring. */
+	WRITE_ONCE(ring->home_cpu, smp_processor_id() + 1);
+	fill_hdr(&hdr, 0xFFFFULL);
+	KUNIT_EXPECT_EQ(test, -EAGAIN, airy_ipc_ring_post(ring, &hdr));
+}
+
 static struct kunit_case airy_ipc_ring_cases[] = {
 	KUNIT_CASE(cancel_drops_matching_preserves_other_test),
 	KUNIT_CASE(cancel_preserves_non_matching_badges_test),
@@ -472,6 +572,11 @@ static struct kunit_case airy_ipc_ring_cases[] = {
 	KUNIT_CASE(depth_stats_tracks_occupancy_test),
 	KUNIT_CASE(depth_stats_counts_full_rejection_test),
 	KUNIT_CASE(depth_stats_null_guards_test),
+	KUNIT_CASE(bind_rejects_bad_arguments_test),
+	KUNIT_CASE(bind_pins_owner_cpu_test),
+	KUNIT_CASE(bind_local_cpu_accepts_post_test),
+	KUNIT_CASE(bind_foreign_cpu_degrades_test),
+	KUNIT_CASE(bind_precedes_full_check_test),
 	{}
 };
 

@@ -5,7 +5,8 @@
  * airy_ipc_ring.c — Airymax IPC ring buffer management.
  *
  * Implements a power-of-2 single-producer/single-consumer ring with a
- * frozen flag for quiescing.  The cursor state lives in struct
+ * frozen flag for quiescing and an optional owner-CPU pin that backs the
+ * C-S5 fastpath condition.  The cursor state lives in struct
  * airy_ipc_ring (defined in airy_ipc_internal.h); message headers are
  * stored in the slots[] array allocated by airy_ipc_ring_init().
  */
@@ -18,6 +19,9 @@
 #include <linux/string.h>
 #include <linux/slab.h>
 #include <linux/atomic.h>
+#include <linux/cpumask.h>
+#include <linux/preempt.h>
+#include <linux/smp.h>
 #include <linux/airymax/ipc.h>
 #include <linux/airymax/error.h>
 
@@ -39,10 +43,11 @@ int airy_ipc_ring_init(struct airy_ipc_ring *ring, u32 entries)
 	    entries > AIRY_IPC_RING_MAX_ENTRIES)
 		return -EINVAL;
 
-	ring->head   = 0;
-	ring->tail   = 0;
-	ring->mask   = entries - 1;
-	ring->frozen = 0;
+	ring->head     = 0;
+	ring->tail     = 0;
+	ring->mask     = entries - 1;
+	ring->frozen   = 0;
+	ring->home_cpu = AIRY_IPC_CPU_ANY;
 
 	/* Fresh occupancy accounting: no backlog, no rejections yet. */
 	ring->peak_depth = 0;
@@ -67,11 +72,33 @@ void airy_ipc_ring_destroy(struct airy_ipc_ring *ring)
 	ring->slots = NULL;
 }
 
+/* ─── Pin a ring to its fastpath owner CPU (C-S5) ───────────── */
+int airy_ipc_ring_bind(struct airy_ipc_ring *ring, int cpu)
+{
+	if (!ring || !ring->slots)
+		return -EINVAL;
+
+	if (cpu < 0 || cpu >= nr_cpu_ids)
+		return -EINVAL;
+
+	/*
+	 * A ring serves exactly one consumer, so its owner CPU is fixed
+	 * for the ring's lifetime; moving it would silently tear down the
+	 * C-S5 guarantee for messages already queued.
+	 */
+	if (ring->home_cpu != AIRY_IPC_CPU_ANY && ring->home_cpu != cpu)
+		return -EBUSY;
+
+	WRITE_ONCE(ring->home_cpu, cpu);
+	return 0;
+}
+
 /* ─── Post a message header to the ring ──────────────────────────────── */
 /*
  * Returns 0 on success, -EINVAL for null/invalid arguments,
  * -AIRY_EIPC_FROZEN (C-S0) if the ring is administratively frozen,
- * -AIRY_EIPC_MAGIC (C-S1) if the header magic is not 'ARE1', or
+ * -AIRY_EIPC_MAGIC (C-S1) if the header magic is not 'ARE1',
+ * -EAGAIN (C-S5) when a CPU-bound ring is posted from a foreign CPU, or
  * -AIRY_EIPC_KFIFO (C-S6) when the ring is exactly full.
  */
 int airy_ipc_ring_post(struct airy_ipc_ring *ring,
@@ -91,6 +118,21 @@ int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 		return -AIRY_EIPC_MAGIC;
 	}
 
+	/*
+	 * C-S11: hold this task on the CPU from the C-S5 test through the
+	 * slot store and the head publication.  A migration in between
+	 * would invalidate the binding and let a second CPU become a
+	 * producer of the same ring.
+	 */
+	preempt_disable();
+
+	/* C-S5: a foreign sender degrades to the slowpath, not an error. */
+	if (ring->home_cpu != AIRY_IPC_CPU_ANY &&
+	    smp_processor_id() != ring->home_cpu) {
+		preempt_enable();
+		return -EAGAIN;
+	}
+
 	/* Single-producer advance: head only moves forward by one slot. */
 	next = (ring->head + 1) & ring->mask;
 
@@ -106,6 +148,7 @@ int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 	if (next == tail) {
 		/* The nightly monitor fails the run on any full rejection. */
 		WRITE_ONCE(ring->full_count, ring->full_count + 1);
+		preempt_enable();
 		pr_warn_ratelimited("airy_ipc_ring: ring full (head=%u tail=%u)\n",
 				    ring->head, tail);
 		return -AIRY_EIPC_KFIFO;
@@ -132,6 +175,8 @@ int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 	 * reading stale/uninitialised memory.
 	 */
 	smp_store_release(&ring->head, next);
+
+	preempt_enable();
 	return 0;
 }
 
