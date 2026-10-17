@@ -144,40 +144,26 @@
 #endif
 
 /* ─── [DSL] Degraded Survival Layer Fallback Block ──────────────────────
- * When AIRY_SC_FALLBACK is defined, the three-way type bridge collapses
- * to a two-way bridge: __KERNEL__ vs non-__KERNEL__. The non-Linux
- * branch (macOS/Windows) reuses the Linux user-space typedefs because
- * both rely on <stdint.h> with identical fixed-width mappings. This
- * guarantees that agentrt cross-platform builds still compile when the
- * full [SC] contract is degraded. See [DSL] §2.2.
+ * When AIRY_SC_FALLBACK is defined the bridge is contracted down to the
+ * two paths [DSL] §2.2 guarantees: __KERNEL__ and __linux__. Non-Linux
+ * hosts keep the <stdint.h> mapping above so agentrt cross-platform
+ * builds still compile, but they are outside the degraded guarantee and
+ * are not part of AIRY_DSL_UAPI_BRANCHES.
+ *
+ * The block is declarative only: the main bridge above already selected
+ * the authoritative type source for every branch. Re-typedefing here was
+ * unreachable (every branch sets _AIRY_UAPI_COMPAT_TYPES_SET) and would
+ * change type identity on 64-bit Linux (long vs long long), so the
+ * invariant is asserted rather than re-established.
  */
 #ifdef AIRY_SC_FALLBACK
-	#ifdef __KERNEL__
-		/* Kernel branch unchanged — <linux/types.h> is authoritative. */
-	#else
-		/* User-space branches: if the main bridge already provided the
-		 * fixed-width types (_AIRY_UAPI_COMPAT_TYPES_SET), keep them —
-		 * re-typedefing from <stdint.h> would change type identity on
-		 * 64-bit Linux (long vs long long) and conflict (the old per-type
-		 * `#ifndef __u64` guards cannot detect typedefs, only macros).
-		 * The stdint mapping below is the fallback when types are absent. */
-		#ifndef _AIRY_UAPI_COMPAT_TYPES_SET
-			#define _AIRY_DSL_UAPI_COMPAT_DONE
-			#include <stdint.h>
-			#include <stddef.h>
-			typedef int32_t   __s32;
-			typedef uint32_t  __u32;
-			typedef int64_t   __s64;
-			typedef uint64_t  __u64;
-			typedef int16_t   __s16;
-			typedef uint16_t  __u16;
-			typedef int8_t    __s8;
-			typedef uint8_t   __u8;
-		#endif
+	#ifndef _AIRY_UAPI_COMPAT_TYPES_SET
+		#error "AIRY_SC_FALLBACK: type bridge did not establish fixed-width types"
 	#endif
-	#define AIRY_DSL_UAPI_BRANCHES  2  /* __KERNEL__ vs user-space */
 
-	#warning "AIRY_SC_FALLBACK active: uapi_compat.h degraded to two-way bridge (__KERNEL__ vs user-space)"
+	#define AIRY_DSL_UAPI_BRANCHES  2  /* __KERNEL__ vs __linux__ */
+
+	#warning "AIRY_SC_FALLBACK active: uapi_compat.h degraded to two-way bridge (__KERNEL__ / __linux__)"
 #endif /* AIRY_SC_FALLBACK */
 
 #endif /* _UAPI_AIRYMAX_UAPI_COMPAT_H */
