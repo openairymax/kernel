@@ -24,20 +24,20 @@
 /*
  * The registry has one entry per core syscall, and every entry must
  * carry the same number the ABI header and the generated unistd table
- * publish. The __NR_* half is compiled only where asm-generic owns the
- * numbering; x86_64 joins it when its syscall table gains the slots.
+ * publish. The __NR_* half is compiled on every architecture that has
+ * wired the slots; the others skip it until their table gains them.
  */
 static_assert(AIRY_DESC_COUNT == AIRY_SYS_CLT_NOTIFY - AIRY_SYS_CALL + 1);
 
 #ifdef __NR_airy_sys_call
 static_assert(__NR_airy_sys_call == AIRY_SYS_CALL,
-	      "syscall registry: 548 disagrees with asm-generic");
+	      "syscall registry: 548 disagrees with the UAPI numbering");
 static_assert(__NR_airy_sys_rovol_ctl == AIRY_SYS_ROVOL_CTL,
-	      "syscall registry: 549 disagrees with asm-generic");
+	      "syscall registry: 549 disagrees with the UAPI numbering");
 static_assert(__NR_airy_sys_sched_ctl == AIRY_SYS_SCHED_CTL,
-	      "syscall registry: 550 disagrees with asm-generic");
+	      "syscall registry: 550 disagrees with the UAPI numbering");
 static_assert(__NR_airy_sys_clt_notify == AIRY_SYS_CLT_NOTIFY,
-	      "syscall registry: 551 disagrees with asm-generic");
+	      "syscall registry: 551 disagrees with the UAPI numbering");
 #endif
 
 const struct airy_sys_desc airy_sys_desc_tbl[AIRY_DESC_COUNT] = {

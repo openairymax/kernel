@@ -363,7 +363,7 @@ SYSCALL_DEFINE2(airy_sys_call, airy_cap_t, cap,
  * @arg: Operation-specific argument.
  *
  * A thin wrapper over airy_rovol_serve(), which owns the entry decision:
- * classify the op space with airy_rovol_kind() and then either refuse an
+ * check the op against the syscall registry and then either refuse an
  * undefined op with -AIRY_EINVAL or answer a recognised op with
  * -AIRY_ENOTSUP, since the snapshot/restore/migrate backends it names
  * belong to milestone M5 (04-memory.md §4.8). Keeping the decision in one
@@ -383,7 +383,7 @@ SYSCALL_DEFINE3(airy_sys_rovol_ctl, __u32, op, __u32, pid, __u64, arg)
  * @policy:      User-space scheduling policy string.
  *
  * A thin wrapper over airy_sched_serve(), which owns the entry decision:
- * classify the op space with airy_sched_kind() and then either refuse an
+ * check the op against the syscall registry and then either refuse an
  * undefined op with -AIRY_EINVAL or answer a recognised op with
  * -AIRY_ENOTSUP, since the policy/budget/latency/priority/vtime/yield
  * backends it names belong to milestone M3 (01-kernel.md §9.1). Keeping
@@ -407,9 +407,9 @@ SYSCALL_DEFINE3(airy_sys_sched_ctl, __u32, op,
  *           the kthread-class operations owned by module F.
  *
  * A thin wrapper over airy_clt_serve(), which owns the entry decision:
- * classify the phase space with airy_clt_kind() and then record through
- * airy_clt_notify(). Keeping the decision in one non-static place lets
- * KUnit drive it directly instead of through the syscall ABI.
+ * check the phase against the syscall registry and then record it
+ * through airy_clt_notify(). Keeping the decision in one non-static
+ * place lets KUnit drive it directly instead of through the syscall ABI.
  */
 SYSCALL_DEFINE2(airy_sys_clt_notify, int, task_id, __u32, phase)
 {

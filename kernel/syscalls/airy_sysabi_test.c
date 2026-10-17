@@ -275,6 +275,19 @@ static void airy_abi_version_test(struct kunit *test)
 			airy_abi_verdict(&hdr, sizeof(hdr)));
 }
 
+static void airy_sysabi_uapi_test(struct kunit *test)
+{
+#ifdef __NR_airy_sys_call
+	/* The UAPI numbering and the registry share one truth. */
+	KUNIT_EXPECT_EQ(test, __NR_airy_sys_call, AIRY_SYS_CALL);
+	KUNIT_EXPECT_EQ(test, __NR_airy_sys_rovol_ctl, AIRY_SYS_ROVOL_CTL);
+	KUNIT_EXPECT_EQ(test, __NR_airy_sys_sched_ctl, AIRY_SYS_SCHED_CTL);
+	KUNIT_EXPECT_EQ(test, __NR_airy_sys_clt_notify, AIRY_SYS_CLT_NOTIFY);
+#else
+	kunit_skip(test, "architecture does not wire the 548-551 block yet");
+#endif
+}
+
 static struct kunit_case airy_sysabi_cases[] = {
 	KUNIT_CASE(airy_sysabi_num_test),
 	KUNIT_CASE(airy_sysabi_order_test),
@@ -284,6 +297,7 @@ static struct kunit_case airy_sysabi_cases[] = {
 	KUNIT_CASE(airy_sysabi_err_test),
 	KUNIT_CASE(airy_sysabi_wide_test),
 	KUNIT_CASE(airy_sysabi_name_test),
+	KUNIT_CASE(airy_sysabi_uapi_test),
 	KUNIT_CASE(airy_abi_accept_test),
 	KUNIT_CASE(airy_abi_forward_test),
 	KUNIT_CASE(airy_abi_malformed_test),
