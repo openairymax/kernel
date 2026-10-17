@@ -283,6 +283,14 @@ static void airy_sysabi_uapi_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, __NR_airy_sys_rovol_ctl, AIRY_SYS_ROVOL_CTL);
 	KUNIT_EXPECT_EQ(test, __NR_airy_sys_sched_ctl, AIRY_SYS_SCHED_CTL);
 	KUNIT_EXPECT_EQ(test, __NR_airy_sys_clt_notify, AIRY_SYS_CLT_NOTIFY);
+
+#ifdef __NR_syscalls
+	/*
+	 * A table shorter than the reserved end would advertise a block
+	 * it cannot dispatch, so the bound must cover the last slot.
+	 */
+	KUNIT_EXPECT_GE(test, __NR_syscalls, AIRY_SYS_RESERVED_END + 1);
+#endif
 #else
 	kunit_skip(test, "architecture does not wire the 548-551 block yet");
 #endif
