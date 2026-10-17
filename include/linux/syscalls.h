@@ -1169,8 +1169,9 @@ asmlinkage long sys_old_mmap(struct mmap_arg_struct __user *arg);
 /*
  * Airymax syscalls, needed only by architectures that drive their
  * sys_call_table off <asm/unistd.h> without CONFIG_ARCH_HAS_SYSCALL_WRAPPER
- * (loongarch, sw_64): those tables reference the bare sys_airy_sys_*
- * symbols, which are otherwise declared nowhere.
+ * (loongarch): those tables reference the bare sys_airy_sys_* symbols,
+ * which are otherwise declared nowhere.  Architectures whose tables are
+ * assembled from a syscall.tbl (x86, arm64, sw_64) never need these.
  */
 asmlinkage long sys_airy_sys_call(airy_cap_t cap,
 		const struct airy_ipc_msg_hdr __user *msg);
