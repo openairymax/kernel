@@ -17,6 +17,10 @@ airy_ck_ipc-$(CONFIG_AIRY_KUNIT) += airy_ipc_check_test.o
 airy_ck_ipc-$(CONFIG_AIRY_KUNIT) += airy_ipc_ring_test.o
 airy_ck_ipc-$(CONFIG_AIRY_KUNIT) += airy_ipc_crc32_test.o
 
+# KUnit regression for the fastpath send chain: C-S0, the shared header
+# chain and C-S12, including the AIRY_FAULT_RING_CORRUPT report.
+airy_ck_ipc-$(CONFIG_AIRY_KUNIT) += airy_ipc_fastpath_test.o
+
 # KUnit regression for the IPC trace emission: field fidelity of
 # airy_ipc_send/airy_ipc_recv, agent-id normalisation and the *_on()
 # predicates that gate fastpath timestamping.
