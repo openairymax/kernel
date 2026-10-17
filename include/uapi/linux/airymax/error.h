@@ -176,7 +176,7 @@ typedef __s32 airy_err_t;
 #ifdef AIRY_SC_FALLBACK
 	/*
 	 * When [SC] headers are unavailable (boot/rescue mode),
-	 * fallback to 5 core POSIX codes mapped from 38 POSIX codes.
+	 * map 38 POSIX codes onto 7 core codes.
 	 */
 	#define AIRY_DSL_E2BIG        AIRY_EINVAL
 	#define AIRY_DSL_ECHILD       AIRY_EINVAL
