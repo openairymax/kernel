@@ -9,7 +9,8 @@
  * CPU only (C-S5), so the ring needs no lock; the owning kthread
  * dequeues and is woken through recv_wq.  Occupancy is sampled into
  * water_mark for the backpressure thresholds of docs 07-ipc-fastpath
- * §6.4.
+ * §6.4: reaching HI latches backpressure until a drain falls below
+ * LO, and a full mailbox rejects with -AIRY_EIPC_KFIFO (C-S6).
  */
 
 #include <linux/errno.h>
@@ -29,6 +30,20 @@
 DEFINE_PER_CPU(struct airy_ipc_stats, airy_ipc_stats_cpu);
 
 static DEFINE_PER_CPU(struct airy_ipc_kfifo, airy_ipc_kfifo);
+
+static enum airy_ipc_wmark kfifo_band(u32 cap, u32 len)
+{
+	if (len >= cap)
+		return AIRY_IPC_WMARK_FULL;
+	if (len * 100 >= cap * AIRY_IPC_KFIFO_HI_WMARK)
+		return AIRY_IPC_WMARK_HI;
+	if (len * 100 >= cap * AIRY_IPC_KFIFO_MID_WMARK)
+		return AIRY_IPC_WMARK_MID;
+	if (len * 100 >= cap * AIRY_IPC_KFIFO_LO_WMARK)
+		return AIRY_IPC_WMARK_LO;
+
+	return AIRY_IPC_WMARK_NONE;
+}
 
 /* ─── Initialise one CPU mailbox ─────────────────── */
 int airy_ipc_kfifo_init(struct airy_ipc_kfifo *kf, int cpu, u32 entries)
@@ -53,9 +68,10 @@ int airy_ipc_kfifo_init(struct airy_ipc_kfifo *kf, int cpu, u32 entries)
 		return ret;
 
 	init_waitqueue_head(&kf->recv_wq);
-	kf->water_mark = 0;
-	kf->home_cpu   = cpu;
-	kf->stats      = &airy_ipc_stats_cpu;
+	kf->water_mark   = 0;
+	kf->home_cpu     = cpu;
+	kf->backpressure = false;
+	kf->stats        = &airy_ipc_stats_cpu;
 	return 0;
 }
 
@@ -66,9 +82,10 @@ void airy_ipc_kfifo_exit(struct airy_ipc_kfifo *kf)
 		return;
 
 	kfifo_free(&kf->fifo);
-	kf->water_mark = 0;
-	kf->home_cpu   = AIRY_IPC_CPU_ANY;
-	kf->stats      = NULL;
+	kf->water_mark   = 0;
+	kf->home_cpu     = AIRY_IPC_CPU_ANY;
+	kf->backpressure = false;
+	kf->stats        = NULL;
 }
 
 /* ─── Resolve a CPU's mailbox ────────────── */
@@ -80,10 +97,20 @@ struct airy_ipc_kfifo *airy_ipc_kfifo_cpu(int cpu)
 	return per_cpu_ptr(&airy_ipc_kfifo, cpu);
 }
 
+/* ─── Classify mailbox occupancy ─────────────── */
+enum airy_ipc_wmark airy_ipc_kfifo_level(const struct airy_ipc_kfifo *kf)
+{
+	if (!kf || !kfifo_initialized(&kf->fifo))
+		return AIRY_IPC_WMARK_NONE;
+
+	return kfifo_band(kfifo_size(&kf->fifo), kfifo_len(&kf->fifo));
+}
+
 /* ─── Enqueue a header on the calling CPU's mailbox (C-S5/C-S6) ──────── */
 int airy_ipc_kfifo_send(struct airy_ipc_kfifo *kf,
 			const struct airy_ipc_msg_hdr *hdr)
 {
+	u32 len;
 	int ret = 0;
 
 	if (!kf || !hdr || !kfifo_initialized(&kf->fifo))
@@ -98,14 +125,31 @@ int airy_ipc_kfifo_send(struct airy_ipc_kfifo *kf,
 		goto out;
 	}
 
-	if (kfifo_in(&kf->fifo, hdr, 1) != 1) {
+	/* C-S6: no free slot, so the caller must use the slowpath. */
+	if (kfifo_is_full(&kf->fifo)) {
 		this_cpu_inc(kf->stats->error_hit);
-		ret = -AIRY_EIPC_KFIFO;	/* C-S6: mailbox full */
+		ret = -AIRY_EIPC_KFIFO;
 		goto out;
 	}
 
-	WRITE_ONCE(kf->water_mark, kfifo_len(&kf->fifo));
+	/* C-S6 backpressure: dropping below LO is the only release, so a
+	 * producer above HI stops instead of hovering around the mark.
+	 */
+	if (READ_ONCE(kf->backpressure)) {
+		this_cpu_inc(kf->stats->backpressure_hit);
+		ret = -EAGAIN;
+		goto out;
+	}
+
+	/* Cannot fail: a free slot exists and preemption is disabled. */
+	kfifo_in(&kf->fifo, hdr, 1);
+
+	len = kfifo_len(&kf->fifo);
+	WRITE_ONCE(kf->water_mark, len);
 	this_cpu_inc(kf->stats->fast_send_hit);
+
+	if (kfifo_band(kfifo_size(&kf->fifo), len) >= AIRY_IPC_WMARK_HI)
+		WRITE_ONCE(kf->backpressure, true);
 
 	/* Publish the enqueued header before the consumer is woken. */
 	smp_wmb();
@@ -122,6 +166,7 @@ out:
 int airy_ipc_kfifo_recv(struct airy_ipc_kfifo *kf,
 			struct airy_ipc_msg_hdr *out)
 {
+	u32 len;
 	int ret = 0;
 
 	if (!kf || !out || !kfifo_initialized(&kf->fifo))
@@ -144,11 +189,42 @@ int airy_ipc_kfifo_recv(struct airy_ipc_kfifo *kf,
 		goto out;
 	}
 
-	WRITE_ONCE(kf->water_mark, kfifo_len(&kf->fifo));
+	len = kfifo_len(&kf->fifo);
+	WRITE_ONCE(kf->water_mark, len);
 	this_cpu_inc(kf->stats->fast_recv_hit);
+
+	/* Only a drain below LO clears the latch set at HI. */
+	if (kfifo_band(kfifo_size(&kf->fifo), len) == AIRY_IPC_WMARK_NONE)
+		WRITE_ONCE(kf->backpressure, false);
 out:
 	preempt_enable();
 	return ret;
+}
+
+/* ─── Wait for a header and dequeue it ──────────── */
+int airy_ipc_kfifo_recv_wait(struct airy_ipc_kfifo *kf,
+			     struct airy_ipc_msg_hdr *out, long timeout)
+{
+	long left;
+	int ret;
+
+	if (!kf || !out || !kfifo_initialized(&kf->fifo) || timeout < 0)
+		return -EINVAL;
+
+	if (!timeout) {
+		ret = airy_ipc_kfifo_recv(kf, out);
+		return ret == -ENOMSG ? -EAGAIN : ret;
+	}
+
+	left = wait_event_interruptible_timeout(kf->recv_wq,
+						!kfifo_is_empty(&kf->fifo),
+						timeout);
+	if (left < 0)
+		return -ERESTARTSYS;
+	if (!left)
+		return -ETIMEDOUT;
+
+	return airy_ipc_kfifo_recv(kf, out);
 }
 
 /* ─── Sum the per-CPU counters into a caller buffer ──────────── */

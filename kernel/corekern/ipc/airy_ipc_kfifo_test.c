@@ -7,8 +7,10 @@
  * Covers the mailbox lifecycle (allocation guards, -EBUSY re-init,
  * teardown), FIFO order and header fidelity, the C-S6 full rejection
  * (-AIRY_EIPC_KFIFO), the C-S5 owner-CPU gate that degrades foreign
- * senders and receivers to -EAGAIN, occupancy sampling into water_mark,
- * the per-CPU fastpath counters and the CPU lookup helper.
+ * senders and receivers to -EAGAIN, occupancy bands and the
+ * backpressure latch that is set at HI and released below LO, the
+ * blocking receive with its timeout and signal paths, the per-CPU
+ * fastpath counters and the CPU lookup helper.
  *
  * The mailbox entry points are non-static (airy_ipc_internal.h), so
  * the test links against airy_ipc_kfifo.o within the airy_ck_ipc
@@ -124,6 +126,7 @@ static void kfifo_full_rejects_test(struct kunit *test)
 	u32 i;
 
 	for (i = 0; i < TEST_KFIFO_ENTRIES; i++) {
+		WRITE_ONCE(kf->backpressure, false);
 		fill_hdr(&hdr, (__u64)i);
 		KUNIT_ASSERT_EQ(test, 0, airy_ipc_kfifo_send(kf, &hdr));
 	}
@@ -138,8 +141,119 @@ static void kfifo_full_rejects_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, TEST_KFIFO_ENTRIES, kfifo_len(&kf->fifo));
 
 	/* Draining one slot makes room for exactly one more header. */
+	WRITE_ONCE(kf->backpressure, false);
 	KUNIT_ASSERT_EQ(test, 0, airy_ipc_kfifo_recv(kf, &out));
 	KUNIT_EXPECT_EQ(test, 0, airy_ipc_kfifo_send(kf, &hdr));
+}
+
+static void kfifo_level_bands_test(struct kunit *test)
+{
+	static const enum airy_ipc_wmark bands[TEST_KFIFO_ENTRIES + 1] = {
+		AIRY_IPC_WMARK_NONE,	/* 0: empty */
+		AIRY_IPC_WMARK_NONE,	/* 1 */
+		AIRY_IPC_WMARK_LO,	/* 2: 25% */
+		AIRY_IPC_WMARK_LO,	/* 3 */
+		AIRY_IPC_WMARK_MID,	/* 4: 50% */
+		AIRY_IPC_WMARK_MID,	/* 5 */
+		AIRY_IPC_WMARK_HI,	/* 6: 75% */
+		AIRY_IPC_WMARK_HI,	/* 7 */
+		AIRY_IPC_WMARK_FULL,	/* 8: 100% */
+	};
+	struct airy_ipc_kfifo *kf = test->priv;
+	struct airy_ipc_msg_hdr hdr;
+	int i;
+
+	KUNIT_ASSERT_EQ(test, AIRY_IPC_WMARK_NONE, airy_ipc_kfifo_level(kf));
+
+	for (i = 1; i <= TEST_KFIFO_ENTRIES; i++) {
+		WRITE_ONCE(kf->backpressure, false);
+		fill_hdr(&hdr, (__u64)i);
+		KUNIT_ASSERT_EQ(test, 0, airy_ipc_kfifo_send(kf, &hdr));
+		KUNIT_ASSERT_EQ(test, i, kfifo_len(&kf->fifo));
+		KUNIT_EXPECT_EQ(test, bands[i], airy_ipc_kfifo_level(kf));
+	}
+
+	KUNIT_EXPECT_EQ(test, AIRY_IPC_WMARK_NONE,
+			airy_ipc_kfifo_level(NULL));
+}
+
+static void kfifo_backpressure_latch_test(struct kunit *test)
+{
+	struct airy_ipc_kfifo *kf = test->priv;
+	struct airy_ipc_msg_hdr hdr, out;
+	struct airy_ipc_stats before, after;
+	int i;
+
+	fill_hdr(&hdr, 0x5ULL);
+	for (i = 0; i < 6; i++)
+		KUNIT_ASSERT_EQ(test, 0, airy_ipc_kfifo_send(kf, &hdr));
+
+	/* Reaching HI latches backpressure, although slots remain free. */
+	KUNIT_ASSERT_TRUE(test, READ_ONCE(kf->backpressure));
+	KUNIT_EXPECT_EQ(test, AIRY_IPC_WMARK_HI, airy_ipc_kfifo_level(kf));
+
+	airy_ipc_stats_read(&before);
+	KUNIT_EXPECT_EQ(test, -EAGAIN, airy_ipc_kfifo_send(kf, &hdr));
+	airy_ipc_stats_read(&after);
+	KUNIT_EXPECT_EQ(test, before.backpressure_hit + 1,
+			after.backpressure_hit);
+	KUNIT_EXPECT_EQ(test, 6, kfifo_len(&kf->fifo));
+
+	/* A single drain stays above LO, so the latch must survive. */
+	KUNIT_ASSERT_EQ(test, 0, airy_ipc_kfifo_recv(kf, &out));
+	KUNIT_EXPECT_EQ(test, AIRY_IPC_WMARK_MID, airy_ipc_kfifo_level(kf));
+	KUNIT_EXPECT_TRUE(test, READ_ONCE(kf->backpressure));
+	KUNIT_EXPECT_EQ(test, -EAGAIN, airy_ipc_kfifo_send(kf, &hdr));
+
+	/* Draining below LO releases the latch for the next producer. */
+	for (i = 0; i < 4; i++)
+		KUNIT_ASSERT_EQ(test, 0, airy_ipc_kfifo_recv(kf, &out));
+	KUNIT_EXPECT_EQ(test, AIRY_IPC_WMARK_NONE, airy_ipc_kfifo_level(kf));
+	KUNIT_EXPECT_FALSE(test, READ_ONCE(kf->backpressure));
+	KUNIT_EXPECT_EQ(test, 0, airy_ipc_kfifo_send(kf, &hdr));
+}
+
+static void kfifo_recv_wait_ready_test(struct kunit *test)
+{
+	struct airy_ipc_kfifo *kf = test->priv;
+	struct airy_ipc_msg_hdr sent, out;
+
+	fill_hdr(&sent, 0x77ULL);
+	KUNIT_ASSERT_EQ(test, 0, airy_ipc_kfifo_send(kf, &sent));
+
+	memset(&out, 0, sizeof(out));
+	KUNIT_ASSERT_EQ(test, 0, airy_ipc_kfifo_recv_wait(kf, &out, 1));
+	KUNIT_EXPECT_EQ(test, 0, memcmp(&sent, &out, sizeof(out)));
+
+	/* A zero timeout polls and reports the empty mailbox as -EAGAIN. */
+	KUNIT_EXPECT_EQ(test, -EAGAIN, airy_ipc_kfifo_recv_wait(kf, &out, 0));
+}
+
+static void kfifo_recv_wait_timeout_test(struct kunit *test)
+{
+	struct airy_ipc_kfifo *kf = test->priv;
+	struct airy_ipc_msg_hdr out;
+
+	KUNIT_EXPECT_EQ(test, -ETIMEDOUT,
+			airy_ipc_kfifo_recv_wait(kf, &out, 1));
+	KUNIT_EXPECT_EQ(test, 0UL, READ_ONCE(kf->water_mark));
+}
+
+static void kfifo_recv_wait_bad_args_test(struct kunit *test)
+{
+	struct airy_ipc_kfifo bogus;
+	struct airy_ipc_msg_hdr out;
+
+	memset(&bogus, 0, sizeof(bogus));
+
+	KUNIT_EXPECT_EQ(test, -EINVAL,
+			airy_ipc_kfifo_recv_wait(NULL, &out, 1));
+	KUNIT_EXPECT_EQ(test, -EINVAL,
+			airy_ipc_kfifo_recv_wait(test->priv, NULL, 1));
+	KUNIT_EXPECT_EQ(test, -EINVAL,
+			airy_ipc_kfifo_recv_wait(test->priv, &out, -1));
+	KUNIT_EXPECT_EQ(test, -EINVAL,
+			airy_ipc_kfifo_recv_wait(&bogus, &out, 0));
 }
 
 static void kfifo_foreign_cpu_degrades_test(struct kunit *test)
@@ -204,6 +318,11 @@ static struct kunit_case airy_ipc_kfifo_cases[] = {
 	KUNIT_CASE(kfifo_preserves_fifo_order_test),
 	KUNIT_CASE(kfifo_empty_recv_test),
 	KUNIT_CASE(kfifo_full_rejects_test),
+	KUNIT_CASE(kfifo_level_bands_test),
+	KUNIT_CASE(kfifo_backpressure_latch_test),
+	KUNIT_CASE(kfifo_recv_wait_ready_test),
+	KUNIT_CASE(kfifo_recv_wait_timeout_test),
+	KUNIT_CASE(kfifo_recv_wait_bad_args_test),
 	KUNIT_CASE(kfifo_foreign_cpu_degrades_test),
 	KUNIT_CASE(kfifo_stats_counters_test),
 	KUNIT_CASE(kfifo_cpu_lookup_test),

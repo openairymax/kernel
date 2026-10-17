@@ -94,6 +94,26 @@ int airy_ipc_ring_depth_stats(struct airy_ipc_ring *ring,
 #define AIRY_IPC_KFIFO_MAX_ENTRIES	65536
 
 /**
+ * enum airy_ipc_wmark - water mark band reached by a mailbox.
+ * @AIRY_IPC_WMARK_NONE: below the low mark; backpressure is released.
+ * @AIRY_IPC_WMARK_LO:   at or above 25% of capacity.
+ * @AIRY_IPC_WMARK_MID:  at or above 50% of capacity.
+ * @AIRY_IPC_WMARK_HI:   at or above 75%; producers latch backpressure.
+ * @AIRY_IPC_WMARK_FULL: no free slot; C-S6 rejects with -AIRY_EIPC_KFIFO.
+ *
+ * The band is the highest mark the occupancy has reached, so the four
+ * thresholds of docs 07-ipc-fastpath §6.4 keep their documented meaning
+ * while a single comparison still answers "is there pressure?".
+ */
+enum airy_ipc_wmark {
+	AIRY_IPC_WMARK_NONE,
+	AIRY_IPC_WMARK_LO,
+	AIRY_IPC_WMARK_MID,
+	AIRY_IPC_WMARK_HI,
+	AIRY_IPC_WMARK_FULL,
+};
+
+/**
  * struct airy_ipc_stats - per-CPU IPC fastpath counters.
  * @fast_send_hit:    headers enqueued on the fastpath.
  * @fast_recv_hit:    headers dequeued on the fastpath.
@@ -122,11 +142,12 @@ DECLARE_PER_CPU(struct airy_ipc_stats, airy_ipc_stats_cpu);
 
 /**
  * struct airy_ipc_kfifo - lock-free mailbox of one CPU's kthread.
- * @fifo:      SPSC ring of message headers.
- * @recv_wq:   wait queue the consumer blocks on.
- * @water_mark: last sampled occupancy, in headers.
- * @home_cpu:  CPU owning the mailbox, or AIRY_IPC_CPU_ANY.
- * @stats:     per-CPU counter block, shared by every mailbox.
+ * @fifo:         SPSC ring of message headers.
+ * @recv_wq:      wait queue the consumer blocks on.
+ * @water_mark:   last sampled occupancy, in headers.
+ * @home_cpu:     CPU owning the mailbox, or AIRY_IPC_CPU_ANY.
+ * @backpressure: latched once HI is reached, cleared below LO.
+ * @stats:        per-CPU counter block, shared by every mailbox.
  *
  * The producer is the sending CPU's fastpath, the consumer is the
  * mailbox owner; C-S5 keeps them on the same CPU so the ring needs no
@@ -138,16 +159,20 @@ struct airy_ipc_kfifo {
 	wait_queue_head_t	recv_wq;
 	unsigned long		water_mark;
 	int			home_cpu;
+	bool			backpressure;
 	struct airy_ipc_stats __percpu *stats;
 };
 
 int airy_ipc_kfifo_init(struct airy_ipc_kfifo *kf, int cpu, u32 entries);
 void airy_ipc_kfifo_exit(struct airy_ipc_kfifo *kf);
 struct airy_ipc_kfifo *airy_ipc_kfifo_cpu(int cpu);
+enum airy_ipc_wmark airy_ipc_kfifo_level(const struct airy_ipc_kfifo *kf);
 int airy_ipc_kfifo_send(struct airy_ipc_kfifo *kf,
 			const struct airy_ipc_msg_hdr *hdr);
 int airy_ipc_kfifo_recv(struct airy_ipc_kfifo *kf,
 			struct airy_ipc_msg_hdr *out);
+int airy_ipc_kfifo_recv_wait(struct airy_ipc_kfifo *kf,
+			     struct airy_ipc_msg_hdr *out, long timeout);
 void airy_ipc_stats_read(struct airy_ipc_stats *out);
 
 /* ─── Fastpath ──────────────────────────────────────────────────────── */
