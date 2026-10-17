@@ -4,14 +4,16 @@
  *
  * airy_ipc_fastpath.c — Airymax IPC fast-path send.
  *
- * Hot-path send: the C-S0 frozen check, the header and Badge chain in
- * airy_ipc_validate() (C-S1..C-S4, C-S8..C-S10), the C-S12 digest and
- * finally delegation to airy_ipc_ring_post(). A digest mismatch is
- * reported as AIRY_FAULT_RING_CORRUPT so the supervisor can isolate the
- * sender; the message is dropped. The ring-bound checks (C-S5..C-S7,
- * C-S11) belong to the ring, which is the only layer that owns a per-cpu
- * slot; everything decidable from the header is settled here before a
- * slot is written.
+ * Two data-plane entry points share one header chain: the C-S1..C-S4
+ * and C-S8..C-S10 checks in airy_ipc_validate(), the C-S12 digest, and
+ * the AIRY_FAULT_RING_CORRUPT report a mismatch owes the supervisor.
+ * The ring entry then delegates to airy_ipc_ring_post(); the mailbox
+ * entry delegates to airy_ipc_kfifo_send() and carries no per-agent
+ * freeze bit, because a mailbox is shared by every agent on its CPU.
+ * C-S5..C-S7 and C-S11 belong to those delivery primitives, the only
+ * layers that own a per-cpu slot. A delivery handed back for retry
+ * (-EAGAIN) or rejected as full (-AIRY_EIPC_KFIFO) is counted in
+ * slow_send_hit so that degradation stays observable.
  *
  * SSoT: 30-interfaces/07-ipc-fastpath.md §3.1
  */
@@ -21,6 +23,7 @@
 #include <linux/errno.h>
 #include <linux/kconfig.h>
 #include <linux/ktime.h>
+#include <linux/percpu.h>
 #include <linux/airymax/ipc.h>
 #include <linux/airymax/error.h>
 
@@ -31,21 +34,63 @@
 #include "airy_ipc_check.h"
 #include "airy_ipc_internal.h"
 
-/* ─── Fast-path send ─────────────────────────────────────────────────── */
+/* ─── Shared header chain ──────── */
+/*
+ * Settle every check that depends on the header alone. Both entries run
+ * this before they touch a slot, so a rejected header never occupies
+ * capacity and the consumer never observes it.
+ *
+ * Returns 0 when the header may be delivered, or the negated [SC] code
+ * of the first failing check. A digest mismatch raises
+ * AIRY_FAULT_RING_CORRUPT before the error is returned.
+ */
+static int fp_check(const struct airy_ipc_msg_hdr *hdr)
+{
+	int ret;
+
+	ret = airy_ipc_validate(hdr);
+	if (unlikely(ret))
+		return ret;
+
+	ret = airy_crc32_ok(hdr, NULL);
+#if IS_ENABLED(CONFIG_SECURITY_AIRY)
+	if (unlikely(ret == -AIRY_EIPC_CRC32))
+		airy_security_fault((__u32)hdr->src_task,
+				    AIRY_FAULT_RING_CORRUPT);
+#endif
+	return ret;
+}
+
+/* Report a send that the delivery primitive handed to the slowpath. */
+static void fp_degrade(int ret)
+{
+	if (ret == -EAGAIN || ret == -AIRY_EIPC_KFIFO)
+		this_cpu_inc(airy_ipc_stats_cpu.slow_send_hit);
+}
+
+/*
+ * Emit the send event for an accepted header. It reports the task that
+ * executed the call, not the header's src_task, and its latency is the
+ * delivery cost measured from the timestamp the predicate guards.
+ */
+static void fp_emit(const struct airy_ipc_msg_hdr *hdr, bool trace, u64 start)
+{
+	if (trace)
+		airy_send_emit(hdr, airy_agent_id(current), 1,
+			       ktime_get_ns() - start);
+}
+
+/* ─── Ring entry ──────── */
 /*
  * Post a message to the IPC ring after the header and Badge have been
- * accepted. Every check that depends on the header alone runs before the
- * slot write, so a rejected message never occupies ring capacity and the
- * consumer never observes it.
+ * accepted.
  *
  * ring:  destination ring (must be initialised via airy_ipc_ring_init)
  * hdr:   message header to post
  *
- * Returns 0 on success, -EINVAL for null arguments, the negated [SC]
- * code of the first failing chain check (C-S1..C-S4, C-S8..C-S10, C-S12),
- * -AIRY_EIPC_FROZEN (C-S0), or a ring_post() code (C-S1
- * -AIRY_EIPC_MAGIC, C-S6 -AIRY_EIPC_KFIFO). A C-S12 mismatch also raises
- * AIRY_FAULT_RING_CORRUPT before the error is returned.
+ * Returns 0 on success, -EINVAL for null arguments, -AIRY_EIPC_FROZEN
+ * (C-S0), the negated [SC] code of the first failing chain check, or a
+ * ring_post() code (C-S5 -EAGAIN, C-S6 -AIRY_EIPC_KFIFO).
  */
 int airy_ipc_fastpath_send(struct airy_ipc_ring *ring,
 			   const struct airy_ipc_msg_hdr *hdr)
@@ -66,48 +111,57 @@ int airy_ipc_fastpath_send(struct airy_ipc_ring *ring,
 	if (unlikely(READ_ONCE(ring->frozen)))
 		return -AIRY_EIPC_FROZEN;
 
-	/* C-S1..C-S4, C-S8..C-S10: settle the header and the Badge.  C-S8
-	 * keeps the rest of the chain in task context, which the ring
-	 * assumes: preemption stays enabled until ring_post() takes its
-	 * own per-cpu slot, and no wakeup may be issued from here.
-	 */
-	ret = airy_ipc_validate(hdr);
+	ret = fp_check(hdr);
 	if (unlikely(ret))
 		return ret;
 
-	/* C-S12: verify the header digest before the slot write.  The
-	 * fastpath carries no payload (any payload-bearing message
-	 * degrades to slowpath), so the digest covers header[0:52) alone.
-	 * A mismatch means the header was corrupted in flight; report the
-	 * ring fault and drop the message rather than deliver it.
-	 */
-	ret = airy_crc32_ok(hdr, NULL);
-	if (unlikely(ret)) {
-#if IS_ENABLED(CONFIG_SECURITY_AIRY)
-		if (ret == -AIRY_EIPC_CRC32)
-			airy_security_fault((__u32)hdr->src_task,
-					    AIRY_FAULT_RING_CORRUPT);
-#endif
-		return ret;
-	}
-
-	/* Delegate to ring_post() which performs the actual slot write.
-	 * ring_post() re-checks frozen (defence in depth) and validates
-	 * magic before writing.
-	 *
-	 * The send event reports the task that actually executed the
-	 * call, not the header's src_task, and only once the ring has
-	 * accepted the header. Its latency is the post cost, measured
-	 * from the same timestamp the trace predicate guards.
-	 */
 	trace = airy_send_on();
 	if (trace)
 		start = ktime_get_ns();
 
 	ret = airy_ipc_ring_post(ring, hdr);
-	if (!ret && trace)
-		airy_send_emit(hdr, airy_agent_id(current), 1,
-			       ktime_get_ns() - start);
+	if (!ret)
+		fp_emit(hdr, trace, start);
+	else
+		fp_degrade(ret);
+
+	return ret;
+}
+
+/* ─── Mailbox entry ──────── */
+/*
+ * Deliver a header into a CPU mailbox after the shared chain accepted
+ * it. C-S5, C-S6 and C-S11 are settled by airy_ipc_kfifo_send(), which
+ * is the layer owning the mailbox slot.
+ *
+ * Returns 0 on success, -EINVAL for null arguments, the negated [SC]
+ * code of the first failing chain check, -EAGAIN when C-S5 or the HI
+ * backpressure latch degrades the caller, or -AIRY_EIPC_KFIFO when
+ * C-S6 finds no free slot.
+ */
+int airy_ipc_fast_send_kfifo(struct airy_ipc_kfifo *kf,
+			     const struct airy_ipc_msg_hdr *hdr)
+{
+	u64 start = 0;
+	bool trace;
+	int ret;
+
+	if (!kf || !hdr)
+		return -EINVAL;
+
+	ret = fp_check(hdr);
+	if (unlikely(ret))
+		return ret;
+
+	trace = airy_send_on();
+	if (trace)
+		start = ktime_get_ns();
+
+	ret = airy_ipc_kfifo_send(kf, hdr);
+	if (!ret)
+		fp_emit(hdr, trace, start);
+	else
+		fp_degrade(ret);
 
 	return ret;
 }

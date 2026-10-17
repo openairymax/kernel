@@ -179,6 +179,25 @@ void airy_ipc_stats_read(struct airy_ipc_stats *out);
 int airy_ipc_fastpath_send(struct airy_ipc_ring *ring,
 			   const struct airy_ipc_msg_hdr *hdr);
 
+/**
+ * airy_ipc_fast_send_kfifo() - deliver a header into a CPU mailbox.
+ * @kf:  destination mailbox, owned by the consumer kthread.
+ * @hdr: message header to deliver.
+ *
+ * Runs the same header chain as airy_ipc_fastpath_send() (C-S1..C-S4,
+ * C-S8..C-S10, C-S12) and then hands over to airy_ipc_kfifo_send(),
+ * which owns the ring-bound checks C-S5, C-S6 and C-S11.  A mailbox is
+ * shared by every agent on its CPU and therefore has no per-agent freeze
+ * bit; the freeze protocol of A-ULS applies to the ring path only.
+ *
+ * Return: 0 on success, -EINVAL for null arguments, the negated [SC]
+ *         code of the first failing header check, -EAGAIN when C-S5 or
+ *         the HI backpressure latch degrades the caller to the slowpath,
+ *         or -AIRY_EIPC_KFIFO when C-S6 finds no free slot.
+ */
+int airy_ipc_fast_send_kfifo(struct airy_ipc_kfifo *kf,
+			     const struct airy_ipc_msg_hdr *hdr);
+
 /* ─── Trace emission (airy_ipc_trace.c) ─────────────────────────────── */
 /*
  * The *_on() predicates let the hot paths skip timestamping unless a
