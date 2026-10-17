@@ -6,16 +6,25 @@
  *
  * Uses the [SC] enum airy_agent_state from <linux/airymax/sched.h>
  * (INACTIVE → SPAWNING → READY → RUNNING → BLOCKED → STOPPING →
- * STOPPED → DEAD) and enforces legal transitions between them.
- * State names are exposed via airy_task_state_name() for observability.
+ * STOPPED → DEAD) and enforces legal transitions between them on the
+ * struct airy_task_desc that carries the agent identity.  Every
+ * accepted transition emits one airy_agent_state_change event from the
+ * committed state value, so the traced stream cannot drift from the
+ * in-kernel state.  State names go out via airy_task_state_name().
  *
  * SSoT: docs/AirymaxOS/30-interfaces/10-sc-sched-extension.md §2
+ *       docs/AirymaxOS/90-observability/08-agent-tracing.md §7.1
  */
 
-#include <linux/printk.h>
 #include <linux/errno.h>
-#include <linux/bug.h>
+
 #include <linux/airymax/sched.h>
+
+#include <airymax/airy_task.h>
+
+#if IS_ENABLED(CONFIG_AIRY_AGENT_TRACING)
+#include <trace/events/airy.h>
+#endif
 
 /*
  * Agent lifecycle states are defined by the [SC] enum airy_agent_state
@@ -45,35 +54,26 @@ const char *airy_task_state_name(enum airy_agent_state state)
 	return airy_task_state_names[idx];
 }
 
-/* ─── State transition validation ──────────────────────────────────────
+/*
+ * ─── State transition validation ──────────────────────────────────────
  *
- * Legal transitions per SSoT 10-sc-sched-extension.md §2.2:
- *
- *   INACTIVE → SPAWNING  (fork)
- *   SPAWNING → READY     (exec complete)
- *   READY    → RUNNING   (scheduler picks)
- *   RUNNING  → BLOCKED   (IPC/IO wait)
- *   BLOCKED  → READY     (wakeup)
- *   RUNNING  → STOPPING  (Micro-Supervisor SIGSTOP, abnormal)
- *   BLOCKED  → STOPPING  (Micro-Supervisor SIGSTOP, abnormal)
- *   STOPPING → STOPPED   (SIGSTOP takes effect)
- *   STOPPED  → READY     (SIGCONT, adjudicated recovery)
- *   STOPPED  → DEAD      (adjudicated termination)
- *   RUNNING  → DEAD      (kill SIGKILL, fatal)
- *   DEAD     → INACTIVE  (waitpid, recycling)
- *
- * DEAD is terminal for in-flight agents until reaped; INACTIVE is the
- * recycle point (the same agent_id slot may be reused for a new fork).
+ * The legal transition table lives in SSoT 10-sc-sched-extension.md §2.2
+ * and is enforced per target state below.  DEAD is terminal for in-flight
+ * agents until reaped; INACTIVE is the recycle point, so the same agent_id
+ * slot may be reused by a new fork.
  */
-int airy_task_state_transition(enum airy_agent_state *state,
-			       enum airy_agent_state next)
+int airy_task_state_transition(struct airy_task_desc *desc,
+			       enum airy_agent_state next,
+			       enum airy_trace_reason reason)
 {
 	enum airy_agent_state cur;
 
-	if (!state)
+	if (!airy_task_desc_valid(desc))
 		return -EINVAL;
 
-	cur = *state;
+	cur = (enum airy_agent_state)desc->state;
+	if (cur >= AIRY_AGENT_STATE_MAX || reason >= AIRY_TRACE_REASON_MAX)
+		return -EINVAL;
 
 	/* DEAD is terminal — only transition is reaping to INACTIVE. */
 	if (cur == AIRY_AGENT_DEAD && next != AIRY_AGENT_INACTIVE)
@@ -132,9 +132,13 @@ int airy_task_state_transition(enum airy_agent_state *state,
 			return -EINVAL;
 		break;
 	default:
+		/* AIRY_AGENT_STATE_MAX is not a state. */
 		return -EINVAL;
 	}
 
-	*state = next;
+	desc->state = next;
+#if IS_ENABLED(CONFIG_AIRY_AGENT_TRACING)
+	trace_airy_agent_state_change(desc->agent_id, cur, next, reason);
+#endif
 	return 0;
 }

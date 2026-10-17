@@ -5,7 +5,7 @@
  * airy_task_desc.c — Airymax task descriptor initialisation.
  *
  * Provides airy_task_desc_init() for struct airy_task_desc (defined in
- * the [SC] <airymax/sched.h> header).  The descriptor carries the
+ * the [SC] <linux/airymax/sched.h> header).  The descriptor carries the
  * AIRY_TASK_MAGIC (0x41475453, 'AGTS') sentinel so that corrupted or
  * uninitialised descriptors can be detected at runtime.
  */
@@ -14,6 +14,8 @@
 #include <linux/errno.h>
 #include <linux/string.h>
 #include <linux/airymax/sched.h>
+
+#include <airymax/airy_task.h>
 
 /* ─── Descriptor initialisation ──────────────────────────────────────── */
 int airy_task_desc_init(struct airy_task_desc *desc)
