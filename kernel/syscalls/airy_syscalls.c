@@ -32,6 +32,7 @@
 #include <airymax/airy_agent.h>
 
 #include "../../security/airy/airy_cap.h"
+#include "../corekern/ipc/airy_ipc_check.h"
 #include "airy_invoke.h"
 #include "airy_clt.h"
 #include "airy_rovol.h"
@@ -41,53 +42,15 @@
  * airy_invoke_hdr_check — validate the fixed 128-byte IPC message header.
  * @hdr: Kernel-resident copy of the caller message header.
  *
- * Applies the [SC] Layout C v4 field contract (C-S1 magic, C-S3 payload_len,
- * C-S10 flags, C-S4 reserved) and returns the [SC] AIRY_EIPC_* magnitude that
- * 07-ipc-fastpath.md §3.1 assigns to whichever check fails. The opcode is
- * intentionally left to airy_invoke_op_valid() so the dispatchable set has
- * one definition. See airy_invoke.h for the full contract.
+ * The [SC] Layout C v4 field contract is shared with the io_uring data
+ * plane and implemented once in corekern/ipc; this entry point keeps the
+ * syscall-visible name for the 548 callers and delegates to it. The
+ * opcode is intentionally left to airy_invoke_op_valid() so the
+ * dispatchable set has one definition. See airy_invoke.h for the contract.
  */
 __must_check int airy_invoke_hdr_check(const struct airy_ipc_msg_hdr *hdr)
 {
-	unsigned int i;
-
-	if (unlikely(!hdr))
-		return -EINVAL;
-
-	/* C-S1: the buffer must announce itself as a Layout C v4 header. */
-	if (unlikely(hdr->magic != AIRY_IPC_MAGIC))
-		return -AIRY_EIPC_MAGIC;
-
-	/*
-	 * C-S3: payload_len must fit under the [SC] ceiling. A larger value
-	 * can never map onto a legal frame, so it is rejected here rather than
-	 * left for the copy-in of the data plane to choke on.
-	 */
-	if (unlikely(hdr->payload_len > AIRY_IPC_MAX_PAYLOAD))
-		return -AIRY_EIPC_PAYLOAD;
-
-	/* C-S10: reserved flag bits (5-15) are contractually zero. */
-	if (unlikely(hdr->flags & AIRY_IPC_FLAG_RESERVED))
-		return -AIRY_EIPC_FLAGS;
-
-	/*
-	 * C-S10: ENCRYPT/COMPRESS are declared in the [SC] header for forward
-	 * ABI stability, but no v1.0.1 code path produces or consumes them.
-	 * Accepting a message that sets either would let a caller assert a
-	 * confidentiality/compression property the kernel never applies, so
-	 * they are rejected as unsupported rather than silently ignored.
-	 */
-	if (unlikely(hdr->flags & (AIRY_IPC_FLAG_ENCRYPT |
-				   AIRY_IPC_FLAG_COMPRESS)))
-		return -AIRY_EIPC_NOTSUPP;
-
-	/* C-S4: reserved[72] is a closed contract and must be all zero. */
-	for (i = 0; i < sizeof(hdr->reserved); i++) {
-		if (unlikely(hdr->reserved[i]))
-			return -AIRY_EIPC_RESERVED;
-	}
-
-	return AIRY_EOK;
+	return airy_ipc_hdr_ok(hdr);
 }
 
 /*
