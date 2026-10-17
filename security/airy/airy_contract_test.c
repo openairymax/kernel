@@ -19,6 +19,7 @@
 
 #include <linux/airymax/ipc.h>
 #include <linux/airymax/log_types.h>
+#include <linux/airymax/sched.h>
 
 #include <airymax/airy_contract.h>
 
@@ -99,6 +100,25 @@ static void airy_log_layout(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 5, (int)AIRY_LOG_LEVEL_MAX);
 }
 
+static void airy_task_chk(struct kunit *test)
+{
+	/*
+	 * taskflow and the sched_tac backend address the descriptor by
+	 * offset, not by field name. Size, alignment and every offset that
+	 * carries identity or lifecycle state must match the [SC] contract.
+	 */
+	KUNIT_EXPECT_EQ(test, 64, (int)sizeof(struct airy_task_desc));
+	KUNIT_EXPECT_EQ(test, 64, (int)_Alignof(struct airy_task_desc));
+	KUNIT_EXPECT_EQ(test, 0, (int)offsetof(struct airy_task_desc, magic));
+	KUNIT_EXPECT_EQ(test, 4, (int)offsetof(struct airy_task_desc, prio));
+	KUNIT_EXPECT_EQ(test, 32, (int)offsetof(struct airy_task_desc, vtime));
+	KUNIT_EXPECT_EQ(test, 48, (int)offsetof(struct airy_task_desc, state));
+	KUNIT_EXPECT_EQ(test, 0x41475453, (int)AIRY_TASK_MAGIC);
+	KUNIT_EXPECT_EQ(test, 139, AIRY_PRIO_MAX);
+	KUNIT_EXPECT_EQ(test, 8, (int)AIRY_AGENT_STATE_MAX);
+	KUNIT_EXPECT_EQ(test, 0x08, (int)AIRY_SCHED_OP_MAX);
+}
+
 static struct kunit_case airy_contract_cases[] = {
 	KUNIT_CASE(airy_contract_accept_test),
 	KUNIT_CASE(airy_contract_abi_version_test),
@@ -106,6 +126,7 @@ static struct kunit_case airy_contract_cases[] = {
 	KUNIT_CASE(airy_contract_badge_tiling_test),
 	KUNIT_CASE(airy_contract_blob_capacity_test),
 	KUNIT_CASE(airy_log_layout),
+	KUNIT_CASE(airy_task_chk),
 	{}
 };
 

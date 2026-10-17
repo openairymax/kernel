@@ -31,6 +31,7 @@
 #include <linux/airymax/lsm_types.h>
 #include <linux/airymax/cognition_types.h>
 #include <linux/airymax/log_types.h>
+#include <linux/airymax/sched.h>
 
 /* 契约 ABI 版本快照：Layout C v4（对齐 ipc.h 文件头注释与 07-ipc-fastpath.md §5.7）。 */
 #define AIRY_CONTRACT_ABI_VERSION	4
@@ -175,6 +176,68 @@ static_assert(AIRY_LOG_MAGIC == 0x414C4F47,
 static_assert(AIRY_LOG_DEBUG == 0, "log level DEBUG must stay 0");
 static_assert(AIRY_LOG_FATAL == 4, "log level FATAL must stay 4");
 static_assert(AIRY_LOG_LEVEL_MAX == 5, "log level space must stay 5 entries");
+
+/* ─── 任务描述符：生命周期与调度共用布局 ────────
+ * taskflow 按偏移直接读写 desc 的 magic/prio/vtime/state；
+ * syscall 550 的 sched_tac 后端（M3）与用户态 SDK 共享该契约。
+ * 字段偏移漂移会让双方对同一块内存解释出不同的 agent 身份。
+ */
+static_assert(sizeof(struct airy_task_desc) == 64,
+	      "airy_task_desc must stay 64 bytes");
+static_assert(offsetof(struct airy_task_desc, magic) == 0,
+	      "airy_task_desc magic offset must stay 0");
+static_assert(offsetof(struct airy_task_desc, prio) == 4,
+	      "airy_task_desc prio offset must stay 4");
+static_assert(offsetof(struct airy_task_desc, runtime_ns) == 8,
+	      "airy_task_desc runtime_ns offset must stay 8");
+static_assert(offsetof(struct airy_task_desc, deadline_ns) == 16,
+	      "airy_task_desc deadline_ns offset must stay 16");
+static_assert(offsetof(struct airy_task_desc, period_ns) == 24,
+	      "airy_task_desc period_ns offset must stay 24");
+static_assert(offsetof(struct airy_task_desc, vtime) == 32,
+	      "airy_task_desc vtime offset must stay 32");
+static_assert(offsetof(struct airy_task_desc, agent_id) == 36,
+	      "airy_task_desc agent_id offset must stay 36");
+static_assert(offsetof(struct airy_task_desc, sched_policy) == 40,
+	      "airy_task_desc sched_policy offset must stay 40");
+static_assert(offsetof(struct airy_task_desc, weight) == 44,
+	      "airy_task_desc weight offset must stay 44");
+static_assert(offsetof(struct airy_task_desc, state) == 48,
+	      "airy_task_desc state offset must stay 48");
+static_assert(offsetof(struct airy_task_desc, _reserved) == 52,
+	      "airy_task_desc reserved offset must stay 52");
+static_assert(_Alignof(struct airy_task_desc) == 64,
+	      "airy_task_desc must stay cacheline-aligned");
+static_assert(AIRY_TASK_MAGIC == 0x41475453u,
+	      "task descriptor magic must stay 'AGTS'");
+
+/* ─── 调度参数域：优先级、权重、vtime ──────
+ * 优先级上界 139 是 Linux 原生 [0,139] 区间的终点；权重上限
+ * 10000 是 EEVDF load_weight 的标度；vtime 以 Q16.16 定点表示，
+ * 三者的取值域一旦漂移，调度换算会静默越界。
+ */
+static_assert(AIRY_PRIO_MIN == 0, "priority floor must stay 0");
+static_assert(AIRY_PRIO_MAX == 139, "priority ceiling must stay 139");
+static_assert(AIRY_WEIGHT_MIN == 1, "EEVDF weight floor must stay 1");
+static_assert(AIRY_WEIGHT_MAX == 10000, "EEVDF weight ceiling must stay 10000");
+static_assert(AIRY_VTIME_ONE == 65536, "vtime must stay Q16.16 fixed-point");
+
+/* ─── agent 状态空间与 sched 操作码 ───────────
+ * 8 态是生命周期状态机的完整定义域：状态名表、状态迁移表与
+ * trace 事件都按该上界索引。操作码 0x01..0x07 是 syscall 550
+ * 的合法域，0 与 >=MAX 一律在分发前拒绝。
+ */
+static_assert(AIRY_AGENT_INACTIVE == 0, "agent state INACTIVE must stay 0");
+static_assert(AIRY_AGENT_DEAD == 7, "agent state DEAD must stay 7");
+static_assert(AIRY_AGENT_STATE_MAX == 8, "agent state space must stay 8 entries");
+static_assert(AIRY_SCHED_SET_POLICY == 0x01,
+	      "sched op SET_POLICY must stay 0x01");
+static_assert(AIRY_SCHED_YIELD == 0x07, "sched op YIELD must stay 0x07");
+static_assert(AIRY_SCHED_OP_MAX == 0x08, "sched op space must stay 0x08");
+static_assert(AIRY_SCHED_POLICY_DEADLINE == 1,
+	      "sched policy space must start at 1");
+static_assert(AIRY_SCHED_POLICY_BESTEFFORT == 4,
+	      "sched policy space must end at 4");
 
 /* ─── syscall 号段（548-551 核心 + 552-571 预留） ──────────────────────
  * 号段是 ABI；arch 接线（A-30..A-36）与用户态 SDK 都以此为唯一权威。

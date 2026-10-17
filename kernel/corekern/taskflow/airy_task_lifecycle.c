@@ -17,6 +17,8 @@
  */
 
 #include <linux/errno.h>
+#include <linux/array_size.h>
+#include <linux/build_bug.h>
 
 #include <linux/airymax/sched.h>
 
@@ -43,6 +45,14 @@ static const char * const airy_task_state_names[] = {
 	[AIRY_AGENT_STOPPED]  = "STOPPED",
 	[AIRY_AGENT_DEAD]     = "DEAD",
 };
+
+/*
+ * The name table is indexed by the [SC] enum after a single range check,
+ * so a state added to sched.h without a matching name here would return
+ * NULL from airy_task_state_name() instead of a traceable label.
+ */
+static_assert(ARRAY_SIZE(airy_task_state_names) == AIRY_AGENT_STATE_MAX,
+	      "task state name table must cover every [SC] agent state");
 
 /* ─── State name lookup ──────────────────────────────────────────────── */
 const char *airy_task_state_name(enum airy_agent_state state)

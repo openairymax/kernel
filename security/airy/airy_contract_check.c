@@ -29,6 +29,7 @@
 #include <linux/airymax/lsm_types.h>
 #include <linux/airymax/cognition_types.h>
 #include <linux/airymax/log_types.h>
+#include <linux/airymax/sched.h>
 
 #include <airymax/airy_contract.h>
 
@@ -115,6 +116,24 @@ static const struct airy_contract_entry airy_contract_table[] = {
 		offsetof(struct airy_log_record, reserved)),
 	AIRY_CE("log_record.align", 64, _Alignof(struct airy_log_record)),
 	AIRY_CE("log_record.levels", 5, AIRY_LOG_LEVEL_MAX),
+	AIRY_CE("task_desc.size", 64, sizeof(struct airy_task_desc)),
+	AIRY_CE("task_desc.align", 64, _Alignof(struct airy_task_desc)),
+	AIRY_CE("task_desc.magic_off", 0,
+		offsetof(struct airy_task_desc, magic)),
+	AIRY_CE("task_desc.prio_off", 4,
+		offsetof(struct airy_task_desc, prio)),
+	AIRY_CE("task_desc.vtime_off", 32,
+		offsetof(struct airy_task_desc, vtime)),
+	AIRY_CE("task_desc.agent_id_off", 36,
+		offsetof(struct airy_task_desc, agent_id)),
+	AIRY_CE("task_desc.state_off", 48,
+		offsetof(struct airy_task_desc, state)),
+	AIRY_CE("task_desc.reserved_off", 52,
+		offsetof(struct airy_task_desc, _reserved)),
+	AIRY_CE("task_magic", 0x41475453, AIRY_TASK_MAGIC),
+	AIRY_CE("prio_max", 139, AIRY_PRIO_MAX),
+	AIRY_CE("agent_states", 8, AIRY_AGENT_STATE_MAX),
+	AIRY_CE("sched_ops", 0x08, AIRY_SCHED_OP_MAX),
 	AIRY_CE("cog.phase_percept", 0, AIRY_COG_PERCEPT),
 	AIRY_CE("cog.phase_think", 1, AIRY_COG_THINK),
 	AIRY_CE("cog.phase_act", 2, AIRY_COG_ACT),
