@@ -75,6 +75,17 @@ struct airy_cap_slot {
 
 #define AIRY_CAP_MAX_AGENTS     1024
 
+/* ─── sec_d Agent Id ──────────────────────────────────────────────────
+ *
+ * sec_d compiles every Badge and is the only legal destination of an
+ * AIRY_IPC_OP_CAP_REQUEST. Agent ids occupy [0, AIRY_CAP_MAX_AGENTS):
+ * 0 means unbound (a kernel thread, or a broadcast in the header) and 1
+ * is the management agent kept in degraded mode, so sec_d takes the last
+ * slot. macro_d's sequential allocator must never hand it to an ordinary
+ * agent, and tying the value to the table size keeps the two in step.
+ */
+#define AIRY_SEC_D_TASK_ID      ((__u64)AIRY_CAP_MAX_AGENTS - 1)
+
 /* ─── Capability Check Callback Signature ────────────────────────────── */
 /*
  * airy_capability_check(badge, required_perm, agent_id) -> airy_err_t

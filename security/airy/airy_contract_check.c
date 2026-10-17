@@ -96,6 +96,8 @@ static const struct airy_contract_entry airy_contract_table[] = {
 	AIRY_CE("inode_sec.owner_agent_off", 4,
 		offsetof(struct airy_inode_sec, owner_agent)),
 	AIRY_CE("cap_max_agents", 1024, AIRY_CAP_MAX_AGENTS),
+	AIRY_CE("sec_d_task_id", AIRY_CAP_MAX_AGENTS - 1,
+		AIRY_SEC_D_TASK_ID),
 	AIRY_CE("cog.phase_percept", 0, AIRY_COG_PERCEPT),
 	AIRY_CE("cog.phase_think", 1, AIRY_COG_THINK),
 	AIRY_CE("cog.phase_act", 2, AIRY_COG_ACT),

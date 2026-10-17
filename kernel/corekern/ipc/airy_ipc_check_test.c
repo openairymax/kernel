@@ -8,7 +8,9 @@
  * Each case pins one check of airy_ipc_hdr_ok(), airy_flags_ok() or
  * airy_ipc_validate() and the [SC] magnitude 07-ipc-fastpath.md §3.1
  * assigns to it, so a reordering or a relaxed field test is caught here
- * before either entry can accept a malformed header.
+ * before either entry can accept a malformed header. The C-S9 cases
+ * borrow one capability slot and restore it on exit, because the fold
+ * reads agent_caps[] rather than a parameter.
  */
 
 #include <kunit/test.h>
@@ -19,7 +21,51 @@
 #include <linux/airymax/error.h>
 #include <linux/airymax/ipc.h>
 
+#include "../../../security/airy/airy_cap.h"
+
 #include "airy_ipc_check.h"
+
+#define TEST_AGENT	1001u	/* capability slot borrowed per case */
+#define TEST_EPOCH	9u
+#define TEST_RANDTAG	0xA5A5F00Du
+
+struct check_fixture {
+	struct airy_cap_slot saved;
+};
+
+static int check_init(struct kunit *test)
+{
+	struct check_fixture *f;
+
+	f = kunit_kzalloc(test, sizeof(*f), GFP_KERNEL);
+	if (!f)
+		return -ENOMEM;
+
+	f->saved = agent_caps[TEST_AGENT];
+	agent_caps[TEST_AGENT].epoch = TEST_EPOCH;
+	agent_caps[TEST_AGENT].randtag = TEST_RANDTAG;
+	agent_caps[TEST_AGENT].perms = AIRY_CAP_PERM_SEND;
+	test->priv = f;
+
+	return 0;
+}
+
+static void check_exit(struct kunit *test)
+{
+	struct check_fixture *f = test->priv;
+
+	if (f)
+		agent_caps[TEST_AGENT] = f->saved;
+}
+
+static struct airy_ipc_msg_hdr valid_hdr(void)
+{
+	return (struct airy_ipc_msg_hdr){
+		.magic = AIRY_IPC_MAGIC,
+		.opcode = AIRY_IPC_OP_SEND,
+		.src_task = TEST_AGENT,
+	};
+}
 
 static void hdr_accept_test(struct kunit *test)
 {
@@ -181,6 +227,116 @@ static void validate_order_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, -AIRY_EIPC_FLAGS, airy_ipc_validate(&hdr));
 }
 
+static void cap_req_pass_test(struct kunit *test)
+{
+	struct airy_ipc_msg_hdr hdr = valid_hdr();
+
+	hdr.opcode = AIRY_IPC_OP_CAP_REQUEST;
+	hdr.dst_task = AIRY_SEC_D_TASK_ID;
+
+	/* Bootstrap carries no Badge and is legal only towards sec_d. */
+	KUNIT_EXPECT_EQ(test, AIRY_EOK, airy_ipc_validate(&hdr));
+}
+
+static void cap_req_bad_test(struct kunit *test)
+{
+	struct airy_ipc_msg_hdr hdr = valid_hdr();
+
+	hdr.opcode = AIRY_IPC_OP_CAP_REQUEST;
+	hdr.dst_task = 1;
+
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_BADGE, airy_ipc_validate(&hdr));
+}
+
+static void cap_carry_test(struct kunit *test)
+{
+	struct airy_ipc_msg_hdr hdr = valid_hdr();
+
+	/* A zero Badge may not claim to carry a capability. */
+	hdr.flags = AIRY_IPC_FLAG_CAP_CARRY;
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_BADGE, airy_ipc_validate(&hdr));
+}
+
+static void cap_absent_test(struct kunit *test)
+{
+	struct airy_ipc_msg_hdr hdr = valid_hdr();
+
+	/* H3/H6: no Badge is the agentrt and [DSL] shape, and it passes. */
+	KUNIT_EXPECT_EQ(test, AIRY_EOK, airy_ipc_validate(&hdr));
+}
+
+static void cap_epoch_test(struct kunit *test)
+{
+	struct airy_ipc_msg_hdr hdr = valid_hdr();
+
+	hdr.capability_badge = AIRY_BADGE_COMPILE(TEST_EPOCH - 1, TEST_RANDTAG,
+						  AIRY_CAP_PERM_SEND);
+
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_EPOCH, airy_ipc_validate(&hdr));
+}
+
+static void cap_forged_test(struct kunit *test)
+{
+	struct airy_ipc_msg_hdr hdr = valid_hdr();
+
+	hdr.capability_badge = AIRY_BADGE_COMPILE(TEST_EPOCH,
+						  TEST_RANDTAG ^ 1u,
+						  AIRY_CAP_PERM_SEND);
+
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_FORGED, airy_ipc_validate(&hdr));
+}
+
+static void cap_perm_test(struct kunit *test)
+{
+	struct airy_ipc_msg_hdr hdr = valid_hdr();
+
+	/* The Badge is authentic but does not cover the opcode. */
+	hdr.opcode = AIRY_IPC_OP_RECV;
+	hdr.capability_badge = AIRY_BADGE_COMPILE(TEST_EPOCH, TEST_RANDTAG,
+						  AIRY_CAP_PERM_SEND);
+
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_PERM, airy_ipc_validate(&hdr));
+}
+
+static void cap_perm_ok_test(struct kunit *test)
+{
+	struct airy_ipc_msg_hdr hdr = valid_hdr();
+
+	hdr.capability_badge = AIRY_BADGE_COMPILE(TEST_EPOCH, TEST_RANDTAG,
+						  AIRY_CAP_PERM_SEND);
+
+	KUNIT_EXPECT_EQ(test, AIRY_EOK, airy_ipc_validate(&hdr));
+}
+
+static void cap_range_test(struct kunit *test)
+{
+	struct airy_ipc_msg_hdr hdr = valid_hdr();
+
+	/* An id outside the table names no slot, so no Badge can match it. */
+	hdr.src_task = AIRY_CAP_MAX_AGENTS;
+	hdr.capability_badge = AIRY_BADGE_COMPILE(TEST_EPOCH, TEST_RANDTAG,
+						  AIRY_CAP_PERM_SEND);
+
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_MISSING, airy_ipc_validate(&hdr));
+}
+
+static void cap_order_test(struct kunit *test)
+{
+	struct airy_ipc_msg_hdr hdr = valid_hdr();
+
+	hdr.capability_badge = AIRY_BADGE_COMPILE(TEST_EPOCH,
+						  TEST_RANDTAG ^ 1u,
+						  AIRY_CAP_PERM_SEND);
+	hdr.flags = AIRY_IPC_FLAG_RESERVED;
+
+	/* C-S9 precedes C-S10. */
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_FORGED, airy_ipc_validate(&hdr));
+
+	/* C-S4 precedes C-S9, so a dirty reserved tail wins. */
+	hdr.reserved[0] = 1;
+	KUNIT_EXPECT_EQ(test, -AIRY_EIPC_RESERVED, airy_ipc_validate(&hdr));
+}
+
 static struct kunit_case airy_ipc_check_cases[] = {
 	KUNIT_CASE(hdr_accept_test),
 	KUNIT_CASE(hdr_magic_test),
@@ -194,11 +350,23 @@ static struct kunit_case airy_ipc_check_cases[] = {
 	KUNIT_CASE(flags_unsupp_test),
 	KUNIT_CASE(validate_accept_test),
 	KUNIT_CASE(validate_order_test),
+	KUNIT_CASE(cap_req_pass_test),
+	KUNIT_CASE(cap_req_bad_test),
+	KUNIT_CASE(cap_carry_test),
+	KUNIT_CASE(cap_absent_test),
+	KUNIT_CASE(cap_epoch_test),
+	KUNIT_CASE(cap_forged_test),
+	KUNIT_CASE(cap_perm_test),
+	KUNIT_CASE(cap_perm_ok_test),
+	KUNIT_CASE(cap_range_test),
+	KUNIT_CASE(cap_order_test),
 	{}
 };
 
 static struct kunit_suite airy_ipc_check_suite = {
 	.name = "airy_ipc_check",
+	.init = check_init,
+	.exit = check_exit,
 	.test_cases = airy_ipc_check_cases,
 };
 

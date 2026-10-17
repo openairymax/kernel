@@ -7,7 +7,8 @@
  * The io_uring data plane and syscall 548 consume the same 128-byte
  * header, so the field contract has exactly one implementation here.
  * airy_ipc_hdr_ok() covers the checks that depend only on the header;
- * airy_ipc_validate() adds the context gate the data plane needs.
+ * airy_ipc_validate() adds the context gate and the Badge checkpoint the
+ * data plane needs.
  *
  * SSoT: 30-interfaces/07-ipc-fastpath.md §3.1.
  */
@@ -59,10 +60,13 @@ __must_check int airy_flags_ok(const struct airy_ipc_msg_hdr *hdr);
  * airy_ipc_validate() - run the fastpath checks the header can decide
  * @hdr: Kernel-resident copy of the message header.
  *
- * Executes C-S1..C-S4, C-S8 and C-S10 in the order 07-ipc-fastpath.md
- * §3.1 fixes, so the first failing check is also the reported error.
- * The ring-bound checks (C-S0, C-S5..C-S7, C-S11, C-S12) stay with the
- * data-plane entry, which is the only caller that owns a ring.
+ * Executes C-S1..C-S4, C-S8, C-S9 and C-S10 in the order
+ * 07-ipc-fastpath.md §3.1 fixes, so the first failing check is also the
+ * reported error. C-S9 folds the Badge carried in the header against the
+ * sender's slot, so this entry belongs to the data plane alone: syscall
+ * 548 authenticates its Badge from a syscall argument and must not call
+ * it. The ring-bound checks (C-S0, C-S5..C-S7, C-S11, C-S12) stay with
+ * the data-plane entry, which is the only caller that owns a ring.
  *
  * Return: AIRY_EOK (0) on success; -EINVAL when @hdr is NULL; otherwise
  *         the negated [SC] AIRY_EIPC_* magnitude of the failing check.

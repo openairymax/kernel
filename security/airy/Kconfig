@@ -32,11 +32,14 @@ config AIRY_IPC
 
 config AIRY_COREKERN
 	bool "Airymax core-kernel enhancements (kernel/corekern)"
+	select AIRY_IPC
 	default n
 	help
 	  Airymax core-kernel subsystems: IPC fastpath, memory tiers,
 	  task lifecycle, locking, time, IRQ, object system. Selected
-	  automatically by SECURITY_AIRY.
+	  automatically by SECURITY_AIRY. The fastpath folds the header
+	  Badge against the capability table owned by AIRY_IPC, so that
+	  symbol is selected here as well.
 
 config AIRY_SYSCALL
 	bool "Airymax syscall surface (kernel/syscalls)"
