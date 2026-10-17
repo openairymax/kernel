@@ -22,18 +22,18 @@ obj-$(CONFIG_AIRY_KUNIT) += airy_invoke_test.o
 # airy_clt_query() defined in airy_clt.c.
 obj-$(CONFIG_AIRY_KUNIT) += airy_clt_test.o
 
-# KUnit regression for the syscall 549 MemoryRoVol entry: the op-space
-# classification of airy_rovol_kind() and the fail-closed split of
-# airy_rovol_serve() into -AIRY_EINVAL for an undefined op and the
-# -AIRY_ENOTSUP milestone M5 degradation for a recognised one.
+# KUnit regression for the syscall 549 MemoryRoVol entry: the
+# registry-backed op check of airy_rovol_serve() and its fail-closed
+# split into -AIRY_EINVAL for an undefined op and the -AIRY_ENOTSUP
+# milestone M5 degradation for a recognised one.
 # airy_rovol_test.c links against the non-static airy_rovol_serve()
 # defined in airy_rovol.c.
 obj-$(CONFIG_AIRY_KUNIT) += airy_rovol_test.o
 
-# KUnit regression for the syscall 550 sched_tac entry: the op-space
-# classification of airy_sched_kind() and the fail-closed split of
-# airy_sched_serve() into -AIRY_EINVAL for an undefined op and the
-# -AIRY_ENOTSUP milestone M3 degradation for a recognised one.
+# KUnit regression for the syscall 550 sched_tac entry: the
+# registry-backed op check of airy_sched_serve() and its fail-closed
+# split into -AIRY_EINVAL for an undefined op and the -AIRY_ENOTSUP
+# milestone M3 degradation for a recognised one.
 # airy_sched_test.c links against the non-static airy_sched_serve()
 # defined in airy_sched.c.
 obj-$(CONFIG_AIRY_KUNIT) += airy_sched_test.o
