@@ -14,6 +14,8 @@
 #ifndef _STC_POLICY_H
 #define _STC_POLICY_H
 
+#include <linux/types.h>
+
 #include <linux/airymax/sched.h>
 
 /* Forward declaration — full definition in <linux/sched.h> */
@@ -34,5 +36,10 @@ void stc_stats_record_dispatch(enum airy_sched_policy policy);
 int stc_stats_read(void);
 int stc_dispatch_enqueue(struct task_struct *tsk,
 			 enum airy_sched_policy policy);
+
+/* ─── Trace emission (stc_trace.c) ───────────────────────────────────── */
+bool stc_trace_on(void);
+void stc_emit_sched(u32 agent_id, u32 prev_state, u32 next_state,
+		    u32 sched_class, u64 latency_ns);
 
 #endif /* _STC_POLICY_H */

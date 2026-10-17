@@ -17,8 +17,11 @@
 #include <uapi/linux/sched/types.h>
 #include <linux/string.h>
 #include <linux/err.h>
+#include <linux/ktime.h>
 #include <linux/time.h>
 #include <linux/airymax/sched.h>
+
+#include <airymax/airy_agent.h>
 
 #include "stc_policy.h"
 
@@ -149,6 +152,9 @@ int stc_dispatch_enqueue(struct task_struct *tsk, enum airy_sched_policy policy)
 	int linux_policy;
 	int ret;
 	const char *stc_name;
+	u64 start = 0;
+	u32 prev_pol;
+	bool trace;
 
 	if (!tsk)
 		return -EINVAL;
@@ -179,7 +185,16 @@ int stc_dispatch_enqueue(struct task_struct *tsk, enum airy_sched_policy policy)
 	 * SCHED_DEADLINE requires sched_runtime/deadline/period (MCS mapping).
 	 * SCHED_FIFO requires sched_priority in [1, MAX_RT_PRIO-1].
 	 * SCHED_NORMAL/SCHED_BATCH expect sched_priority == 0.
+	 *
+	 * The class the task leaves is sampled before the call, the class
+	 * it enters is the requested one. Only a successful switch is
+	 * reported: a rejected attribute changed nothing.
 	 */
+	trace = stc_trace_on();
+	prev_pol = READ_ONCE(tsk->policy);
+	if (trace)
+		start = ktime_get_ns();
+
 	ret = sched_setattr(tsk, &attr);
 	if (ret) {
 		pr_warn_ratelimited("stc_dispatch: sched_setattr(%s) failed: %d (pid=%d)\n",
@@ -187,6 +202,11 @@ int stc_dispatch_enqueue(struct task_struct *tsk, enum airy_sched_policy policy)
 				    ret, tsk->pid);
 		return ret;
 	}
+
+	if (trace)
+		stc_emit_sched(airy_agent_id(tsk), prev_pol,
+			       (u32)linux_policy, pol,
+			       ktime_get_ns() - start);
 
 	return 0;
 }

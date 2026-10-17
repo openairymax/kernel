@@ -29,6 +29,8 @@
 #include <linux/airymax/security_types.h>
 #include <linux/airymax/error.h>
 
+#include <airymax/airy_agent.h>
+
 #include "../../security/airy/airy_cap.h"
 #include "airy_invoke.h"
 #include "airy_clt.h"
@@ -265,7 +267,6 @@ __must_check int airy_badge_revoke(const struct airy_ipc_msg_hdr *msg)
 __must_check int airy_invoke_dispatch(airy_cap_t cap,
 				      const struct airy_ipc_msg_hdr *msg)
 {
-	struct airy_task_sec *sec;
 	__u32 agent_id;
 	int ret;
 
@@ -279,8 +280,7 @@ __must_check int airy_invoke_dispatch(airy_cap_t cap,
 	if (unlikely(!airy_invoke_op_valid(msg->opcode)))
 		return -AIRY_EIPC_OPCODE;
 
-	sec = current->security + airy_blob_sizes.lbs_task;
-	agent_id = READ_ONCE(sec->agent_id);
+	agent_id = airy_agent_id(current);
 
 	ret = airy_cap_badge_ok(cap, agent_id,
 				airy_op_required_perms(msg->opcode));

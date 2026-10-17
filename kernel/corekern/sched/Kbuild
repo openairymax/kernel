@@ -2,7 +2,7 @@
 
 obj-y += airy_ck_sched.o
 
-airy_ck_sched-y := stc_policy.o stc_mcs_map.o stc_stats.o
+airy_ck_sched-y := stc_policy.o stc_mcs_map.o stc_stats.o stc_trace.o
 
 # P1-1 KUnit regression.  stc_dispatch_test.c #includes stc_dispatch.c to
 # reach the static stc_policy_to_linux/stc_build_attr helpers, so the

@@ -7,7 +7,10 @@
  * consumers parse them by offset, so they must not change between
  * releases. The events carry the [SC] numeric vocabulary (agent state,
  * reason, sched class) rather than a second copy of it, keeping the
- * traced value and the contract identical.
+ * traced value and the contract identical. The prev_state/next_state
+ * pair of airy_sched_switch is the documented exception: it holds the
+ * native SCHED_* class the task leaves and enters, the class the
+ * dispatcher actually applies.
  *
  * SSoT: 90-observability/05-debugfs-tracefs.md §7 (OS-KER-143);
  *       90-observability/08-agent-tracing.md §2.2, §7.2.

@@ -42,10 +42,11 @@ enum airy_trace_reason {
 };
 
 /*
- * The traced lifecycle is the [SC] one, not a private copy: event
- * fields carry the numeric values of enum airy_agent_state, so the
- * two representations must stay in lockstep (05-debugfs-tracefs.md
- * §7, "字段应对齐 [SC] sched.h enum airy_agent_state 8 态").
+ * The traced lifecycle is the [SC] one, not a private copy: lifecycle
+ * events carry the numeric values of enum airy_agent_state and sched
+ * events carry the [SC] sched_tac policy numbers, so the two
+ * representations must stay in lockstep (05-debugfs-tracefs.md §7,
+ * "字段应对齐 [SC] sched.h enum airy_agent_state 8 态").
  */
 _Static_assert(AIRY_AGENT_STATE_MAX == 8,
 	       "airy trace tracks the 8 [SC] agent lifecycle states");

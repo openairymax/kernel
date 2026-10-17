@@ -22,6 +22,8 @@
 #include <linux/airymax/error.h>
 #include <linux/airymax/ipc.h>
 
+#include <airymax/airy_agent.h>
+
 /* ─── Badge Field Macros ─────────────────────────────────────────────────
  * AIRY_BADGE_EPOCH/RANDTAG/PERMS 提取宏和 AIRY_BADGE_COMPILE 构造宏
  * 由 <linux/airymax/ipc.h> 统一定义（[SC] 单一宿主原则）。
@@ -61,9 +63,6 @@ static inline unsigned int airy_cap_bucket(__u32 agent_id)
 {
 	return agent_id & AIRY_CAP_BUCKET_MASK;
 }
-
-/* ─── LSM Blob Sizes ──────────────────────────────────────────────────── */
-extern struct lsm_blob_sizes airy_blob_sizes;
 
 /* ─── Fastpath Inline: C-S9 Badge Validation (~10ns) ─────────────────── */
 /*
