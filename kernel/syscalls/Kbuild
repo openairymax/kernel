@@ -37,3 +37,12 @@ obj-$(CONFIG_AIRY_KUNIT) += airy_rovol_test.o
 # airy_sched_test.c links against the non-static airy_sched_serve()
 # defined in airy_sched.c.
 obj-$(CONFIG_AIRY_KUNIT) += airy_sched_test.o
+
+# KUnit regression for the core syscall registry: the immutable and
+# ascending 548-551 number block, the argument counts and operation
+# sources each descriptor publishes, the half-open operation interval
+# airy_op_check() enforces with its refusal magnitude, and the version
+# negotiation verdict matrix (SSoT §8.2, §13.1).
+# airy_sysabi_test.c links against the non-static airy_desc_find(),
+# airy_op_check() and airy_abi_verdict() defined in airy_sysabi.c.
+obj-$(CONFIG_AIRY_KUNIT) += airy_sysabi_test.o
