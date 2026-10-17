@@ -13,7 +13,8 @@ airy-y := airy_cap_array.o \
 	  airy_superv_lsm.o \
 	  airy_ipc_freeze.o \
 	  airy_die_notify.o \
-	  airy_eventfd.o
+	  airy_eventfd.o \
+	  airy_probe.o
 
 # P1-4/P1-10 KUnit regressions.  airy_lsm_test.c #includes airy_lsm.c to
 # reach the static task_kill/file_open hooks, so the standalone airy_lsm.o

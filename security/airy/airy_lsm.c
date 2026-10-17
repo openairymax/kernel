@@ -28,6 +28,7 @@
 #include <airymax/airy_trace.h>
 
 #include "airy_cap.h"
+#include "airy_probe.h"
 
 /* ─── Module parameter ─────────────────────────────────────────────────── */
 static bool airy_enabled __ro_after_init = true;
@@ -215,6 +216,14 @@ static int __init airy_init(void)
 	if (rc)
 		return rc;
 #endif
+
+	/*
+	 * Publish the agentrt presence marker last: its existence is the
+	 * runtime's proof that every previous init step succeeded.
+	 */
+	rc = airy_probe_init();
+	if (rc)
+		return rc;
 
 	pr_info("airy: Airymax Pure-C LSM initialised\n");
 	return 0;
