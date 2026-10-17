@@ -13,8 +13,12 @@
 #ifndef _AIRY_IPC_INTERNAL_H
 #define _AIRY_IPC_INTERNAL_H
 
-#include <linux/types.h>
+#include <linux/cache.h>
 #include <linux/compiler.h>
+#include <linux/kfifo.h>
+#include <linux/percpu.h>
+#include <linux/types.h>
+#include <linux/wait.h>
 
 #include <linux/airymax/ipc.h>
 
@@ -81,6 +85,70 @@ int airy_ipc_ring_consume(struct airy_ipc_ring *ring,
 int airy_ipc_cancel_badged_sends(struct airy_ipc_ring *ring, __u64 badge);
 int airy_ipc_ring_depth_stats(struct airy_ipc_ring *ring,
 			      struct airy_ipc_ring_depth *out);
+
+/* ─── kthread mailbox (per-CPU kfifo) ──────────────── */
+/* Water marks, in percent of capacity (docs 07-ipc-fastpath §6.4). */
+#define AIRY_IPC_KFIFO_LO_WMARK		25
+#define AIRY_IPC_KFIFO_MID_WMARK	50
+#define AIRY_IPC_KFIFO_HI_WMARK		75
+#define AIRY_IPC_KFIFO_MAX_ENTRIES	65536
+
+/**
+ * struct airy_ipc_stats - per-CPU IPC fastpath counters.
+ * @fast_send_hit:    headers enqueued on the fastpath.
+ * @fast_recv_hit:    headers dequeued on the fastpath.
+ * @slow_send_hit:    sends that degraded to the slowpath.
+ * @slow_recv_hit:    receives that degraded to the slowpath.
+ * @batch_hit:        batches delivered through the fastpath.
+ * @cancel_hit:       sends cancelled before delivery.
+ * @error_hit:        fastpath attempts rejected with an error.
+ * @backpressure_hit: sends deferred by the high-water mark.
+ *
+ * One instance per possible CPU, summed on read (docs 07-ipc-fastpath
+ * §9.2).
+ */
+struct airy_ipc_stats {
+	u64	fast_send_hit;
+	u64	fast_recv_hit;
+	u64	slow_send_hit;
+	u64	slow_recv_hit;
+	u64	batch_hit;
+	u64	cancel_hit;
+	u64	error_hit;
+	u64	backpressure_hit;
+} ____cacheline_aligned;
+
+DECLARE_PER_CPU(struct airy_ipc_stats, airy_ipc_stats_cpu);
+
+/**
+ * struct airy_ipc_kfifo - lock-free mailbox of one CPU's kthread.
+ * @fifo:      SPSC ring of message headers.
+ * @recv_wq:   wait queue the consumer blocks on.
+ * @water_mark: last sampled occupancy, in headers.
+ * @home_cpu:  CPU owning the mailbox, or AIRY_IPC_CPU_ANY.
+ * @stats:     per-CPU counter block, shared by every mailbox.
+ *
+ * The producer is the sending CPU's fastpath, the consumer is the
+ * mailbox owner; C-S5 keeps them on the same CPU so the ring needs no
+ * lock (docs 07-ipc-fastpath §6.1-6.3).
+ */
+struct airy_ipc_kfifo {
+	DECLARE_KFIFO_PTR(fifo, struct airy_ipc_msg_hdr)
+			____cacheline_aligned_in_smp;
+	wait_queue_head_t	recv_wq;
+	unsigned long		water_mark;
+	int			home_cpu;
+	struct airy_ipc_stats __percpu *stats;
+};
+
+int airy_ipc_kfifo_init(struct airy_ipc_kfifo *kf, int cpu, u32 entries);
+void airy_ipc_kfifo_exit(struct airy_ipc_kfifo *kf);
+struct airy_ipc_kfifo *airy_ipc_kfifo_cpu(int cpu);
+int airy_ipc_kfifo_send(struct airy_ipc_kfifo *kf,
+			const struct airy_ipc_msg_hdr *hdr);
+int airy_ipc_kfifo_recv(struct airy_ipc_kfifo *kf,
+			struct airy_ipc_msg_hdr *out);
+void airy_ipc_stats_read(struct airy_ipc_stats *out);
 
 /* ─── Fastpath ──────────────────────────────────────────────────────── */
 int airy_ipc_fastpath_send(struct airy_ipc_ring *ring,

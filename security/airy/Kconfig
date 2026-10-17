@@ -78,6 +78,17 @@ config AIRY_CAP_TABLE_SIZE
 	  Number of capability slots in the global agent capability table.
 	  Each slot is 64 bytes. Total memory = AIRY_CAP_TABLE_SIZE * 64.
 
+config AIRY_IPC_KFIFO_SIZE
+	int "Airymax per-CPU IPC kthread mailbox depth"
+	depends on AIRY_IPC
+	default 4096
+	range 64 65536
+	help
+	  Number of 128-byte message headers held by each CPU's lock-free
+	  kthread mailbox (docs 07-ipc-fastpath §6.1).  Memory per CPU is
+	  128 bytes times this value, so the default reserves 512 KiB per
+	  CPU.  Values that are not a power of two are rounded up.
+
 config AIRY_KUNIT
 	bool "Airy KUnit regression tests" if !KUNIT_ALL_TESTS
 	depends on KUNIT
