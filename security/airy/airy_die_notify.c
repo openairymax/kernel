@@ -12,11 +12,17 @@
 
 #include <linux/notifier.h>
 #include <linux/kdebug.h>
+#include <linux/ktime.h>
 #include <linux/lsm_hooks.h>
 #include <linux/sched.h>
 #include <linux/airymax/error.h>
 
 #include "airy_cap.h"
+
+#if IS_ENABLED(CONFIG_AIRY_AGENT_TRACING)
+#include <airymax/airy_trace.h>
+#include <trace/events/airy.h>
+#endif
 
 /* ─── Airy Security Fault Notifier Chain ──────────────────────────────── */
 /*
@@ -114,8 +120,14 @@ static int airy_die_notifier(struct notifier_block *nb, unsigned long val,
 	 * cascading failures from propagating through IPC channels.
 	 */
 	ring = airy_ipc_ring_for_task(task);
-	if (ring)
+	if (ring) {
 		airy_ipc_freeze_ring(ring, fault_code);
+#if IS_ENABLED(CONFIG_AIRY_AGENT_TRACING)
+		trace_airy_superv_enforce(agent_id,
+					  AIRY_SUPERV_ACTION_FREEZE,
+					  fault_code);
+#endif
+	}
 
 	/*
 	 * C-S7.3: Signal the fault event to the Macro-Supervisor

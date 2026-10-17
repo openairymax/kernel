@@ -42,6 +42,16 @@ enum airy_trace_reason {
 };
 
 /*
+ * Enforcement action codes carried by airy_superv_enforce. Only actions
+ * the kernel actually applies are listed; the action is recorded next
+ * to the AIRY_FAULT_* code that triggered it.
+ */
+enum airy_superv_action {
+	AIRY_SUPERV_ACTION_FREEZE = 1,	/* IPC ring frozen on a fatal fault */
+	AIRY_SUPERV_ACTION_MAX
+};
+
+/*
  * The traced lifecycle is the [SC] one, not a private copy: lifecycle
  * events carry the numeric values of enum airy_agent_state and sched
  * events carry the [SC] sched_tac policy numbers, so the two
