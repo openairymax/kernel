@@ -17,8 +17,10 @@
 #include <linux/types.h>
 
 #include <linux/airymax/error.h>
+#include <linux/airymax/syscalls.h>
 
 #include "airy_sched.h"
+#include "airy_sysabi.h"
 
 /* ─── Syscall 550 entry policy ────────────────────────────────────────── */
 
@@ -26,7 +28,7 @@
  * airy_sched_serve - Serve the op half of syscall 550.
  * @op: sched_tac operation code.
  *
- * Classifies @op before anything else, so a value outside the [SC]
+ * Validates @op before anything else, so a value outside the [SC]
  * airy_sched_op space is refused with -AIRY_EINVAL and never mistaken
  * for a recognised-but-unbuilt operation. A defined op reaches the
  * second answer: -AIRY_ENOTSUP, because the backend it names is a
@@ -40,7 +42,7 @@
  */
 __must_check int airy_sched_serve(__u32 op)
 {
-	if (unlikely(airy_sched_kind(op) == AIRY_SCHED_CLASS_INVALID))
+	if (unlikely(airy_op_check(AIRY_SYS_SCHED_CTL, op)))
 		return -AIRY_EINVAL;
 
 	return -AIRY_ENOTSUP;

@@ -24,37 +24,6 @@
 
 #include "airy_rovol.h"
 
-static void airy_rovol_kind_accept_test(struct kunit *test)
-{
-	__u32 op;
-
-	/*
-	 * Every defined [SC] operation is recognised. Scanning the space
-	 * keeps airy_rovol_kind() and the enum in step as it grows, and
-	 * pins the lower bound: AIRY_ROVOL_SNAPSHOT is a live op, not a
-	 * reserved zero.
-	 */
-	for (op = AIRY_ROVOL_SNAPSHOT;
-	     op < (__u32)AIRY_ROVOL_OP_MAX; op++)
-		KUNIT_ASSERT_EQ_MSG(test, AIRY_ROVOL_CLASS_OP,
-				    airy_rovol_kind(op),
-				    "op %u not classified OP", op);
-}
-
-static void airy_rovol_kind_reject_test(struct kunit *test)
-{
-	/* Zero sits below the first op, so it is a contract violation. */
-	KUNIT_EXPECT_EQ(test, AIRY_ROVOL_CLASS_INVALID,
-			airy_rovol_kind(0));
-	/* The enum's exclusive ceiling is not itself an operation. */
-	KUNIT_EXPECT_EQ(test, AIRY_ROVOL_CLASS_INVALID,
-			airy_rovol_kind(AIRY_ROVOL_OP_MAX));
-	KUNIT_EXPECT_EQ(test, AIRY_ROVOL_CLASS_INVALID,
-			airy_rovol_kind(AIRY_ROVOL_OP_MAX + 1u));
-	KUNIT_EXPECT_EQ(test, AIRY_ROVOL_CLASS_INVALID,
-			airy_rovol_kind(0xffffffffu));
-}
-
 static void airy_rovol_serve_degraded_test(struct kunit *test)
 {
 	__u32 op;
@@ -104,8 +73,6 @@ static void airy_rovol_serve_priority_test(struct kunit *test)
 }
 
 static struct kunit_case airy_rovol_cases[] = {
-	KUNIT_CASE(airy_rovol_kind_accept_test),
-	KUNIT_CASE(airy_rovol_kind_reject_test),
 	KUNIT_CASE(airy_rovol_serve_degraded_test),
 	KUNIT_CASE(airy_rovol_serve_invalid_test),
 	KUNIT_CASE(airy_rovol_serve_priority_test),

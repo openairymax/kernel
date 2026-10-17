@@ -80,16 +80,13 @@ static void airy_clt_phase_accept_test(struct kunit *test)
 	unsigned int phase;
 
 	/*
-	 * Every [SC] phase round-trips, and the classifier agrees the value
-	 * belongs to the phase half of the 551 argument. Scanning the space
-	 * keeps the record and airy_clt_kind() in step as the enum grows.
+	 * Every [SC] phase round-trips. Scanning the space keeps the
+	 * record and the AIRY_COG_PHASE_MAX ceiling in step as the enum
+	 * grows.
 	 */
 	for (phase = 0; phase < AIRY_COG_PHASE_MAX; phase++) {
 		__u32 out = AIRY_CLT_PHASE_UNSET;
 
-		KUNIT_ASSERT_EQ_MSG(test, AIRY_CLT_CLASS_PHASE,
-				    airy_clt_kind(phase),
-				    "phase %u not classified PHASE", phase);
 		KUNIT_ASSERT_EQ_MSG(test, AIRY_EOK,
 				    airy_clt_notify(AIRY_CLT_TEST_AGENT, phase),
 				    "phase %u refused", phase);
@@ -120,17 +117,6 @@ static void airy_clt_phase_order_free_test(struct kunit *test)
 	KUNIT_ASSERT_EQ(test, AIRY_EOK,
 			airy_clt_query(AIRY_CLT_TEST_AGENT, &out));
 	KUNIT_EXPECT_EQ(test, AIRY_COG_PERCEPT, out);
-}
-
-static void airy_clt_reserved_kind_test(struct kunit *test)
-{
-	/* The kthread-class space module F owns is never a phase. */
-	KUNIT_EXPECT_EQ(test, AIRY_CLT_CLASS_RESERVED,
-			airy_clt_kind(AIRY_COG_PHASE_MAX));
-	KUNIT_EXPECT_EQ(test, AIRY_CLT_CLASS_RESERVED,
-			airy_clt_kind(AIRY_COG_PHASE_MAX + 1u));
-	KUNIT_EXPECT_EQ(test, AIRY_CLT_CLASS_RESERVED,
-			airy_clt_kind(0xffffffffu));
 }
 
 static void airy_clt_notify_reject_test(struct kunit *test)
@@ -238,7 +224,6 @@ static struct kunit_case airy_clt_cases[] = {
 	KUNIT_CASE(airy_clt_initial_unset_test),
 	KUNIT_CASE(airy_clt_phase_accept_test),
 	KUNIT_CASE(airy_clt_phase_order_free_test),
-	KUNIT_CASE(airy_clt_reserved_kind_test),
 	KUNIT_CASE(airy_clt_notify_reject_test),
 	KUNIT_CASE(airy_clt_notify_last_agent_test),
 	KUNIT_CASE(airy_clt_query_reject_test),

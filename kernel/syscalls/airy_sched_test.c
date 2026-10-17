@@ -24,37 +24,6 @@
 
 #include "airy_sched.h"
 
-static void airy_sched_kind_accept_test(struct kunit *test)
-{
-	__u32 op;
-
-	/*
-	 * Every defined [SC] operation is recognised. Scanning the space
-	 * keeps airy_sched_kind() and the enum in step as it grows, and
-	 * pins the lower bound: AIRY_SCHED_SET_POLICY is a live op, not a
-	 * reserved zero.
-	 */
-	for (op = AIRY_SCHED_SET_POLICY;
-	     op < (__u32)AIRY_SCHED_OP_MAX; op++)
-		KUNIT_ASSERT_EQ_MSG(test, AIRY_SCHED_CLASS_OP,
-				    airy_sched_kind(op),
-				    "op %u not classified OP", op);
-}
-
-static void airy_sched_kind_reject_test(struct kunit *test)
-{
-	/* Zero sits below the first op, so it is a contract violation. */
-	KUNIT_EXPECT_EQ(test, AIRY_SCHED_CLASS_INVALID,
-			airy_sched_kind(0));
-	/* The enum's exclusive ceiling is not itself an operation. */
-	KUNIT_EXPECT_EQ(test, AIRY_SCHED_CLASS_INVALID,
-			airy_sched_kind(AIRY_SCHED_OP_MAX));
-	KUNIT_EXPECT_EQ(test, AIRY_SCHED_CLASS_INVALID,
-			airy_sched_kind(AIRY_SCHED_OP_MAX + 1u));
-	KUNIT_EXPECT_EQ(test, AIRY_SCHED_CLASS_INVALID,
-			airy_sched_kind(0xffffffffu));
-}
-
 static void airy_sched_serve_degraded_test(struct kunit *test)
 {
 	__u32 op;
@@ -105,8 +74,6 @@ static void airy_sched_serve_priority_test(struct kunit *test)
 }
 
 static struct kunit_case airy_sched_cases[] = {
-	KUNIT_CASE(airy_sched_kind_accept_test),
-	KUNIT_CASE(airy_sched_kind_reject_test),
 	KUNIT_CASE(airy_sched_serve_degraded_test),
 	KUNIT_CASE(airy_sched_serve_invalid_test),
 	KUNIT_CASE(airy_sched_serve_priority_test),

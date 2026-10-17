@@ -17,8 +17,10 @@
 #include <linux/types.h>
 
 #include <linux/airymax/error.h>
+#include <linux/airymax/syscalls.h>
 
 #include "airy_rovol.h"
+#include "airy_sysabi.h"
 
 /* ─── Syscall 549 entry policy ────────────────────────────────────────── */
 
@@ -26,7 +28,7 @@
  * airy_rovol_serve - Serve the op half of syscall 549.
  * @op: MemoryRoVol operation code.
  *
- * Classifies @op before anything else, so a value outside the [SC]
+ * Validates @op before anything else, so a value outside the [SC]
  * airy_rovol_op space is refused with -AIRY_EINVAL and never mistaken
  * for a recognised-but-unbuilt operation. A defined op reaches the
  * second answer: -AIRY_ENOTSUP, because the backend it names is a
@@ -40,7 +42,7 @@
  */
 __must_check int airy_rovol_serve(__u32 op)
 {
-	if (unlikely(airy_rovol_kind(op) == AIRY_ROVOL_CLASS_INVALID))
+	if (unlikely(airy_op_check(AIRY_SYS_ROVOL_CTL, op)))
 		return -AIRY_EINVAL;
 
 	return -AIRY_ENOTSUP;

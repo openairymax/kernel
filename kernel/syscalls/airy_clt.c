@@ -26,8 +26,10 @@
 
 #include <linux/airymax/error.h>
 #include <linux/airymax/lsm_types.h>
+#include <linux/airymax/syscalls.h>
 
 #include "airy_clt.h"
+#include "airy_sysabi.h"
 
 /* ─── Per-agent phase record ──────────────────────────────────────────── */
 
@@ -112,7 +114,7 @@ __must_check int airy_clt_query(int task_id, __u32 *phase)
  * @task_id: Target cognition agent identity.
  * @phase:   Unified 551 operation code.
  *
- * Classifies @phase before anything else, so a value reserved for the
+ * Validates @phase before anything else, so a value reserved for the
  * module F kthread (AIRY_COG_PHASE_MAX and upwards) is refused with
  * -AIRY_ECOG_PHASE without the phase table or the identity being
  * examined. Only a CoreLoopThree phase is handed to airy_clt_notify(),
@@ -123,8 +125,10 @@ __must_check int airy_clt_query(int task_id, __u32 *phase)
  */
 __must_check int airy_clt_serve(int task_id, __u32 phase)
 {
-	if (unlikely(airy_clt_kind(phase) == AIRY_CLT_CLASS_RESERVED))
-		return -AIRY_ECOG_PHASE;
+	int ret = airy_op_check(AIRY_SYS_CLT_NOTIFY, phase);
+
+	if (unlikely(ret))
+		return ret;
 
 	return airy_clt_notify(task_id, phase);
 }

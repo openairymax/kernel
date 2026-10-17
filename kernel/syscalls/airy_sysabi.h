@@ -2,28 +2,19 @@
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd.
  *
- * Syscall ABI registry for the four core agent-linux entry points in
- * the 548-571 window, plus the version negotiation rule that every
- * versioned parameter struct follows.
- *
- * The registry turns the entry points into data: how many arguments
- * each takes, which argument carries the operation code, and the
- * half-open range that code must fall in. Entry points 549, 550 and
- * 551 used to carry one hand-written range test each; describing the
- * ranges here gives them a single definition and lets KUnit inspect
- * the whole registry for duplicate numbers, gaps and drift against
- * the UAPI headers.
- *
- * Registry snapshot (SSoT: 07-syscall-registry.md §2-§4):
+ * Syscall ABI registry for the four core agent-linux entry points:
+ * one definition of their argument counts and operation ranges,
+ * shared by 549/550/551 instead of three hand-written tests.
  *
  *   548 airy_sys_call       2 args  op: msg->opcode  ipc.h
  *   549 airy_sys_rovol_ctl  3 args  op: arg 0        memory_types.h
  *   550 airy_sys_sched_ctl  3 args  op: arg 0        sched.h
  *   551 airy_sys_clt_notify 2 args  op: arg 1        cognition_types.h
  *
- * The operation space of 548 belongs to the IPC message header, not to
- * this registry. Its descriptor records that fact and leaves the
- * range test to the IPC plane.
+ * 548's operation space belongs to the IPC message header, not to this
+ * registry; its descriptor records that and leaves the test to IPC.
+ *
+ * SSoT: 07-syscall-registry.md §2-§4 (registry), §8.2 (version).
  */
 
 #ifndef _AIRY_SYSABI_H
@@ -102,7 +93,7 @@ const struct airy_sys_desc *airy_desc_find(u16 nr);
  * Return: AIRY_EOK when @op belongs to @nr; -AIRY_EINVAL when the
  *         registry cannot judge @nr; -@op_err otherwise.
  */
-__must_check int airy_op_check(u16 nr, u16 op);
+__must_check int airy_op_check(u16 nr, u32 op);
 
 /*
  * Version negotiation (SSoT: 07-syscall-registry.md §8.2). Every

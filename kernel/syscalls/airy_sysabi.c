@@ -92,7 +92,7 @@ const struct airy_sys_desc *airy_desc_find(u16 nr)
 	return NULL;
 }
 
-int airy_op_check(u16 nr, u16 op)
+int airy_op_check(u16 nr, u32 op)
 {
 	const struct airy_sys_desc *desc = airy_desc_find(nr);
 

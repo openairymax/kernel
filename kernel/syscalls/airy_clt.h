@@ -23,40 +23,6 @@
 
 #include <linux/airymax/cognition_types.h>
 
-/* Phase-op classification */
-/*
- * The `phase` argument of syscall 551 doubles as an operation code. Its
- * phase half is exactly the [SC] airy_cog_phase space; everything at or
- * above AIRY_COG_PHASE_MAX belongs to the kthread-class operations of
- * module F. Keeping the two halves explicit stops a future edit from
- * reading a reserved operation as merely "not yet implemented here".
- */
-enum airy_clt_class {
-	AIRY_CLT_CLASS_PHASE,
-	AIRY_CLT_CLASS_RESERVED,
-};
-
-/**
- * airy_clt_kind - classify the syscall 551 phase argument
- * @op: Value taken from the 551 `phase` argument.
- *
- * Pure classifier with no state and no dependency on current, so KUnit
- * drives it directly and the 551 entry uses it as its boundary check. It
- * is the single definition of which phase values 551 accepts.
- *
- * SSoT: 140-application-development/07-syscall-registry.md (op-dispatch).
- *
- * Return: AIRY_CLT_CLASS_PHASE when @op is a CoreLoopThree phase,
- *         AIRY_CLT_CLASS_RESERVED otherwise.
- */
-static inline enum airy_clt_class airy_clt_kind(__u32 op)
-{
-	if (op < AIRY_COG_PHASE_MAX)
-		return AIRY_CLT_CLASS_PHASE;
-
-	return AIRY_CLT_CLASS_RESERVED;
-}
-
 /* Phase record seeding */
 /*
  * Sentinel returned by airy_clt_query() for a task whose phase has never
@@ -74,11 +40,11 @@ static inline enum airy_clt_class airy_clt_kind(__u32 op)
  *
  * The single definition of the 551 entry decision, kept non-static so
  * KUnit drives it directly instead of through the syscall ABI. It
- * classifies @phase with airy_clt_kind() first — validation precedes
- * mutation — so the reserved kthread-class space is refused with
- * -AIRY_ECOG_PHASE, the [SC] magnitude for an invalid cognition phase,
- * before the identity is examined and the table is touched. Only a
- * CoreLoopThree phase reaches airy_clt_notify().
+ * validates @phase against the syscall registry (airy_op_check()), so
+ * the reserved kthread-class space is refused with -AIRY_ECOG_PHASE,
+ * the [SC] magnitude for an invalid cognition phase, before the
+ * identity is examined and the table is touched. Only a CoreLoopThree
+ * phase reaches airy_clt_notify().
  *
  * Return: AIRY_EOK on success; -AIRY_ECOG_PHASE when @phase is reserved
  *         for module F; otherwise what airy_clt_notify() returns.
@@ -91,9 +57,9 @@ __must_check int airy_clt_serve(int task_id, __u32 phase);
  * @phase:   CoreLoopThree phase (AIRY_COG_PERCEPT/THINK/ACT).
  *
  * Handler for the phase half of syscall 551. The caller must pass a phase
- * value: the entry classifies @phase with airy_clt_kind() and answers the
- * reserved space with -AIRY_ECOG_PHASE before this function is reached, so
- * only 0/1/2 arrive here.
+ * value: the entry validates @phase with airy_op_check() and answers the
+ * reserved space with -AIRY_ECOG_PHASE before this function is reached,
+ * so only 0/1/2 arrive here.
  *
  * The notification is recorded in the per-agent phase table so a later
  * consumer (sched_tac admission, airy_clt_query) can observe the agent's
