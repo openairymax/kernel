@@ -29,6 +29,10 @@
 #include <linux/airymax/error.h>
 #include <linux/airymax/log_types.h>
 
+#if IS_ENABLED(CONFIG_AIRY_AGENT_TRACING)
+#include <trace/events/airy.h>
+#endif
+
 /* ─── Ring buffer header (lives at the start of the mmap region) ────────
  * Placed at ring->kaddr so both kernel-space and the user-space Logger
  * Daemon (via mmap) share the same atomic indices.
@@ -110,11 +114,14 @@ int airy_log_ring_init(struct airy_log_ring *ring, size_t size)
  * ring is full the oldest record is overwritten by advancing tail
  * (tail conceptually tracks committed_head from the consumer side).
  * Returns a pointer to the record for the caller to fill, or NULL
- * when the ring is frozen.
+ * when the ring is frozen.  @overrun reports whether the reservation
+ * displaced the oldest record because the ring was full.
  */
-struct airy_log_record *airy_log_reserve(struct airy_log_ring *ring)
+struct airy_log_record *airy_log_reserve(struct airy_log_ring *ring,
+					 bool *overrun)
 {
 	struct airy_log_ring_header *hdr;
+	bool dropped = false;
 	__u64 head, tail;
 	__u32 idx;
 
@@ -134,11 +141,16 @@ struct airy_log_record *airy_log_reserve(struct airy_log_ring *ring)
 		tail = smp_load_acquire(&hdr->tail);
 
 		/* Ring full: overwrite the oldest record (advance tail). */
-		if (head - tail >= hdr->capacity)
+		if (head - tail >= hdr->capacity) {
 			smp_store_release(&hdr->tail, tail + 1);
+			dropped = true;
+		}
 
 		idx = head % hdr->capacity;
 	} while (cmpxchg(&hdr->head, head, head + 1) != head);
+
+	if (overrun)
+		*overrun = dropped;
 
 	/* Record data starts AFTER the header. */
 	return (struct airy_log_record *)
@@ -192,12 +204,14 @@ int airy_log_write(struct airy_log_ring *ring,
 {
 	struct airy_log_record *rec;
 	struct timespec64 ts;
+	bool overrun;
+	__u32 len;
 
 	if (!ring || !payload)
 		return -EINVAL;
 
 	/* 1. reserve 128 B slot (~10 ns) */
-	rec = airy_log_reserve(ring);
+	rec = airy_log_reserve(ring, &overrun);
 	if (unlikely(!rec))
 		return -AIRY_ELOG_FULL;
 
@@ -210,10 +224,14 @@ int airy_log_write(struct airy_log_ring *ring,
 	rec->caller_id    = (__u32)current->pid;
 	rec->payload_len  = min_t(__u32, payload_len,
 				  (__u32)sizeof(rec->payload));
+	len = rec->payload_len;
 	memcpy(rec->payload, payload, rec->payload_len);
 
 	/* 3. commit + eventfd notify (~10 ns) */
 	airy_log_commit(ring, rec);
+#if IS_ENABLED(CONFIG_AIRY_AGENT_TRACING)
+	trace_airy_ring_buffer_write(level, len, overrun);
+#endif
 	return 0;
 }
 
