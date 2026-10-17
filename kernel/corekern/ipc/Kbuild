@@ -11,6 +11,11 @@ airy_ck_ipc-y += airy_ipc_crc32.o airy_ipc_trace.o
 airy_ck_ipc-$(CONFIG_AIRY_KUNIT) += airy_ipc_ring_test.o
 airy_ck_ipc-$(CONFIG_AIRY_KUNIT) += airy_ipc_crc32_test.o
 
+# KUnit regression for the IPC trace emission: field fidelity of
+# airy_ipc_send/airy_ipc_recv, agent-id normalisation and the *_on()
+# predicates that gate fastpath timestamping.
+airy_ck_ipc-$(CONFIG_AIRY_KUNIT) += airy_ipc_trace_test.o
+
 # IPC fastpath micro-benchmark (v3.6 closure: replaces ~10ns/~158ns design
 # estimates with measured data).  Linked when CONFIG_AIRY_KUNIT=y; the suite
 # reports mean/p50/p99 via KUNIT_INFO for collection under UML or hardware.

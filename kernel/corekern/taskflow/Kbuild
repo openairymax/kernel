@@ -3,3 +3,8 @@
 obj-y += airy_ck_taskflow.o
 
 airy_ck_taskflow-y := airy_task_lifecycle.o airy_task_desc.o
+
+# KUnit regression for the 8-state agent lifecycle: the legal transition
+# table, silent rejection of illegal edges, and the one-event-per-edge
+# contract of airy_agent_state_change.
+airy_ck_taskflow-$(CONFIG_AIRY_KUNIT) += airy_task_lifecycle_test.o

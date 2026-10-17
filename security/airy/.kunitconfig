@@ -20,4 +20,13 @@ CONFIG_AIRY_KUNIT=y
 # Airy IPC rides on io_uring; the fastpath and IPC-ring tests need it.
 CONFIG_IO_URING=y
 
+# CONFIG_AIRY_AGENT_TRACING depends on TRACING.  The lifecycle, IPC and
+# log-ring suites attach real tracepoint probes, so the airy tracepoints
+# must be compiled into the test kernel.  TRACING is a hidden symbol with
+# no prompt: it is only reachable through a concrete tracer selecting
+# GENERIC_TRACER.  UML has no HAVE_FUNCTION_TRACER, so pick SCHED_TRACER,
+# the cheapest tracer that carries no architecture dependency.
+CONFIG_FTRACE=y
+CONFIG_SCHED_TRACER=y
+
 CONFIG_LSM="lockdown,yama,airy"

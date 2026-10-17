@@ -8,6 +8,8 @@
  * agent address spaces for zero-copy streaming. Producers reserve a
  * slot via cmpxchg on head, fill the record, then publish it by
  * smp_store_release() of committed_head; consumers use smp_load_acquire().
+ * The shared header and the ring state live in airy_log_internal.h so
+ * that the KUnit suite observes the same contract as the producers.
  *
  * Design rationale: docs/AirymaxOS/40-dataflows/05-ring-buffer-logging.md
  */
@@ -33,29 +35,7 @@
 #include <trace/events/airy.h>
 #endif
 
-/* ─── Ring buffer header (lives at the start of the mmap region) ────────
- * Placed at ring->kaddr so both kernel-space and the user-space Logger
- * Daemon (via mmap) share the same atomic indices.
- */
-struct airy_log_ring_header {
-	__u64	head;		/* producer reserve position (atomic)   */
-	__u64	committed_head;	/* producer commit position (atomic)  */
-	__u64	tail;		/* consumer read position (atomic)     */
-	__u32	capacity;	/* ring capacity (record count, pow-2) */
-	__u32	record_size;	/* single record size (128 B)          */
-	__u32	frozen;		/* freeze flag (Micro-Supervisor sets) */
-	__u32	pad;		/* alignment padding                   */
-};
-
-/* ─── Ring buffer state ──────────────────────────────────────────────── */
-struct airy_log_ring {
-	struct page	 *pages;	/* backing physical pages            */
-	void		 *kaddr;		/* kernel virtual address            */
-	size_t		  size;		/* total ring size (page-aligned)    */
-	unsigned int	  order;		/* alloc_pages() order               */
-	struct eventfd_ctx *efd;		/* eventfd for Logger Daemon notify  */
-	spinlock_t	  efd_lock;	/* serialises eventfd registration   */
-};
+#include "airy_log_internal.h"
 
 /* ─── Initialise a ring of at least @size bytes ────────────────────────
  * Allocates contiguous physical pages, places the ring header at the
