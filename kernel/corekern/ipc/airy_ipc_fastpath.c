@@ -15,8 +15,11 @@
 #include <linux/printk.h>
 #include <linux/compiler.h>
 #include <linux/errno.h>
+#include <linux/ktime.h>
 #include <linux/airymax/ipc.h>
 #include <linux/airymax/error.h>
+
+#include <airymax/airy_agent.h>
 
 #include "airy_ipc_internal.h"
 
@@ -38,6 +41,8 @@
 int airy_ipc_fastpath_send(struct airy_ipc_ring *ring,
 			   const struct airy_ipc_msg_hdr *hdr)
 {
+	u64 start = 0;
+	bool trace;
 	int ret;
 
 	if (!ring || !hdr)
@@ -65,6 +70,20 @@ int airy_ipc_fastpath_send(struct airy_ipc_ring *ring,
 	/* Delegate to ring_post() which performs the actual slot write.
 	 * ring_post() re-checks frozen (defence in depth) and validates
 	 * magic before writing.
+	 *
+	 * The send event reports the task that actually executed the
+	 * call, not the header's src_task, and only once the ring has
+	 * accepted the header. Its latency is the post cost, measured
+	 * from the same timestamp the trace predicate guards.
 	 */
-	return airy_ipc_ring_post(ring, hdr);
+	trace = airy_send_on();
+	if (trace)
+		start = ktime_get_ns();
+
+	ret = airy_ipc_ring_post(ring, hdr);
+	if (!ret && trace)
+		airy_send_emit(hdr, airy_agent_id(current), 1,
+			       ktime_get_ns() - start);
+
+	return ret;
 }

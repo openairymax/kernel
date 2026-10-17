@@ -14,11 +14,14 @@
 #include <linux/bug.h>
 #include <linux/log2.h>
 #include <linux/errno.h>
+#include <linux/ktime.h>
 #include <linux/string.h>
 #include <linux/slab.h>
 #include <linux/atomic.h>
 #include <linux/airymax/ipc.h>
 #include <linux/airymax/error.h>
+
+#include <airymax/airy_agent.h>
 
 #include "airy_ipc_internal.h"
 
@@ -136,10 +139,16 @@ int airy_ipc_ring_post(struct airy_ipc_ring *ring,
 int airy_ipc_ring_consume(struct airy_ipc_ring *ring,
 			  struct airy_ipc_msg_hdr *out)
 {
+	u64 start = 0;
+	bool trace;
 	__u32 tail;
 
 	if (!ring || !out || !ring->slots)
 		return -EINVAL;
+
+	trace = airy_recv_on();
+	if (trace)
+		start = ktime_get_ns();
 
 	/*
 	 * Skip cancelled messages.  cancelBadgedSends() zeroes the magic
@@ -186,6 +195,16 @@ int airy_ipc_ring_consume(struct airy_ipc_ring *ring,
 	 * pairing.
 	 */
 	smp_store_release(&ring->tail, (tail + 1) & ring->mask);
+
+	/*
+	 * The receive event reports the consuming task as the destination
+	 * and the header's src_task as the source: a dequeued header is
+	 * the only record of who sent it. Latency covers the dequeue,
+	 * including the cancelled-slot scan.
+	 */
+	if (trace)
+		airy_recv_emit(out, airy_agent_id(current),
+			       ktime_get_ns() - start);
 
 	return 0;
 }

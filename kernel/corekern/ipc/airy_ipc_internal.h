@@ -65,6 +65,19 @@ int airy_ipc_ring_depth_stats(struct airy_ipc_ring *ring,
 int airy_ipc_fastpath_send(struct airy_ipc_ring *ring,
 			   const struct airy_ipc_msg_hdr *hdr);
 
+/* ─── Trace emission (airy_ipc_trace.c) ─────────────────────────────── */
+/*
+ * The *_on() predicates let the hot paths skip timestamping unless a
+ * consumer has enabled the matching event; emission is a no-op
+ * otherwise.
+ */
+bool airy_send_on(void);
+bool airy_recv_on(void);
+void airy_send_emit(const struct airy_ipc_msg_hdr *hdr, u32 src_agent,
+		    u8 fastpath, u64 latency_ns);
+void airy_recv_emit(const struct airy_ipc_msg_hdr *hdr, u32 dst_agent,
+		    u64 latency_ns);
+
 /* ─── Fastpath C-S12 integrity digest ───────────────────────────────── */
 /**
  * airy_crc32_calc() - compute the Layout C v4 header digest.
