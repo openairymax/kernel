@@ -324,6 +324,11 @@ static int bench_init(struct kunit *test)
 	memset(&f->hdr, 0, sizeof(f->hdr));
 	f->hdr.magic = AIRY_IPC_MAGIC;
 	f->hdr.opcode = AIRY_IPC_OP_SEND;
+	/*
+	 * The Badge is folded against the sender's slot, so the header
+	 * must name the agent whose slot the fixture installed above.
+	 */
+	f->hdr.src_task = BENCH_AGENT;
 	f->hdr.capability_badge = AIRY_BADGE_COMPILE(7u, 0x13579BDFu,
 						    AIRY_CAP_PERM_SEND);
 	/*
