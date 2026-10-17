@@ -6,10 +6,12 @@
  *
  * Hot-path send: the C-S0 frozen check, the header and Badge chain in
  * airy_ipc_validate() (C-S1..C-S4, C-S8..C-S10), the C-S12 digest and
- * finally delegation to airy_ipc_ring_post(). The ring-bound checks
- * (C-S5..C-S7, C-S11) belong to the ring, which is the only layer that
- * owns a per-cpu slot; everything decidable from the header is settled
- * here before a slot is written.
+ * finally delegation to airy_ipc_ring_post(). A digest mismatch is
+ * reported as AIRY_FAULT_RING_CORRUPT so the supervisor can isolate the
+ * sender; the message is dropped. The ring-bound checks (C-S5..C-S7,
+ * C-S11) belong to the ring, which is the only layer that owns a per-cpu
+ * slot; everything decidable from the header is settled here before a
+ * slot is written.
  *
  * SSoT: 30-interfaces/07-ipc-fastpath.md §3.1
  */
@@ -17,11 +19,14 @@
 #include <linux/printk.h>
 #include <linux/compiler.h>
 #include <linux/errno.h>
+#include <linux/kconfig.h>
 #include <linux/ktime.h>
 #include <linux/airymax/ipc.h>
 #include <linux/airymax/error.h>
 
 #include <airymax/airy_agent.h>
+
+#include "../../../security/airy/airy_cap.h"
 
 #include "airy_ipc_check.h"
 #include "airy_ipc_internal.h"
@@ -39,7 +44,8 @@
  * Returns 0 on success, -EINVAL for null arguments, the negated [SC]
  * code of the first failing chain check (C-S1..C-S4, C-S8..C-S10, C-S12),
  * -AIRY_EIPC_FROZEN (C-S0), or a ring_post() code (C-S1
- * -AIRY_EIPC_MAGIC, C-S6 -AIRY_EIPC_KFIFO).
+ * -AIRY_EIPC_MAGIC, C-S6 -AIRY_EIPC_KFIFO). A C-S12 mismatch also raises
+ * AIRY_FAULT_RING_CORRUPT before the error is returned.
  */
 int airy_ipc_fastpath_send(struct airy_ipc_ring *ring,
 			   const struct airy_ipc_msg_hdr *hdr)
@@ -72,12 +78,18 @@ int airy_ipc_fastpath_send(struct airy_ipc_ring *ring,
 	/* C-S12: verify the header digest before the slot write.  The
 	 * fastpath carries no payload (any payload-bearing message
 	 * degrades to slowpath), so the digest covers header[0:52) alone.
-	 * A mismatch means the header was corrupted in flight; drop the
-	 * message rather than deliver it.
+	 * A mismatch means the header was corrupted in flight; report the
+	 * ring fault and drop the message rather than deliver it.
 	 */
 	ret = airy_crc32_ok(hdr, NULL);
-	if (unlikely(ret))
+	if (unlikely(ret)) {
+#if IS_ENABLED(CONFIG_SECURITY_AIRY)
+		if (ret == -AIRY_EIPC_CRC32)
+			airy_security_fault((__u32)hdr->src_task,
+					    AIRY_FAULT_RING_CORRUPT);
+#endif
 		return ret;
+	}
 
 	/* Delegate to ring_post() which performs the actual slot write.
 	 * ring_post() re-checks frozen (defence in depth) and validates
