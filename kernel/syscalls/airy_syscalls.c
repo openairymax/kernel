@@ -44,27 +44,20 @@
  *
  * The [SC] Layout C v4 field contract is shared with the io_uring data
  * plane and implemented once in corekern/ipc; this entry point keeps the
- * syscall-visible name for the 548 callers and delegates to it. The
- * opcode is intentionally left to airy_invoke_op_valid() so the
- * dispatchable set has one definition. See airy_invoke.h for the contract.
+ * syscall-visible name for the 548 callers and delegates to it. C-S1..C-S4
+ * come from the shared implementation; C-S10 follows here because the
+ * syscall entry never runs the data plane's Badge checkpoint in between.
+ * See airy_invoke.h for the contract.
  */
 __must_check int airy_invoke_hdr_check(const struct airy_ipc_msg_hdr *hdr)
 {
-	return airy_ipc_hdr_ok(hdr);
-}
+	int ret;
 
-/*
- * airy_invoke_op_valid — test whether an opcode is dispatchable.
- * @opcode: IPC opcode from the [SC] AIRY_IPC_OP_* space.
- *
- * The dispatchable set is defined solely by airy_op_plane(): an opcode is
- * valid exactly when it belongs to one of the three opcode planes.
- * Keeping a second opcode list here would let the two drift apart and
- * silently admit an unauthenticated operation (OS-KER-225).
- */
-bool airy_invoke_op_valid(u16 opcode)
-{
-	return airy_op_plane(opcode) != AIRY_PLANE_INVALID;
+	ret = airy_ipc_hdr_ok(hdr);
+	if (unlikely(ret))
+		return ret;
+
+	return airy_flags_ok(hdr);
 }
 
 /*
@@ -207,9 +200,9 @@ __must_check int airy_badge_revoke(const struct airy_ipc_msg_hdr *msg)
  * @cap: Capability badge presented by the caller.
  * @msg: Kernel-resident copy of the caller message header.
  *
- * First the header field contract is enforced by airy_invoke_hdr_check()
- * (C-S1/C-S3/C-S4/C-S10), then the opcode contract, and only then is @cap
- * authenticated against the caller's own capability slot. The agent_id is
+ * First the header contract is enforced by airy_invoke_hdr_check()
+ * (C-S1..C-S4 and C-S10), and only then is @cap authenticated against the
+ * caller's own capability slot. The agent_id is
  * derived from current — never from the caller-supplied
  * msg->src_task/dst_task, which are untrusted — so a forged header cannot
  * impersonate another agent. The permission mask demanded of @cap is
@@ -239,9 +232,6 @@ __must_check int airy_invoke_dispatch(airy_cap_t cap,
 	ret = airy_invoke_hdr_check(msg);
 	if (unlikely(ret))
 		return ret;
-
-	if (unlikely(!airy_invoke_op_valid(msg->opcode)))
-		return -AIRY_EIPC_OPCODE;
 
 	agent_id = airy_agent_id(current);
 
@@ -282,8 +272,8 @@ __must_check int airy_invoke_dispatch(airy_cap_t cap,
  * @msg: User-space pointer to a struct airy_ipc_msg_hdr.
  *
  * The user header is copied in here; every field of the header contract
- * (C-S1/C-S3/C-S4/C-S10), the opcode contract, and the capability badge are
- * then validated by airy_invoke_dispatch() (OS-KER-225: validation
+ * (C-S1..C-S4 and C-S10) and the capability badge are then validated by
+ * airy_invoke_dispatch() (OS-KER-225: validation
  * precedes mutation). Keeping that validation in the dispatch choke point
  * — instead of repeating the magic check here — leaves exactly one
  * definition of the header contract.

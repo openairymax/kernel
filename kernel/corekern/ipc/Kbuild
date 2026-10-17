@@ -6,8 +6,9 @@ airy_ck_ipc-y := airy_ipc_ring.o airy_ipc_fastpath.o airy_ipc_zero_copy.o
 airy_ck_ipc-y += airy_ipc_crc32.o airy_ipc_trace.o
 airy_ck_ipc-y += airy_ipc_check.o
 
-# KUnit regression for the stateless Layout C v4 header contract that the
-# io_uring data plane and syscall 548 share (C-S1/C-S3/C-S4/C-S10).
+# KUnit regression for the Layout C v4 header contract that the
+# io_uring data plane and syscall 548 share (C-S1..C-S4, C-S10) and the
+# data-plane context gate airy_ipc_validate() layers on top.
 airy_ck_ipc-$(CONFIG_AIRY_KUNIT) += airy_ipc_check_test.o
 
 # KUnit regression for the IPC ring core (capacity/teardown, cursor

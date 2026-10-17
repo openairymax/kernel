@@ -113,9 +113,9 @@ enum airy_plane {
  * @opcode: Dispatch key from the [SC] AIRY_IPC_OP_* space.
  *
  * Pure classifier with no state and no dependency on current, so KUnit
- * drives it directly and airy_invoke_op_valid() can delegate to it. It
- * is the single source of truth for opcode validity: an opcode is
- * dispatchable exactly when its plane is not AIRY_PLANE_INVALID.
+ * drives it directly and airy_ipc_hdr_ok() uses it for C-S2. It is the
+ * single source of truth for opcode validity: an opcode is dispatchable
+ * exactly when its plane is not AIRY_PLANE_INVALID.
  *
  * SSoT: 140-application-development/07-syscall-registry.md §4.1-§4.2
  *       (op-dispatch principle and data-plane cmd_op ownership).

@@ -37,27 +37,32 @@
  *
  * Enforces the [SC] Layout C v4 field contract that the syscall 548 entry
  * rests on, and is the single choke point every header must pass before any
- * state is touched (OS-KER-225). Four checks are applied, cheapest first:
+ * state is touched (OS-KER-225). The checks run in the order §3.1 fixes, so
+ * the first failing check is also the reported error:
  *
  *   - C-S1:  magic must equal AIRY_IPC_MAGIC, otherwise the buffer is not a
  *            Layout C v4 header at all (-AIRY_EIPC_MAGIC).
+ *   - C-S2:  the opcode must belong to one of the three [SC] opcode planes
+ *            (-AIRY_EIPC_OPCODE). The plane table in airy_op_plane() is the
+ *            single definition of the dispatchable set.
  *   - C-S3:  payload_len must not exceed AIRY_IPC_MAX_PAYLOAD
  *            (-AIRY_EIPC_PAYLOAD). The data plane would otherwise be asked
  *            to frame a payload that no legal message can carry.
+ *   - C-S4:  reserved[72] must be all zero (-AIRY_EIPC_RESERVED), keeping
+ *            the header a closed contract and denying a covert channel
+ *            through fields the kernel never interprets. The hdr_size half
+ *            is guaranteed at compile time by the 128-byte assertion.
  *   - C-S10: the reserved flag bits (AIRY_IPC_FLAG_RESERVED, bits 5-15)
  *            must be zero (-AIRY_EIPC_FLAGS), and the declared-but-unimpl-
  *            emented ENCRYPT/COMPRESS features must not be requested
  *            (-AIRY_EIPC_NOTSUPP). Either one would let a caller assert a
  *            guarantee the kernel does not honour.
- *   - C-S4:  reserved[72] must be all zero (-AIRY_EIPC_RESERVED), keeping
- *            the header a closed contract and denying a covert channel
- *            through fields the kernel never interprets.
  *
- * The opcode is deliberately not checked here: its validity is owned by
- * airy_op_plane()/airy_invoke_op_valid() so that the dispatchable set has
- * exactly one definition (see airy_invoke_dispatch()).
+ * C-S8 and C-S9 are deliberately absent: they only exist on the io_uring
+ * data plane, and 548 authenticates its badge from the syscall argument
+ * rather than from hdr->capability_badge.
  *
- * SSoT: 30-interfaces/07-ipc-fastpath.md §3.1 (C-S1/C-S3/C-S4/C-S10);
+ * SSoT: 30-interfaces/07-ipc-fastpath.md §3.1 (C-S1..C-S4, C-S10);
  *       30-interfaces/08-sc-error-contract.md §2.3 (error magnitudes).
  *
  * Return: AIRY_EOK (0) when @hdr satisfies the contract; -EINVAL when @hdr
@@ -67,27 +72,14 @@ __must_check int airy_invoke_hdr_check(const struct airy_ipc_msg_hdr *hdr);
 
 /* Dispatch entry points (defined in airy_syscalls.c) */
 /**
- * airy_invoke_op_valid() - test whether an opcode is dispatchable
- * @opcode: IPC opcode taken from the [SC] ipc.h AIRY_IPC_OP_* space.
- *
- * Tells the caller whether @opcode belongs to the control-plane
- * dispatch set. Unknown opcodes must be rejected with -AIRY_EIPC_OPCODE
- * before any state is touched. Delegates to airy_op_plane() so the
- * dispatchable set has one definition.
- *
- * Return: true if @opcode is dispatchable, false otherwise.
- */
-bool airy_invoke_op_valid(u16 opcode);
-
-/**
  * airy_invoke_dispatch() - validate and dispatch a syscall 548 request
  * @cap: Capability badge presented by the caller.
  * @msg: Kernel-resident copy of the caller message header.
  *
- * Validates the opcode contract and the capability badge, then routes
- * the request to the matching control-plane handler. Validation always
- * precedes mutation (OS-KER-225). The badge is checked with
- * airy_cap_badge_ok() against the caller's own capability slot, whose
+ * Validates the header contract (including the opcode) and the capability
+ * badge, then routes the request to the matching control-plane handler.
+ * Validation always precedes mutation (OS-KER-225). The badge is checked
+ * with airy_cap_badge_ok() against the caller's own capability slot, whose
  * agent_id is derived from current — never from the caller-supplied
  * msg->src_task/dst_task, which are untrusted. The permission mask the
  * badge must carry is derived from the opcode by

@@ -6,13 +6,13 @@ obj-$(CONFIG_AIRY_SYSCALL) += airy_rovol.o
 obj-$(CONFIG_AIRY_SYSCALL) += airy_sched.o
 
 # KUnit regression for the syscall 548 control-plane entry: the
-# C-S1/C-S3/C-S4/C-S10 header contract, the opcode plane classifier and
+# C-S1..C-S4/C-S10 header contract, the opcode plane classifier and
 # the opcode/ordering rules of the dispatch entry, plus the two badge
 # lifecycle handlers — the CAP_RESPONSE badge-install and the FREEZE
 # badge-revoke paths.
 # airy_invoke_test.c links against the non-static airy_invoke_hdr_check(),
-# airy_invoke_op_valid(), airy_invoke_dispatch(), airy_badge_install() and
-# airy_badge_revoke() defined in airy_syscalls.c.
+# airy_invoke_dispatch(), airy_badge_install() and airy_badge_revoke()
+# defined in airy_syscalls.c.
 obj-$(CONFIG_AIRY_KUNIT) += airy_invoke_test.o
 
 # KUnit regression for the syscall 551 phase record: the boundary

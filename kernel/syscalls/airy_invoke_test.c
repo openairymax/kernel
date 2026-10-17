@@ -9,7 +9,7 @@
  * contract to its shared corekern implementation (the contract itself is
  * covered by the airy_ipc_check suite); the opcode plane
  * classifier (airy_op_plane) and its agreement with the permission
- * mapping (airy_op_required_perms); the opcode/ordering rules of the
+ * mapping (airy_op_required_perms); the ordering rules of the
  * dispatch entry (airy_invoke_dispatch); and the two badge lifecycle
  * halves — install (COMPILE_BADGE) and revocation (REVOKE_BADGE).
  *
@@ -95,7 +95,8 @@ static struct airy_ipc_msg_hdr freeze_msg(__u64 dst)
 /*
  * The field contract itself is covered by the airy_ipc_check suite,
  * which owns the single implementation. This case only pins that the
- * syscall-visible entry still delegates to it, including the NULL guard.
+ * syscall-visible entry still delegates to it — including the opcode,
+ * the flag contract and the NULL guard.
  */
 static void airy_invoke_hdr_delegate_test(struct kunit *test)
 {
@@ -110,45 +111,17 @@ static void airy_invoke_hdr_delegate_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, -AIRY_EIPC_MAGIC,
 			airy_invoke_hdr_check(&hdr));
 
+	hdr.magic = AIRY_IPC_MAGIC;
+	hdr.opcode = 0;
+	KUNIT_EXPECT_EQ(test, -AIRY_EIPC_OPCODE,
+			airy_invoke_hdr_check(&hdr));
+
+	hdr.opcode = AIRY_IPC_OP_SEND;
+	hdr.flags = AIRY_IPC_FLAG_RESERVED;
+	KUNIT_EXPECT_EQ(test, -AIRY_EIPC_FLAGS,
+			airy_invoke_hdr_check(&hdr));
+
 	KUNIT_EXPECT_EQ(test, -EINVAL, airy_invoke_hdr_check(NULL));
-}
-
-static void airy_invoke_op_valid_accept_test(struct kunit *test)
-{
-	static const u16 dispatchable[] = {
-		AIRY_IPC_OP_SEND, AIRY_IPC_OP_RECV, AIRY_IPC_OP_SEND_BATCH,
-		AIRY_IPC_OP_CANCEL, AIRY_IPC_OP_FREEZE,
-		AIRY_IPC_OP_CAP_REQUEST, AIRY_IPC_OP_CAP_RESPONSE,
-	};
-	unsigned int i;
-	u16 op;
-
-	for (i = 0; i < ARRAY_SIZE(dispatchable); i++) {
-		op = dispatchable[i];
-
-		KUNIT_EXPECT_TRUE_MSG(test, airy_invoke_op_valid(op),
-				      "0x%04x not dispatchable", op);
-	}
-}
-
-static void airy_invoke_op_valid_reject_test(struct kunit *test)
-{
-	static const u16 holes[] = {
-		0x0000,	/* below the contiguous SEND..FREEZE block */
-		0x0006,	/* first hole above FREEZE */
-		0x000f,	/* last hole below CAP_REQUEST */
-		0x0012,	/* first hole above CAP_RESPONSE */
-		0xffff,	/* the AIRY_OP_PERMS_INVALID sentinel */
-	};
-	unsigned int i;
-	u16 op;
-
-	for (i = 0; i < ARRAY_SIZE(holes); i++) {
-		op = holes[i];
-
-		KUNIT_EXPECT_FALSE_MSG(test, airy_invoke_op_valid(op),
-				       "0x%04x must be refused", op);
-	}
 }
 
 static void airy_op_plane_test(struct kunit *test)
@@ -221,19 +194,17 @@ static void airy_op_valid_plane_invariant_test(struct kunit *test)
 
 	/*
 	 * airy_op_plane() and airy_op_required_perms() are two independent
-	 * encodings of the opcode contract, and airy_invoke_op_valid() must
-	 * agree with both. Proving the three agree on every u16 value turns
-	 * their consistency into a machine-checked invariant instead of a
-	 * comment, so a later edit can only move them together.
+	 * encodings of the opcode contract: a value is dispatchable exactly
+	 * when it has a plane, and it must then also have a permission
+	 * mapping. Proving the two agree on every u16 value turns their
+	 * consistency into a machine-checked invariant instead of a comment,
+	 * so a later edit can only move them together.
 	 */
 	for (op = 0; op <= 0xffffu; op++) {
-		bool valid = airy_invoke_op_valid((u16)op);
 		bool plane = airy_op_plane((u16)op) != AIRY_PLANE_INVALID;
 		bool perms = airy_op_required_perms((u16)op) !=
 			     AIRY_OP_PERMS_INVALID;
 
-		KUNIT_ASSERT_EQ_MSG(test, plane, valid,
-				    "0x%04x validity disagreement", op);
 		KUNIT_ASSERT_EQ_MSG(test, perms, plane,
 				    "0x%04x perms/plane disagreement", op);
 	}
@@ -397,8 +368,6 @@ static void airy_badge_revoke_ok_test(struct kunit *test)
 
 static struct kunit_case airy_invoke_cases[] = {
 	KUNIT_CASE(airy_invoke_hdr_delegate_test),
-	KUNIT_CASE(airy_invoke_op_valid_accept_test),
-	KUNIT_CASE(airy_invoke_op_valid_reject_test),
 	KUNIT_CASE(airy_op_plane_test),
 	KUNIT_CASE(airy_op_plane_hole_test),
 	KUNIT_CASE(airy_op_plane_ctl_test),
