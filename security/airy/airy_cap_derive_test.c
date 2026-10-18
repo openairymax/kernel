@@ -11,10 +11,11 @@
  * destination slot, which keeps the MDB acyclic (constraint I2).
  * DELETE is checked to detach its children as new roots without
  * cascading. REVOKE proves each link by bumping the descendants'
- * epoch, and ROTATE is checked to recompile the badge around a fresh
- * random tag. airy_cap_unreg() is checked to clear the terminating
- * agent's slot, cascade the revoke over its revocable descendants,
- * promote them to roots, and spare irrevocable capabilities.
+ * epoch, including a 65-level chain, and ROTATE is checked to
+ * recompile the badge around a fresh random tag. airy_cap_unreg() is
+ * checked to clear the terminating agent's slot, cascade the revoke
+ * over its revocable descendants, promote them to roots, and spare
+ * irrevocable capabilities.
  *
  * airy_cap_derive() is non-static (airy_cap.h), so the suite links
  * against airy_cap_derive.o inside the airy module.
@@ -35,25 +36,45 @@
 #define TEST_BASE_AGENT		TEST_PARENT_AGENT
 #define TEST_NR_AGENTS		5
 
+#define TEST_CHAIN_BASE		900u
+#define TEST_CHAIN_DEPTH	65
+
 struct cap_derive_ctx {
 	struct airy_cap_slot saved[TEST_NR_AGENTS];
+	struct airy_cap_slot chain[TEST_CHAIN_DEPTH];
 };
+
+static void slots_snapshot(__u32 base, unsigned int nr,
+			   struct airy_cap_slot *dst)
+{
+	unsigned int i;
+
+	for (i = 0; i < nr; i++) {
+		dst[i] = agent_caps[base + i];
+		memset(&agent_caps[base + i], 0, sizeof(agent_caps[0]));
+	}
+}
+
+static void slots_restore(__u32 base, unsigned int nr,
+			  const struct airy_cap_slot *src)
+{
+	unsigned int i;
+
+	for (i = 0; i < nr; i++)
+		agent_caps[base + i] = src[i];
+}
 
 static int cap_derive_test_init(struct kunit *test)
 {
 	struct cap_derive_ctx *ctx;
-	int i;
 
 	ctx = kunit_kzalloc(test, sizeof(*ctx), GFP_KERNEL);
 	KUNIT_ASSERT_NOT_NULL(test, ctx);
 	test->priv = ctx;
 
 	/* Save the real slots so production agent_caps state is untouched. */
-	for (i = 0; i < TEST_NR_AGENTS; i++) {
-		ctx->saved[i] = agent_caps[TEST_BASE_AGENT + i];
-		memset(&agent_caps[TEST_BASE_AGENT + i], 0,
-		       sizeof(struct airy_cap_slot));
-	}
+	slots_snapshot(TEST_BASE_AGENT, TEST_NR_AGENTS, ctx->saved);
+	slots_snapshot(TEST_CHAIN_BASE, TEST_CHAIN_DEPTH, ctx->chain);
 
 	return 0;
 }
@@ -61,13 +82,12 @@ static int cap_derive_test_init(struct kunit *test)
 static void cap_derive_test_exit(struct kunit *test)
 {
 	struct cap_derive_ctx *ctx = test->priv;
-	int i;
 
 	if (!ctx)
 		return;
 
-	for (i = 0; i < TEST_NR_AGENTS; i++)
-		agent_caps[TEST_BASE_AGENT + i] = ctx->saved[i];
+	slots_restore(TEST_BASE_AGENT, TEST_NR_AGENTS, ctx->saved);
+	slots_restore(TEST_CHAIN_BASE, TEST_CHAIN_DEPTH, ctx->chain);
 }
 
 static int register_agent(__u32 agent, __u16 perms)
@@ -540,6 +560,36 @@ static void unreg_spares_irrevocable_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, (__u16)0, child->generation);
 }
 
+/*
+ * A chain deeper than the typical derivation depth must be revoked
+ * end to end: the walk uses an explicit stack, so depth is bounded by
+ * the slot count rather than by the kernel stack.
+ */
+static void revoke_deep_chain_test(struct kunit *test)
+{
+	unsigned int i;
+
+	KUNIT_ASSERT_EQ(test, 0,
+			register_agent(TEST_CHAIN_BASE, AIRY_CAP_PERM_SEND));
+	for (i = 1; i < TEST_CHAIN_DEPTH; i++) {
+		KUNIT_ASSERT_EQ(test, 0,
+				airy_cap_derive(TEST_CHAIN_BASE + i - 1,
+						TEST_CHAIN_BASE + i,
+						AIRY_CAP_OP_COPY, 0));
+	}
+
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_cap_derive(TEST_CHAIN_BASE, 0,
+					AIRY_CAP_OP_REVOKE, 0));
+
+	for (i = 0; i < TEST_CHAIN_DEPTH; i++) {
+		KUNIT_EXPECT_EQ(test, (__u16)2,
+				agent_caps[TEST_CHAIN_BASE + i].epoch);
+		KUNIT_EXPECT_EQ(test, (__u32)0,
+				agent_caps[TEST_CHAIN_BASE + i].randtag);
+	}
+}
+
 static struct kunit_case airy_cap_derive_cases[] = {
 	KUNIT_CASE(copy_cannot_mint_derive_perm_test),
 	KUNIT_CASE(copy_new_perms_zero_clones_source_test),
@@ -558,6 +608,7 @@ static struct kunit_case airy_cap_derive_cases[] = {
 	KUNIT_CASE(unreg_clears_slot_test),
 	KUNIT_CASE(unreg_revokes_subtree_test),
 	KUNIT_CASE(unreg_spares_irrevocable_test),
+	KUNIT_CASE(revoke_deep_chain_test),
 	{}
 };
 

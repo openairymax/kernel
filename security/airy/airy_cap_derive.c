@@ -229,29 +229,45 @@ static void cap_slot_reset(struct airy_cap_slot *slot)
 }
 
 /*
- * Recursive cascading revocation (K9-1 fix, seL4 CNode alignment).
- * Walks the MDB derivation tree from the given agent, incrementing
- * epoch and clearing randtag for every revocable descendant.
+ * Scratch stack for the MDB revoke walk.  REVOKE and airy_cap_unreg()
+ * both hold all 64 bucket locks, so a single instance is serialised
+ * across CPUs.  The MDB is a tree whose nodes are slots, hence at most
+ * AIRY_CAP_MAX_AGENTS nodes and one push per node: the stack cannot
+ * overflow.  An explicit stack replaces the former recursion, whose
+ * worst case of 1024 frames would exhaust the 16 KiB kernel stack
+ * while every bucket lock is held with IRQs disabled.
+ */
+static __u32 cap_revoke_stack[AIRY_CAP_MAX_AGENTS];
+
+/*
+ * Cascading revocation (K9-1 fix, seL4 CNode alignment).  Walks the
+ * MDB derivation tree from the given agent, incrementing epoch and
+ * clearing randtag for every revocable descendant.
  *
- * Complexity: O(N) where N = subtree size.  Typical depth ≤ 3.
+ * Complexity: O(N) where N = subtree size.
  */
 static void airy_cap_revoke_subtree(__u32 agent_id, __u16 new_epoch)
 {
-	struct airy_cap_slot *slot = &agent_caps[agent_id];
-	__u32 child = READ_ONCE(slot->first_child);
+	unsigned int nr = 0;
 
-	/* Invalidate this slot */
-	WRITE_ONCE(slot->epoch, new_epoch);
-	WRITE_ONCE(slot->randtag, 0);
+	cap_revoke_stack[nr++] = agent_id;
 
-	/* Recursively revoke all revocable children */
-	while (child != 0) {
-		struct airy_cap_slot *child_slot = &agent_caps[child];
+	while (nr != 0) {
+		struct airy_cap_slot *slot;
+		__u32 child;
 
-		if (READ_ONCE(child_slot->revocable))
-			airy_cap_revoke_subtree(child, new_epoch);
+		slot = &agent_caps[cap_revoke_stack[--nr]];
+		WRITE_ONCE(slot->epoch, new_epoch);
+		WRITE_ONCE(slot->randtag, 0);
 
-		child = READ_ONCE(child_slot->next_sibling);
+		child = READ_ONCE(slot->first_child);
+		while (child != 0) {
+			struct airy_cap_slot *child_slot = &agent_caps[child];
+
+			if (READ_ONCE(child_slot->revocable))
+				cap_revoke_stack[nr++] = child;
+			child = READ_ONCE(child_slot->next_sibling);
+		}
 	}
 }
 
