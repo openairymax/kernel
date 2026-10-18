@@ -17,6 +17,7 @@
 
 #include <linux/types.h>
 
+#include <linux/airymax/security_types.h>
 #include <linux/airymax/superv.h>
 
 /**
@@ -224,5 +225,31 @@ int airy_sv_thaw(struct airy_sv_ctx *ctx, __u32 agent_id);
  */
 int airy_sv_adjud(struct airy_sv_ctx *ctx, __u32 agent_id, __u32 adjud,
 		  __u32 reason);
+
+/**
+ * airy_sv_exec() - execute one [IND] supervisor command
+ * @cap: badge presented by the caller (macro_d)
+ * @ctx: protocol context; commands are refused unless it is RUNNING
+ * @cmd: command copied from user space; shape-checked before dispatch
+ *
+ * The single execution entry for the [IND] supervisor opcode pair.
+ * Those opcodes live outside the [SC] AIRY_IPC_OP_* namespace on
+ * purpose, so airy_op_plane() and airy_op_required_perms() classify
+ * them as invalid and the syscall 548 dispatcher never sees them.
+ * This entry therefore performs its own authorisation instead of
+ * reusing the [SC] classifier.
+ *
+ * Checks run in a fixed order, making the first failure the reported
+ * error: command shape, protocol readiness (-EAGAIN), then the
+ * caller's SUPERVISE authority.  The caller identity is read from
+ * current, never from @cmd, so a well-formed command cannot name its
+ * own authority: @cmd->agent_id is only ever the target.
+ *
+ * Return: 0 when the command was executed; otherwise the negated
+ *         magnitude of the first failed check, or the target error
+ *         (-AIRY_EIPC_CONTEXT when no task carries @cmd->agent_id).
+ */
+int airy_sv_exec(airy_cap_t cap, struct airy_sv_ctx *ctx,
+		 const struct airy_superv_cmd *cmd);
 
 #endif /* _AIRY_SUPERV_H */

@@ -15,14 +15,17 @@ airy_superv-y := airy_superv_init.o \
                  airy_superv_proto.o \
                  airy_superv_task.o \
                  airy_superv_ring.o \
-                 airy_superv_adjud.o
+                 airy_superv_adjud.o \
+                 airy_superv_exec.o
 
 # KUnit regression for the [IND] supervisor protocol contract: the
 # IDLE->RUNNING gate that keeps commands out of a half-built ring, the
 # shape check every macro_d command passes before any ring or task
 # state is touched, the ring transitions that walk the process list to
-# freeze or thaw every ring owned by the target agent, and the verdict
-# executor that pauses, degrades or terminates the agent's tasks.
+# freeze or thaw every ring owned by the target agent, the verdict
+# executor that pauses, degrades or terminates the agent's tasks, and
+# the [IND] command entry that authorises the caller and dispatches.
 airy_superv-$(CONFIG_AIRY_KUNIT) += airy_superv_proto_test.o \
                                     airy_superv_ring_test.o \
-                                    airy_superv_adjud_test.o
+                                    airy_superv_adjud_test.o \
+                                    airy_superv_exec_test.o
