@@ -17,6 +17,7 @@
 
 #include <linux/lsm_hooks.h>
 #include <linux/io_uring.h>
+#include <linux/ktime.h>
 #include <linux/sched.h>
 #include <linux/cred.h>
 #include <linux/delay.h>
@@ -437,11 +438,16 @@ fault:
  * supervisor (not the offender), and the supervisor's fault counter and
  * frozen_reason would be corrupted.  Only touch current's blob when
  * current actually carries the offending agent_id; otherwise leave the
- * per-task state alone — the die_notifier chain carries the agent_id
- * so the Supervisor can act on the correct agent out-of-band.
+ * per-task state alone — the fault record on the chain names the
+ * offending agent so the Supervisor can act on it out-of-band.
  */
 void airy_security_fault(__u32 agent_id, __u32 fault_code)
 {
+	struct airy_fault_rec rec = {
+		.agent_id = agent_id,
+		.fault_code = fault_code,
+		.timestamp_ns = ktime_get_mono_fast_ns(),
+	};
 	struct airy_task_sec *sec;
 	struct task_struct *task = current;
 
@@ -477,7 +483,8 @@ void airy_security_fault(__u32 agent_id, __u32 fault_code)
 	 * Notify the Airy security fault chain so the Supervisor can
 	 * take out-of-band action (e.g., terminate or quarantine the
 	 * offending agent).  This is separate from the kernel die_chain
-	 * which handles hardware/kernel faults.
+	 * which handles hardware/kernel faults.  The record travels in
+	 * @data because the chain value only carries the fault code.
 	 */
-	atomic_notifier_call_chain(&airy_die_chain, fault_code, task);
+	atomic_notifier_call_chain(&airy_die_chain, fault_code, &rec);
 }

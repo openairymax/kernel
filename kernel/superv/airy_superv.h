@@ -15,6 +15,7 @@
 #ifndef _AIRY_SUPERV_H
 #define _AIRY_SUPERV_H
 
+#include <linux/init.h>
 #include <linux/types.h>
 
 #include <linux/airymax/security_types.h>
@@ -251,5 +252,37 @@ int airy_sv_adjud(struct airy_sv_ctx *ctx, __u32 agent_id, __u32 adjud,
  */
 int airy_sv_exec(airy_cap_t cap, struct airy_sv_ctx *ctx,
 		 const struct airy_superv_cmd *cmd);
+
+/**
+ * airy_fault_ok() - is @code a fault the supervisor may act on?
+ * @code: value taken from an airy_die_chain notification
+ *
+ * The security fault chain is a kernel-wide atomic notifier, so any
+ * caller can post an arbitrary value on it.  Only the AIRY_FAULT_*
+ * codes defined in <linux/airymax/error.h> describe a supervision
+ * event; the reserved values around them are refused here rather than
+ * being forwarded to the Macro-Supervisor as a bogus fault.
+ *
+ * Return: true when @code is a defined AIRY_FAULT_* code.
+ */
+bool airy_fault_ok(__u32 code);
+
+/**
+ * airy_fault_init() - subscribe the supervisor to the security faults
+ * @void: no parameters
+ *
+ * Registers the supervisor observer on airy_die_chain, which
+ * airy_security_fault() invokes for unrecoverable capability
+ * violations.  The observer is the missing consumer that turns such a
+ * violation into a trace event and an eventfd wakeup for macro_d.
+ *
+ * Called from the Micro-Supervisor late_initcall after the "airy" LSM
+ * has published the chain at security_initcall, and before the [IND]
+ * protocol gate opens so no accepted command can run while faults are
+ * still unreported.
+ *
+ * Return: 0 on success; the negated error of the chain registration.
+ */
+int __init airy_fault_init(void);
 
 #endif /* _AIRY_SUPERV_H */

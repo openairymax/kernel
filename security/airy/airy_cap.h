@@ -244,6 +244,21 @@ struct airy_fault_event {
 	__u32 pad;
 };
 
+/*
+ * struct airy_fault_rec is the payload carried on airy_die_chain.
+ *
+ * The chain value alone identifies the fault code but not the agent it
+ * belongs to: airy_security_fault() may report for an agent other than
+ * current (a supervisor or workqueue caller).  Passing the identity in
+ * the notifier data keeps the record self-contained and removes the
+ * previous assumption that current was always the offender.
+ */
+struct airy_fault_rec {
+	__u32 agent_id;
+	__u32 fault_code;
+	__u64 timestamp_ns;
+};
+
 int airy_fev_post(const struct airy_fault_event *ev);
 int airy_fev_fetch(struct airy_fault_event *ev);
 void airy_fev_reset(void);
