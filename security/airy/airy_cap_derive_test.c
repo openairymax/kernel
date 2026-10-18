@@ -5,17 +5,17 @@
  * airy_cap_derive_test.c — KUnit coverage for CNode derivation.
  *
  * COPY/MINT verify the P1-10 demotion rule (a copy never mints a
- * permission the source lacks) and MDB linkage. MOVE preserves the
- * source's tree position, carries its derived subtree and requires an
- * empty destination. DELETE promotes children to roots without
- * cascading. REVOKE bumps descendant epochs, including a 65-level
- * chain; ROTATE recompiles the badge around a fresh tag. unreg()
- * clears the slot, cascades over revocable descendants, promotes them
- * to roots and spares irrevocable capabilities. Epochs advance
- * through airy_epoch_next(), so a cleared slot never carries 0.
+ * permission the source lacks) and MDB linkage. MUTATE may only shrink
+ * authority and refuses reserved permission bits. MOVE preserves the
+ * source's tree position, carries its subtree and requires an empty
+ * destination. DELETE promotes children to roots without cascading.
+ * REVOKE bumps descendant epochs, including a 65-level chain; ROTATE
+ * recompiles the badge around a fresh tag. unreg() clears the slot,
+ * cascades over revocable descendants and spares irrevocable ones.
+ * Epochs advance through airy_epoch_next(), so a cleared slot never
+ * carries 0.
  *
- * airy_cap_derive() is non-static, so the suite links against
- * airy_cap_derive.o inside the airy module.
+ * airy_cap_derive() is non-static; the suite links against its object.
  */
 
 #include <kunit/test.h>
@@ -206,6 +206,71 @@ static void mint_links_child_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, (__u16)1, dst->generation);
 	KUNIT_EXPECT_EQ(test, (__u16)1, dst->revocable);
 	KUNIT_EXPECT_EQ(test, (__u32)TEST_DST_AGENT, src->first_child);
+}
+
+/* ─── MUTATE ───────────────────────────────────────────────────────────── */
+
+static void mutate_rejects_widen_test(struct kunit *test)
+{
+	struct airy_cap_slot *src = &agent_caps[TEST_SRC_AGENT];
+	__u64 badge;
+	int ret;
+
+	KUNIT_ASSERT_EQ(test, 0,
+			register_agent(TEST_SRC_AGENT, AIRY_CAP_PERM_SEND));
+	badge = src->badge;
+
+	/*
+	 * The source holds SEND only.  A MUTATE that also asks for KILL
+	 * would widen authority and must be refused as a whole.
+	 */
+	ret = airy_cap_derive(TEST_SRC_AGENT, 0, AIRY_CAP_OP_MUTATE,
+			      AIRY_CAP_PERM_SEND | AIRY_CAP_PERM_KILL);
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_PERM, ret);
+	KUNIT_EXPECT_EQ(test, badge, src->badge);
+	KUNIT_EXPECT_EQ(test, (__u16)AIRY_CAP_PERM_SEND, src->perms);
+}
+
+static void mutate_rejects_reserved_bits_test(struct kunit *test)
+{
+	struct airy_cap_slot *src = &agent_caps[TEST_SRC_AGENT];
+	__u64 badge;
+
+	KUNIT_ASSERT_EQ(test, 0,
+			register_agent(TEST_SRC_AGENT,
+				       AIRY_CAP_PERM_SEND |
+				       AIRY_CAP_PERM_KILL));
+	badge = src->badge;
+
+	/* Bits 7-15 are not part of the badge contract (C-S10). */
+	KUNIT_EXPECT_EQ(test, -AIRY_EINVAL,
+			airy_cap_derive(TEST_SRC_AGENT, 0,
+					AIRY_CAP_OP_MUTATE,
+					AIRY_CAP_PERM_SEND |
+					AIRY_CAP_PERM_RESERVED));
+	KUNIT_EXPECT_EQ(test, badge, src->badge);
+	KUNIT_EXPECT_EQ(test, (__u16)(AIRY_CAP_PERM_SEND |
+				      AIRY_CAP_PERM_KILL), src->perms);
+}
+
+static void derive_rejects_reserved_bits_test(struct kunit *test)
+{
+	KUNIT_ASSERT_EQ(test, 0,
+			register_agent(TEST_SRC_AGENT, AIRY_CAP_PERM_ALL));
+
+	/* A derivation must never place an uninstallable badge. */
+	KUNIT_EXPECT_EQ(test, -AIRY_EINVAL,
+			airy_cap_derive(TEST_SRC_AGENT, TEST_DST_AGENT,
+					AIRY_CAP_OP_COPY,
+					AIRY_CAP_PERM_SEND |
+					AIRY_CAP_PERM_RESERVED));
+	KUNIT_EXPECT_EQ(test, -AIRY_EINVAL,
+			airy_cap_derive(TEST_SRC_AGENT, TEST_DST_AGENT,
+					AIRY_CAP_OP_MINT,
+					AIRY_CAP_PERM_SEND |
+					AIRY_CAP_PERM_RESERVED));
+	KUNIT_EXPECT_EQ(test, (unsigned long long)AIRY_CAP_NULL,
+			(unsigned long long)agent_caps[TEST_DST_AGENT].badge);
 }
 
 /* ─── MOVE ─────────────────────────────────────────────────────────────── */
@@ -688,6 +753,9 @@ static struct kunit_case airy_cap_derive_cases[] = {
 	KUNIT_CASE(copy_subset_perms_monotonic_test),
 	KUNIT_CASE(copy_preserves_epoch_and_randtag_test),
 	KUNIT_CASE(mint_links_child_test),
+	KUNIT_CASE(mutate_rejects_widen_test),
+	KUNIT_CASE(mutate_rejects_reserved_bits_test),
+	KUNIT_CASE(derive_rejects_reserved_bits_test),
 	KUNIT_CASE(move_root_becomes_root_test),
 	KUNIT_CASE(move_child_keeps_parent_test),
 	KUNIT_CASE(move_carries_children_test),

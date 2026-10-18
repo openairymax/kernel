@@ -350,7 +350,10 @@ void airy_cap_unreg(__u32 agent_id)
  * op         — one of enum airy_cap_op
  * new_perms  — new permission mask (used by copy, mint, mutate)
  *
- * Returns 0 on success, negative airy_err_t on failure.
+ * Returns 0 on success, negative airy_err_t on failure.  new_perms is
+ * validated before the slot is written: reserved bits (C-S10) fail
+ * with -AIRY_EINVAL, and a MUTATE that would widen the source's
+ * authority fails with -AIRY_ECAP_PERM.
  *
  * Locking (P1-11 fix): the former global spinlock is replaced by a
  * 64-bucket hashed lock array.  COPY/MINT acquire the buckets covering
@@ -439,6 +442,37 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 			__func__, op < ARRAY_SIZE(cap_op_names) ? cap_op_names[op] : "UNKNOWN",
 			src_agent);
 		ret = -AIRY_ECAP_EPOCH;
+		goto out;
+	}
+
+	/*
+	 * COPY, MINT and MUTATE consume new_perms.  Bits 7-15 are not
+	 * part of the badge contract (C-S10) and the CAP_RESPONSE
+	 * installation path rejects them; refuse them here so a
+	 * derivation can never place a badge in a slot that the
+	 * installation path would refuse.
+	 */
+	if ((op == AIRY_CAP_OP_COPY || op == AIRY_CAP_OP_MINT ||
+	     op == AIRY_CAP_OP_MUTATE) &&
+	    (new_perms & AIRY_CAP_PERM_RESERVED)) {
+		pr_debug_ratelimited("%s: op=%s FAIL - reserved perms 0x%04x\n",
+			__func__, op < ARRAY_SIZE(cap_op_names) ? cap_op_names[op] : "UNKNOWN",
+			new_perms);
+		ret = -AIRY_EINVAL;
+		goto out;
+	}
+
+	/*
+	 * COPY and MINT clamp the request with src->perms, MUTATE has no
+	 * such intersection step and would otherwise write new_perms
+	 * verbatim.  Enforce the same rights-attenuation invariant here:
+	 * a capability may lose authority, never gain it.
+	 */
+	if (op == AIRY_CAP_OP_MUTATE &&
+	    (new_perms & (__u16)~READ_ONCE(src->perms))) {
+		pr_debug_ratelimited("%s: MUTATE FAIL - agent %u perms 0x%04x cannot widen to 0x%04x\n",
+			__func__, src_agent, src->perms, new_perms);
+		ret = -AIRY_ECAP_PERM;
 		goto out;
 	}
 
