@@ -147,6 +147,32 @@ static void airy_op_plane_test(struct kunit *test)
 			airy_op_plane(AIRY_IPC_OP_CAP_REQUEST));
 }
 
+static void airy_op_plane32_test(struct kunit *test)
+{
+	/*
+	 * A value that fits the 16-bit contract keeps the plane its low
+	 * half already has: the widened entry must not reclassify.
+	 */
+	KUNIT_EXPECT_EQ(test, AIRY_PLANE_DATA,
+			airy_op_plane32(AIRY_IPC_OP_SEND));
+	KUNIT_EXPECT_EQ(test, AIRY_PLANE_BOOT,
+			airy_op_plane32(AIRY_IPC_OP_CAP_REQUEST));
+
+	/*
+	 * cmd_op is a u32 while the opcode contract is u16. Every value
+	 * with a non-zero high half would alias a legal opcode under a
+	 * plain (u16) cast, so each must be refused outright.
+	 */
+	KUNIT_EXPECT_EQ(test, AIRY_PLANE_INVALID,
+			airy_op_plane32(0x00010000u | AIRY_IPC_OP_SEND));
+	KUNIT_EXPECT_EQ(test, AIRY_PLANE_INVALID,
+			airy_op_plane32(0x00010000u | AIRY_IPC_OP_CAP_REQUEST));
+	KUNIT_EXPECT_EQ(test, AIRY_PLANE_INVALID,
+			airy_op_plane32(0xffff0000u | AIRY_IPC_OP_FREEZE));
+	KUNIT_EXPECT_EQ(test, AIRY_PLANE_INVALID,
+			airy_op_plane32(0xffffffffu));
+}
+
 static void airy_op_plane_hole_test(struct kunit *test)
 {
 	static const u16 holes[] = {
@@ -369,6 +395,7 @@ static void airy_badge_revoke_ok_test(struct kunit *test)
 static struct kunit_case airy_invoke_cases[] = {
 	KUNIT_CASE(airy_invoke_hdr_delegate_test),
 	KUNIT_CASE(airy_op_plane_test),
+	KUNIT_CASE(airy_op_plane32_test),
 	KUNIT_CASE(airy_op_plane_hole_test),
 	KUNIT_CASE(airy_op_plane_ctl_test),
 	KUNIT_CASE(airy_op_valid_plane_invariant_test),

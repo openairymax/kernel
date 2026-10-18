@@ -141,4 +141,30 @@ static inline enum airy_plane airy_op_plane(u16 opcode)
 	}
 }
 
+/**
+ * airy_op_plane32() - classify a 32-bit cmd_op without truncation aliases
+ * @opcode: io_uring cmd_op as delivered by the SQE (a u32).
+ *
+ * The [SC] opcode contract is 16 bits wide, while io_uring hands the
+ * data plane a u32 cmd_op. Casting that value straight to u16 would
+ * alias every cmd_op whose high half is non-zero onto a legal opcode:
+ * 0x00010001 would pass as SEND and 0x00010010 as CAP_REQUEST, letting
+ * a caller reach a handler with bits the contract never defined. A
+ * non-zero high half is therefore outside the contract by construction,
+ * not a value to be narrowed.
+ *
+ * SSoT: 140-application-development/07-syscall-registry.md §4.1-§4.2
+ *       (op-dispatch principle and data-plane cmd_op ownership).
+ *
+ * Return: the plane that owns @opcode, or AIRY_PLANE_INVALID when the
+ *         value does not fit the 16-bit contract or is not dispatchable.
+ */
+static inline enum airy_plane airy_op_plane32(u32 opcode)
+{
+	if ((u16)opcode != opcode)
+		return AIRY_PLANE_INVALID;
+
+	return airy_op_plane((u16)opcode);
+}
+
 #endif /* _AIRY_IPC_OP_H */

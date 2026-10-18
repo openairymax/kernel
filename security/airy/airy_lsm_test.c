@@ -326,6 +326,36 @@ static void file_open_with_perm_allowed_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 0, ret);
 }
 
+static void uring_cmd_opcode_gate_test(struct kunit *test)
+{
+	struct io_uring_cmd cmd = { };
+
+	/*
+	 * Values outside the [SC] opcode space are malformed requests:
+	 * they are refused before any phase runs, so no per-agent state
+	 * is touched and no fault is reported against the caller.
+	 */
+	cmd.cmd_op = 0x0000;
+	KUNIT_EXPECT_EQ(test, -AIRY_EIPC_OPCODE,
+			airy_uring_cmd_check(&cmd));
+
+	/* A non-zero high half would truncate onto SEND under a blind cast. */
+	cmd.cmd_op = 0x00010000u | AIRY_IPC_OP_SEND;
+	KUNIT_EXPECT_EQ(test, -AIRY_EIPC_OPCODE,
+			airy_uring_cmd_check(&cmd));
+
+	/*
+	 * CTL opcodes belong to syscall 548. This plane answers
+	 * -AIRY_ENOTSUP, mirroring 548's refusal of DATA and BOOT so that
+	 * every opcode has exactly one serving entry point.
+	 */
+	cmd.cmd_op = AIRY_IPC_OP_FREEZE;
+	KUNIT_EXPECT_EQ(test, -AIRY_ENOTSUP, airy_uring_cmd_check(&cmd));
+
+	cmd.cmd_op = AIRY_IPC_OP_CAP_RESPONSE;
+	KUNIT_EXPECT_EQ(test, -AIRY_ENOTSUP, airy_uring_cmd_check(&cmd));
+}
+
 static struct kunit_case airy_lsm_cases[] = {
 	KUNIT_CASE(badge_ok_valid_returns_zero_test),
 	KUNIT_CASE(badge_ok_perm_missing_returns_error_test),
@@ -344,6 +374,7 @@ static struct kunit_case airy_lsm_cases[] = {
 	KUNIT_CASE(task_kill_unregistered_agent_skipped_test),
 	KUNIT_CASE(file_open_without_perm_denied_test),
 	KUNIT_CASE(file_open_with_perm_allowed_test),
+	KUNIT_CASE(uring_cmd_opcode_gate_test),
 	{}
 };
 

@@ -13,6 +13,11 @@
  * Phase 4: Fastpath C-S9 re-check (race-resolution)
  * Phase 5: Slowpath enforcement with LSM hooks
  *
+ * Before any phase runs, the cmd_op is classified by airy_op_plane32().
+ * This plane serves only DATA and BOOT; a malformed opcode is refused
+ * ahead of the phases and without a fault report, while a valid opcode
+ * owned by the control plane is refused as not-offered-here.
+ *
  * Also provides airy_security_fault() for reporting unrecoverable
  * security violations to the die_notifier chain.
  */
@@ -33,7 +38,41 @@
 
 #include <airymax/airy_lockdown.h>
 
+#include "../../kernel/corekern/ipc/airy_ipc_op.h"
+
 #include "airy_cap.h"
+
+/* ─── C-S2 cmd_op Gate ─────────────────────────────────────────────────── */
+/*
+ * Decide whether this plane serves the command before any state is
+ * inspected.  The io_uring_cmd path owns DATA and BOOT only: DATA
+ * carries the IPC stream under the C-S9 inline Badge check, BOOT is the
+ * CAP_REQUEST bootstrap half.  CTL opcodes are the sec_d management
+ * entries served by syscall 548 and are refused here with the same
+ * -AIRY_ENOTSUP that 548 returns for the other planes, so each opcode
+ * has exactly one serving entry point.
+ *
+ * A value outside the [SC] opcode space is a malformed request, not a
+ * forged badge: it is answered before the phases, without calling
+ * airy_security_fault().  Reporting a fault would let any caller freeze
+ * its own ring by sending a bad opcode.
+ */
+static int airy_cmd_gate(u32 cmd_op, enum airy_plane *plane)
+{
+	enum airy_plane owner = airy_op_plane32(cmd_op);
+
+	*plane = owner;
+
+	switch (owner) {
+	case AIRY_PLANE_DATA:
+	case AIRY_PLANE_BOOT:
+		return 0;
+	case AIRY_PLANE_CTL:
+		return -AIRY_ENOTSUP;
+	default:
+		return -AIRY_EIPC_OPCODE;
+	}
+}
 
 /* ─── Phase 1: C-S0 Ring Frozen Check ──────────────────────────────────── */
 /*
@@ -59,8 +98,7 @@ static int phase1_ring_frozen(struct airy_task_sec *sec)
  * request its initial capability set during bootstrap.  This is
  * the only path that can create capabilities without prior authority.
  */
-static int phase2_cap_request(struct io_uring_cmd *ioucmd,
-			     __u32 agent_id, __u64 badge)
+static int phase2_cap_request(__u32 agent_id, __u64 badge)
 {
 	/*
 	 * CAP_REQUEST is only valid when the agent has no existing
@@ -153,12 +191,14 @@ static int phase5_slowpath_enforce(__u32 agent_id, __u64 badge,
 		return -AIRY_ECAP_MISSING;
 	}
 
-	/* Full badge comparison (not just fastpath fields).
+	/*
+	 * Full badge comparison (not just fastpath fields).
 	 * READ_ONCE prevents torn reads on weakly-ordered architectures
 	 * (ARM64) when airy_cap_derive() concurrently writes slot->badge
 	 * under airy_cap_derive_lock (e.g. ROTATE/MUTATE/MOVE/DELETE).
 	 * This mirrors Linux 6.6 io_uring's defensive READ_ONCE pattern
-	 * for shared-memory reads (see io_uring.c io_get_sqe). */
+	 * for shared-memory reads (see io_uring.c io_get_sqe).
+	 */
 	slot_badge = READ_ONCE(slot->badge);
 	if (slot_badge != badge) {
 		pr_debug_ratelimited("airy_cap_check: phase5 agent=%u FAIL - badge FORGED slot_badge=0x%016llx != req_badge=0x%016llx\n",
@@ -187,17 +227,31 @@ static int phase5_slowpath_enforce(__u32 agent_id, __u64 badge,
 /*
  * Slowpath capability check for io_uring_cmd IPC messages.
  *
- * Executes the five-phase protocol:
+ * First the cmd_op is gated (C-S2): a malformed value is refused with
+ * -AIRY_EIPC_OPCODE and a control-plane value with -AIRY_ENOTSUP, both
+ * before any phase runs and without touching per-agent state.  The
+ * remaining commands execute the five-phase protocol:
  *   1. Check if the agent ring is frozen (C-S0)
  *   2. Handle CAP_REQUEST bootstrap
  *   3. Try [DSL] degradation if compatible
  *   4. Re-check fastpath C-S9 (race resolution)
  *   5. Full slowpath enforcement
+ *
+ * The permission mask a DATA command must carry is derived from the
+ * opcode by airy_op_required_perms(), the same single source of truth
+ * syscall 548 uses.  It is deliberately not read from the caller-owned
+ * pdu: a caller that supplied its own required_perms could ask for zero
+ * and bypass the permission bits entirely.
+ *
+ * The pdu layout is thus:
+ *   bytes [0..7]   — capability badge (u64, little-endian)
+ *   bytes [8..31]  — reserved, ignored
  */
 int airy_uring_cmd_check(struct io_uring_cmd *ioucmd)
 {
 	struct task_struct *task = current;
 	struct airy_task_sec *sec;
+	enum airy_plane plane;
 	__u32 agent_id;
 	__u64 badge;
 	__u16 required_perms;
@@ -211,38 +265,43 @@ int airy_uring_cmd_check(struct io_uring_cmd *ioucmd)
 		agent_id, ioucmd->cmd_op, sec->agent_state);
 
 	/*
-	 * Phase 1: C-S0 — ring frozen check
+	 * C-S2: reject malformed and control-plane opcodes before any
+	 * per-agent state is read or mutated.
+	 */
+	ret = airy_cmd_gate(ioucmd->cmd_op, &plane);
+	if (ret)
+		return ret;
+
+	/*
+	 * Phase 1: C-S0 — ring frozen check.  A frozen ring blocks every
+	 * command, bootstrap included: suspension must not be escapable
+	 * by re-requesting capabilities.
 	 */
 	ret = phase1_ring_frozen(sec);
 	if (ret < 0)
 		goto fault;
 
-	/*
-	 * Phase 2: CAP_REQUEST bootstrap path
-	 *
-	 * Extract badge (64-bit) and required_perms (16-bit) from the
-	 * io_uring_cmd inline pdu buffer.  The pdu layout is:
-	 *   bytes [0..7]   — capability badge (u64, little-endian)
-	 *   bytes [8..9]   — required permission bits (u16, little-endian)
-	 *   bytes [10..31] — reserved for future extension
-	 */
 	badge = get_unaligned_le64(&ioucmd->pdu[0]);
-	required_perms = get_unaligned_le16(&ioucmd->pdu[8]);
 
-	if (required_perms == 0) {
-		/* CAP_REQUEST bootstrap: no perms required */
+	/*
+	 * Phase 2: CAP_REQUEST bootstrap path.  CAP_REQUEST is the only
+	 * BOOT-plane opcode, so the plane verdict doubles as the opcode
+	 * verdict here.
+	 */
+	if (plane == AIRY_PLANE_BOOT) {
 		ret = airy_lock_gate(AIRY_LOCK_IF_CAP_GRANT);
 		if (ret)
 			return ret;
-		return phase2_cap_request(ioucmd, agent_id, badge);
+		return phase2_cap_request(agent_id, badge);
 	}
+
+	required_perms = airy_op_required_perms((__u16)ioucmd->cmd_op);
 
 	/*
 	 * Phase 3: [DSL]/agentrt degradation
 	 */
-	if (sec->agent_state == AIRY_AGENT_STOPPED) {
+	if (sec->agent_state == AIRY_AGENT_STOPPED)
 		return phase3_dsl_degradation(agent_id);
-	}
 
 	/*
 	 * Phase 4: fastpath C-S9 re-check
