@@ -341,6 +341,22 @@ int airy_uring_cmd_check(struct io_uring_cmd *ioucmd)
 		return ret;
 
 	/*
+	 * Reject an out-of-range agent ID before any phase indexes the
+	 * slot table.  The CAP_REQUEST branch below reads the slot
+	 * directly, so a task whose security blob carries a corrupt or
+	 * unset agent_id would otherwise perform an out-of-bounds access
+	 * before airy_cap_register() gets a chance to bound-check it.
+	 * agent_id 0 is left to the individual phases: it is a valid
+	 * index whose slot is permanently empty, and airy_cap_register()
+	 * rejects it as the MDB unbound sentinel.
+	 */
+	if (agent_id >= AIRY_CAP_MAX_AGENTS) {
+		pr_debug_ratelimited("airy_cap_check: agent=%u out of range (MAX=%u)\n",
+				     agent_id, AIRY_CAP_MAX_AGENTS);
+		return -AIRY_ECAP_MISSING;
+	}
+
+	/*
 	 * Phase 1: C-S0 — ring frozen check.  A frozen ring blocks every
 	 * command, bootstrap included: suspension must not be escapable
 	 * by re-requesting capabilities.  This is a plain error, not a

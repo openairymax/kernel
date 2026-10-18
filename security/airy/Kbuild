@@ -27,7 +27,8 @@ airy-y := airy_fs.o \
 # airy_cap_derive.o stays in the build either way.
 ifeq ($(CONFIG_AIRY_KUNIT),y)
 	airy-y += airy_lsm_test.o airy_cap_derive_test.o \
-		  airy_cap_sysctl_test.o airy_contract_test.o \
+		  airy_cap_array_test.o airy_cap_sysctl_test.o \
+		  airy_contract_test.o \
 		  airy_eventfd_test.o airy_probe_test.o airy_lockdown_test.o \
 		  airy_policy_test.o
 else

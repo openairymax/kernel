@@ -14,12 +14,13 @@
 #include <linux/types.h>
 #include <linux/cache.h>
 #include <linux/moduleparam.h>
+#include <linux/string.h>
 #include <linux/airymax/lsm_types.h>
 #include <linux/airymax/security_types.h>
 #include <linux/airymax/ipc.h>
 #include <linux/airymax/error.h>
 
-#include "../../security/airy/airy_cap.h"
+#include "airy_ipc_capability.h"
 
 /* ─── Global Capability Array (authoritative definition) ─────────────── */
 /*
@@ -53,17 +54,22 @@ MODULE_PARM_DESC(security_paranoid,
 		 "Serialize fastpath badge checks with a speculation fence (default: false)");
 
 /* ─── Capability Initialization ──────────────────────────────────────── */
+/*
+ * Reset the whole table to the pristine boot state.  The slot is
+ * zeroed in full rather than field by field so that the MDB link
+ * fields (parent_agent / first_child / next_sibling / generation /
+ * revocable) cannot survive a re-initialisation and graft stale tree
+ * edges onto freshly registered agents.  epoch starts at 1 because a
+ * zero badge field and epoch 0 would make a forged badge with epoch 0
+ * indistinguishable from an empty slot.
+ */
 void airy_cap_agent_caps_init(void)
 {
 	int i;
 
 	for (i = 0; i < AIRY_CAP_MAX_AGENTS; i++) {
-		agent_caps[i].badge    = 0;
-		agent_caps[i].agent_id = 0;
-		agent_caps[i].flags    = 0;
-		agent_caps[i].randtag  = 0;
-		agent_caps[i].perms    = 0;
-		agent_caps[i].epoch    = 1;
+		memset(&agent_caps[i], 0, sizeof(agent_caps[i]));
+		agent_caps[i].epoch = 1;
 	}
 
 	atomic_set(&airy_cap_global_epoch, 1);
