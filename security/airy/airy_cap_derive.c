@@ -308,8 +308,8 @@ void airy_cap_unreg(__u32 agent_id)
 		airy_cap_mdb_unlink_child(agent_id);
 		cap_slot_reset(slot);
 
-		pr_debug_ratelimited("airy_cap_unreg: agent=%u epoch %u\n",
-				     agent_id, epoch);
+		pr_debug_ratelimited("%s: agent=%u epoch %u\n",
+				     __func__, agent_id, epoch);
 	}
 
 	cap_derive_unlock_all(flags);
@@ -347,8 +347,8 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 	bool all_locked = false;
 	int ret = 0;
 
-	pr_debug_ratelimited("airy_cap_derive: ENTER op=%s(%u) src=%u dst=%u new_perms=0x%04x\n",
-		op < ARRAY_SIZE(cap_op_names) ? cap_op_names[op] : "UNKNOWN",
+	pr_debug_ratelimited("%s: ENTER op=%s(%u) src=%u dst=%u new_perms=0x%04x\n",
+		__func__, op < ARRAY_SIZE(cap_op_names) ? cap_op_names[op] : "UNKNOWN",
 		op, src_agent, dst_agent, new_perms);
 
 	/*
@@ -377,8 +377,8 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 	 */
 	src = airy_cap_lookup(src_agent);
 	if (!src) {
-		pr_debug_ratelimited("airy_cap_derive: op=%s FAIL - src agent %u not found\n",
-			op < ARRAY_SIZE(cap_op_names) ? cap_op_names[op] : "UNKNOWN",
+		pr_debug_ratelimited("%s: op=%s FAIL - src agent %u not found\n",
+			__func__, op < ARRAY_SIZE(cap_op_names) ? cap_op_names[op] : "UNKNOWN",
 			src_agent);
 		ret = -AIRY_ECAP_MISSING;
 		goto out;
@@ -388,15 +388,15 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 	/* ─── COPY (optional demotion, P1-10 fix) ─────────────────── */
 	case AIRY_CAP_OP_COPY:
 		if (dst_agent >= AIRY_CAP_MAX_AGENTS) {
-			pr_debug_ratelimited("airy_cap_derive: COPY FAIL - dst %u >= MAX %u\n",
-				dst_agent, AIRY_CAP_MAX_AGENTS);
+			pr_debug_ratelimited("%s: COPY FAIL - dst %u >= MAX %u\n",
+				__func__, dst_agent, AIRY_CAP_MAX_AGENTS);
 			ret = -AIRY_ECAP_OVERFLOW;
 			goto out;
 		}
 		dst = &agent_caps[dst_agent];
 		if (dst->badge != AIRY_CAP_NULL) {
-			pr_debug_ratelimited("airy_cap_derive: COPY FAIL - dst %u occupied badge=0x%016llx\n",
-				dst_agent, (unsigned long long)dst->badge);
+			pr_debug_ratelimited("%s: COPY FAIL - dst %u occupied badge=0x%016llx\n",
+				__func__, dst_agent, (unsigned long long)dst->badge);
 			ret = -AIRY_EEXIST;
 			goto out;
 		}
@@ -423,8 +423,8 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		/* MDB tree: link dst as child of src */
 		airy_cap_mdb_link_child(src, dst, src_agent, dst_agent);
 
-		pr_debug_ratelimited("airy_cap_derive: COPY src=%u→dst=%u badge=0x%016llx epoch=%u perms=0x%04x (parent=%u gen=%u)\n",
-			src_agent, dst_agent,
+		pr_debug_ratelimited("%s: COPY src=%u→dst=%u badge=0x%016llx epoch=%u perms=0x%04x (parent=%u gen=%u)\n",
+			__func__, src_agent, dst_agent,
 			(unsigned long long)dst->badge, dst->epoch, dst->perms,
 			dst->parent_agent, dst->generation);
 		break;
@@ -432,15 +432,15 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 	/* ─── MINT (always demotes, maintains MDB tree) ────────────── */
 	case AIRY_CAP_OP_MINT:
 		if (dst_agent >= AIRY_CAP_MAX_AGENTS) {
-			pr_debug_ratelimited("airy_cap_derive: MINT FAIL - dst %u >= MAX %u\n",
-				dst_agent, AIRY_CAP_MAX_AGENTS);
+			pr_debug_ratelimited("%s: MINT FAIL - dst %u >= MAX %u\n",
+				__func__, dst_agent, AIRY_CAP_MAX_AGENTS);
 			ret = -AIRY_ECAP_OVERFLOW;
 			goto out;
 		}
 		dst = &agent_caps[dst_agent];
 		if (dst->badge != AIRY_CAP_NULL) {
-			pr_debug_ratelimited("airy_cap_derive: MINT FAIL - dst %u occupied\n",
-				dst_agent);
+			pr_debug_ratelimited("%s: MINT FAIL - dst %u occupied\n",
+				__func__, dst_agent);
 			ret = -AIRY_EEXIST;
 			goto out;
 		}
@@ -460,8 +460,8 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		/* MDB tree: link dst as child of src */
 		airy_cap_mdb_link_child(src, dst, src_agent, dst_agent);
 
-		pr_debug_ratelimited("airy_cap_derive: MINT src=%u→dst=%u badge=0x%016llx epoch=%u perms=0x%04x (demoted from 0x%04x parent=%u gen=%u)\n",
-			src_agent, dst_agent,
+		pr_debug_ratelimited("%s: MINT src=%u→dst=%u badge=0x%016llx epoch=%u perms=0x%04x (demoted from 0x%04x parent=%u gen=%u)\n",
+			__func__, src_agent, dst_agent,
 			(unsigned long long)dst->badge, dst->epoch,
 			dst->perms, src->perms, dst->parent_agent, dst->generation);
 		break;
@@ -473,15 +473,15 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		__u16 generation, revocable;
 
 		if (dst_agent >= AIRY_CAP_MAX_AGENTS) {
-			pr_debug_ratelimited("airy_cap_derive: MOVE FAIL - dst %u >= MAX %u\n",
-				dst_agent, AIRY_CAP_MAX_AGENTS);
+			pr_debug_ratelimited("%s: MOVE FAIL - dst %u >= MAX %u\n",
+				__func__, dst_agent, AIRY_CAP_MAX_AGENTS);
 			ret = -AIRY_ECAP_OVERFLOW;
 			goto out;
 		}
 		dst = &agent_caps[dst_agent];
 		if (dst->badge != AIRY_CAP_NULL) {
-			pr_debug_ratelimited("airy_cap_derive: MOVE FAIL - dst %u occupied\n",
-				dst_agent);
+			pr_debug_ratelimited("%s: MOVE FAIL - dst %u occupied\n",
+				__func__, dst_agent);
 			ret = -AIRY_EEXIST;
 			goto out;
 		}
@@ -522,8 +522,8 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 
 		cap_slot_reset(src);
 
-		pr_debug_ratelimited("airy_cap_derive: MOVE src=%u→dst=%u badge=0x%016llx epoch=%u parent=%u gen=%u children=%u\n",
-			src_agent, dst_agent,
+		pr_debug_ratelimited("%s: MOVE src=%u→dst=%u badge=0x%016llx epoch=%u parent=%u gen=%u children=%u\n",
+			__func__, src_agent, dst_agent,
 			(unsigned long long)dst->badge, dst->epoch,
 			dst->parent_agent, dst->generation, child);
 		break;
@@ -538,8 +538,8 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		WRITE_ONCE(src->badge, AIRY_BADGE_COMPILE(epoch, randtag,
 						       new_perms));
 		WRITE_ONCE(src->perms, new_perms);
-		pr_debug_ratelimited("airy_cap_derive: MUTATE agent=%u perms 0x%04x→0x%04x badge=0x%016llx\n",
-			src_agent, src->perms, new_perms,
+		pr_debug_ratelimited("%s: MUTATE agent=%u perms 0x%04x→0x%04x badge=0x%016llx\n",
+			__func__, src_agent, src->perms, new_perms,
 			(unsigned long long)AIRY_BADGE_COMPILE(epoch, randtag, new_perms));
 		break;
 
@@ -562,15 +562,15 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 
 			airy_cap_revoke_subtree(src_agent, new_epoch_val);
 
-			pr_debug_ratelimited("airy_cap_derive: REVOKE agent=%u epoch %u→%u (cascading, all descendants invalidated)\n",
-				src_agent, old_epoch, new_epoch_val);
+			pr_debug_ratelimited("%s: REVOKE agent=%u epoch %u→%u (cascading, all descendants invalidated)\n",
+				__func__, src_agent, old_epoch, new_epoch_val);
 		}
 		break;
 
 	/* ─── DELETE (unlink from MDB tree, clear slot) ────────────── */
 	case AIRY_CAP_OP_DELETE:
-		pr_debug_ratelimited("airy_cap_derive: DELETE agent=%u badge=0x%016llx epoch=%u (clearing slot)\n",
-			src_agent, (unsigned long long)src->badge,
+		pr_debug_ratelimited("%s: DELETE agent=%u badge=0x%016llx epoch=%u (clearing slot)\n",
+			__func__, src_agent, (unsigned long long)src->badge,
 			READ_ONCE(src->epoch));
 
 		/*
@@ -594,8 +594,8 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		epoch   = AIRY_BADGE_EPOCH(src->badge);
 		perms   = src->perms;
 
-		pr_debug_ratelimited("airy_cap_derive: ROTATE agent=%u old_tag=0x%08x→new_tag=0x%08x epoch=%u perms=0x%04x\n",
-			src_agent, src->randtag, new_tag,
+		pr_debug_ratelimited("%s: ROTATE agent=%u old_tag=0x%08x→new_tag=0x%08x epoch=%u perms=0x%04x\n",
+			__func__, src_agent, src->randtag, new_tag,
 			(__u16)epoch, perms);
 
 		/*
@@ -604,21 +604,22 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		 * store-store reordering on weakly-ordered architectures.
 		 */
 		smp_store_release(&src->randtag, new_tag);
+		/* Publish badge only after the tag store above. */
 		smp_store_release(&src->badge,
 				  AIRY_BADGE_COMPILE(epoch, new_tag, perms));
 		break;
 	}
 
 	default:
-		pr_warn("airy_cap_derive: UNKNOWN op=%u src=%u dst=%u\n",
-			op, src_agent, dst_agent);
+		pr_warn("%s: UNKNOWN op=%u src=%u dst=%u\n",
+			__func__, op, src_agent, dst_agent);
 		ret = -AIRY_EINVAL;
 		break;
 	}
 
 out:
-	pr_debug_ratelimited("airy_cap_derive: EXIT op=%s(%u) ret=%d\n",
-		op < ARRAY_SIZE(cap_op_names) ? cap_op_names[op] : "UNKNOWN",
+	pr_debug_ratelimited("%s: EXIT op=%s(%u) ret=%d\n",
+		__func__, op < ARRAY_SIZE(cap_op_names) ? cap_op_names[op] : "UNKNOWN",
 		op, ret);
 	if (all_locked)
 		cap_derive_unlock_all(all_flags);
