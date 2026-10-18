@@ -352,6 +352,22 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		op, src_agent, dst_agent, new_perms);
 
 	/*
+	 * Agent 0 is the MDB unbound sentinel and may never own a
+	 * capability, exactly as airy_cap_register() enforces.  COPY,
+	 * MINT and MOVE are the only operations that install a badge
+	 * into dst_agent; the remaining operations ignore it.  Without
+	 * this guard a derivation to agent 0 would populate a slot that
+	 * every parent/child link uses to mean "none".
+	 */
+	if (dst_agent == 0 &&
+	    (op == AIRY_CAP_OP_COPY || op == AIRY_CAP_OP_MINT ||
+	     op == AIRY_CAP_OP_MOVE)) {
+		pr_debug_ratelimited("%s: op=%s FAIL - dst 0 is the unbound sentinel\n",
+			__func__, op < ARRAY_SIZE(cap_op_names) ? cap_op_names[op] : "UNKNOWN");
+		return -AIRY_EINVAL;
+	}
+
+	/*
 	 * Acquire locks before slot lookup to close the TOCTOU window.
 	 * REVOKE cascades through the entire MDB subtree, while MOVE and
 	 * DELETE rewrite the parent's child chain and (for MOVE) the

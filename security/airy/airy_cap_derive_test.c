@@ -4,21 +4,17 @@
  *
  * airy_cap_derive_test.c — KUnit coverage for CNode derivation.
  *
- * COPY/MINT are checked for the P1-10 demotion rule (a copy never
- * mints a permission the source lacks) and for MDB linkage. MOVE is
- * checked to preserve the source's tree position, carry its derived
- * subtree, keep an irrevocable marker, and require an empty
- * destination slot, which keeps the MDB acyclic (constraint I2).
- * DELETE is checked to detach its children as new roots without
- * cascading. REVOKE proves each link by bumping the descendants'
- * epoch, including a 65-level chain, and ROTATE is checked to
- * recompile the badge around a fresh random tag. airy_cap_unreg() is
- * checked to clear the terminating agent's slot, cascade the revoke
- * over its revocable descendants, promote them to roots, and spare
- * irrevocable capabilities.
+ * COPY/MINT verify the P1-10 demotion rule (a copy never mints a
+ * permission the source lacks) and MDB linkage. MOVE preserves the
+ * source's tree position, carries its derived subtree and requires an
+ * empty destination. DELETE promotes children to roots without
+ * cascading. REVOKE bumps descendant epochs, including a 65-level
+ * chain; ROTATE recompiles the badge around a fresh tag. unreg()
+ * clears the slot, cascades over revocable descendants, promotes them
+ * to roots and spares irrevocable capabilities.
  *
- * airy_cap_derive() is non-static (airy_cap.h), so the suite links
- * against airy_cap_derive.o inside the airy module.
+ * airy_cap_derive() is non-static, so the suite links against
+ * airy_cap_derive.o inside the airy module.
  */
 
 #include <kunit/test.h>
@@ -590,6 +586,37 @@ static void revoke_deep_chain_test(struct kunit *test)
 	}
 }
 
+/*
+ * Agent 0 is the unbound sentinel: the three operations that install a
+ * badge must refuse it exactly as airy_cap_register() does, and a
+ * rejected derivation must leave both slots untouched.
+ */
+static void derive_rejects_unbound_dst_test(struct kunit *test)
+{
+	struct airy_cap_slot *src = &agent_caps[TEST_SRC_AGENT];
+	__u64 badge;
+
+	KUNIT_ASSERT_EQ(test, 0,
+			register_agent(TEST_SRC_AGENT, AIRY_CAP_PERM_SEND));
+	badge = src->badge;
+
+	KUNIT_EXPECT_EQ(test, -AIRY_EINVAL,
+			airy_cap_derive(TEST_SRC_AGENT, 0,
+					AIRY_CAP_OP_COPY, 0));
+	KUNIT_EXPECT_EQ(test, -AIRY_EINVAL,
+			airy_cap_derive(TEST_SRC_AGENT, 0,
+					AIRY_CAP_OP_MINT,
+					AIRY_CAP_PERM_SEND));
+	KUNIT_EXPECT_EQ(test, -AIRY_EINVAL,
+			airy_cap_derive(TEST_SRC_AGENT, 0,
+					AIRY_CAP_OP_MOVE, 0));
+
+	KUNIT_EXPECT_EQ(test, (unsigned long long)AIRY_CAP_NULL,
+			(unsigned long long)agent_caps[0].badge);
+	KUNIT_EXPECT_EQ(test, badge, src->badge);
+	KUNIT_EXPECT_EQ(test, (__u32)0, src->first_child);
+}
+
 static struct kunit_case airy_cap_derive_cases[] = {
 	KUNIT_CASE(copy_cannot_mint_derive_perm_test),
 	KUNIT_CASE(copy_new_perms_zero_clones_source_test),
@@ -609,6 +636,7 @@ static struct kunit_case airy_cap_derive_cases[] = {
 	KUNIT_CASE(unreg_revokes_subtree_test),
 	KUNIT_CASE(unreg_spares_irrevocable_test),
 	KUNIT_CASE(revoke_deep_chain_test),
+	KUNIT_CASE(derive_rejects_unbound_dst_test),
 	{}
 };
 
