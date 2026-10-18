@@ -161,11 +161,37 @@ int airy_policy_check(enum airy_policy_hook hook, const u64 *fields,
 
 #if IS_ENABLED(CONFIG_AIRY_KUNIT)
 /**
+ * struct airy_pol_cnt - counter snapshot of one registered table
+ *
+ * Field meaning matches the securityfs row: @evals counts evaluations,
+ * the four verdict fields count the winning class and @fault counts
+ * winners that carried a non-zero fault code.
+ */
+struct airy_pol_cnt {
+	u64 evals;
+	u64 allow;
+	u64 deny;
+	u64 audit;
+	u64 complain;
+	u64 fault;
+};
+
+/**
  * airy_policy_reset - drop every registration and zero all counters
  *
  * Test-only: a KUnit suite has to start each case from an empty registry.
  */
 void airy_policy_reset(void);
+
+/**
+ * airy_pol_stat - snapshot one table's counters
+ * @slot: registration slot, 0 .. AIRY_POLICY_MAX_TABLES - 1
+ * @out: receives the snapshot, untouched when @slot is out of range
+ *
+ * Test-only companion of airy_policy_reset(); production builds expose
+ * the same numbers through /sys/kernel/security/airy/policy.
+ */
+void airy_pol_stat(u8 slot, struct airy_pol_cnt *out);
 #endif
 
 #else /* !CONFIG_SECURITY_AIRY */

@@ -247,6 +247,37 @@ TRACE_EVENT(airy_lockdown_reject,
 		__entry->active)
 );
 
+/*
+ * One policy table evaluation that did not end in a plain ALLOW.
+ * hook is enum airy_policy_hook, table is the registration slot index
+ * (the same order securityfs prints), verdict is enum airy_verdict and
+ * fault is the winning row's AIRY_FAULT_* code (0 when none).
+ */
+TRACE_EVENT(airy_policy_decision,
+
+	TP_PROTO(u32 hook, u32 table, u32 verdict, u32 fault),
+
+	TP_ARGS(hook, table, verdict, fault),
+
+	TP_STRUCT__entry(
+		__field(	u32,	hook		)
+		__field(	u32,	table		)
+		__field(	u32,	verdict		)
+		__field(	u32,	fault		)
+	),
+
+	TP_fast_assign(
+		__entry->hook = hook;
+		__entry->table = table;
+		__entry->verdict = verdict;
+		__entry->fault = fault;
+	),
+
+	TP_printk("hook=%u table=%u verdict=%u fault=%u",
+		__entry->hook, __entry->table, __entry->verdict,
+		__entry->fault)
+);
+
 #endif /* _TRACE_AIRY_H */
 
 /* This part must be outside protection */
