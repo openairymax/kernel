@@ -123,4 +123,28 @@ int airy_sv_cmd_chk(const struct airy_superv_cmd *cmd);
  */
 int airy_sv_freeze(struct airy_sv_ctx *ctx, __u32 agent_id, __u32 reason);
 
+/**
+ * airy_sv_thaw() - thaw every IPC ring owned by an agent
+ * @ctx: protocol context; commands are refused unless it is RUNNING
+ * @agent_id: target agent; zero is the unbound sentinel and is refused
+ *
+ * Thawing is not the isolated inverse of a freeze: the design requires
+ * every outstanding badge to be retired before traffic resumes, so the
+ * global epoch is bumped once the ring set is known to exist and before
+ * any ring is reopened.  A thaw for an agent that owns no ring must not
+ * revoke the badges of the whole system, hence the probe pass that
+ * counts rings without touching them.
+ *
+ * Freeze and thaw share one mutex.  It is the kernel half of the sec_d
+ * serialisation the design asks for: without it a thaw could land
+ * between a freeze and the eventfd notification for that freeze and
+ * silently undo a freeze already reported as successful.
+ *
+ * Return: 0 when at least one ring was thawed; -EINVAL when @agent_id
+ *         is zero; -AIRY_ECAP_OVERFLOW when it is outside the agent
+ *         range; -EAGAIN when @ctx is not RUNNING; -AIRY_EIPC_CONTEXT
+ *         when no task carries @agent_id or none of them owns a ring.
+ */
+int airy_sv_thaw(struct airy_sv_ctx *ctx, __u32 agent_id);
+
 #endif /* _AIRY_SUPERV_H */
