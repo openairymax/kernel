@@ -36,6 +36,25 @@
  *   [15:0]   permissions (16 bits)
  */
 
+/* ─── Epoch Progression ────────────────────────────────────────────────── */
+/*
+ * airy_epoch_next - advance a 16-bit per-agent epoch.
+ *
+ * Epoch 0 is reserved: a pristine slot carries epoch 1 so that an
+ * all-zero badge can never match an empty slot on the fastpath
+ * (airy_ct_perm(x, 0) is true, so a caller requiring no permission
+ * bits would otherwise be satisfied by AIRY_CAP_NULL).  A plain +1
+ * wraps 0xffff back to the reserved value, so the successor of
+ * 0xffff is 1.  Every writer of slot->epoch goes through this
+ * helper to keep the reservation intact.
+ */
+static inline __u16 airy_epoch_next(__u16 epoch)
+{
+	__u16 next = epoch + 1;
+
+	return next ? next : 1;
+}
+
 /* ─── Slot Flags ───────────────────────────────────────────────────────── */
 /*
  * AIRY_CAP_FL_REVOKED - the slot lost its authority through REVOKE.

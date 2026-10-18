@@ -212,15 +212,27 @@ static void cap_mdb_reparent(__u32 agent_id, __u32 new_parent)
 	}
 }
 
-/* Clear every field of a slot, leaving it ready for re-registration. */
-static void cap_slot_reset(struct airy_cap_slot *slot)
+/*
+ * Clear every field of a slot, leaving it ready for re-registration.
+ *
+ * The cleared slot keeps a live epoch, supplied by the caller.  Epoch 0
+ * is reserved: a slot carrying it is field-for-field equal to
+ * AIRY_CAP_NULL, which passes the fastpath whenever a caller requires
+ * no permission bits.  Every clearing site therefore advances the
+ * epoch through airy_epoch_next() instead of rewinding it, so a badge
+ * minted before the clear always disagrees on the epoch and is refused
+ * with ECAP_EPOCH.  Rewinding to a fixed value would make the stale
+ * badge match again; a CAP_REQUEST replay of a pre-DELETE badge would
+ * then re-register the old authority.
+ */
+static void cap_slot_reset(struct airy_cap_slot *slot, __u16 epoch)
 {
 	WRITE_ONCE(slot->badge, AIRY_CAP_NULL);
 	WRITE_ONCE(slot->agent_id, 0);
 	WRITE_ONCE(slot->flags, 0);
 	WRITE_ONCE(slot->randtag, 0);
 	WRITE_ONCE(slot->perms, 0);
-	WRITE_ONCE(slot->epoch, 0);
+	WRITE_ONCE(slot->epoch, epoch);
 	WRITE_ONCE(slot->parent_agent, 0);
 	WRITE_ONCE(slot->first_child, 0);
 	WRITE_ONCE(slot->next_sibling, 0);
@@ -315,12 +327,12 @@ void airy_cap_unreg(__u32 agent_id)
 
 	slot = &agent_caps[agent_id];
 	if (READ_ONCE(slot->badge) != AIRY_CAP_NULL) {
-		__u16 epoch = READ_ONCE(slot->epoch) + 1;
+		__u16 epoch = airy_epoch_next(READ_ONCE(slot->epoch));
 
 		airy_cap_revoke_subtree(agent_id, epoch);
 		cap_mdb_reparent(agent_id, 0);
 		airy_cap_mdb_unlink_child(agent_id);
-		cap_slot_reset(slot);
+		cap_slot_reset(slot, epoch);
 
 		pr_debug_ratelimited("%s: agent=%u epoch %u\n",
 				     __func__, agent_id, epoch);
@@ -566,7 +578,7 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		WRITE_ONCE(dst->first_child, child);
 		cap_mdb_reparent(src_agent, dst_agent);
 
-		cap_slot_reset(src);
+		cap_slot_reset(src, airy_epoch_next(READ_ONCE(src->epoch)));
 
 		pr_debug_ratelimited("%s: MOVE src=%u→dst=%u badge=0x%016llx epoch=%u parent=%u gen=%u children=%u\n",
 			__func__, src_agent, dst_agent,
@@ -604,7 +616,7 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		 */
 		{
 			__u16 old_epoch = READ_ONCE(src->epoch);
-			__u16 new_epoch_val = old_epoch + 1;
+			__u16 new_epoch_val = airy_epoch_next(old_epoch);
 
 			airy_cap_revoke_subtree(src_agent, new_epoch_val);
 
@@ -628,7 +640,7 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		 */
 		cap_mdb_reparent(src_agent, 0);
 		airy_cap_mdb_unlink_child(src_agent);
-		cap_slot_reset(src);
+		cap_slot_reset(src, airy_epoch_next(READ_ONCE(src->epoch)));
 		break;
 
 	/* ─── ROTATE ────────────────────────────────────────────────── */

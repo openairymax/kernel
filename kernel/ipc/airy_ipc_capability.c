@@ -89,7 +89,7 @@ u64 airy_cap_epoch_bump(u32 agent_id)
 	if (unlikely(agent_id >= AIRY_CAP_MAX_AGENTS))
 		return 0;
 
-	new_epoch = READ_ONCE(agent_caps[agent_id].epoch) + 1;
+	new_epoch = airy_epoch_next(READ_ONCE(agent_caps[agent_id].epoch));
 	WRITE_ONCE(agent_caps[agent_id].epoch, new_epoch);
 	return (__u64)new_epoch;
 }
@@ -101,7 +101,7 @@ void airy_cap_epoch_bump_all(void)
 
 	for (i = 0; i < AIRY_CAP_MAX_AGENTS; i++)
 		WRITE_ONCE(agent_caps[i].epoch,
-			   READ_ONCE(agent_caps[i].epoch) + 1);
+			   airy_epoch_next(READ_ONCE(agent_caps[i].epoch)));
 
 	atomic_inc(&airy_cap_global_epoch);
 }

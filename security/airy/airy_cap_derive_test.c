@@ -11,7 +11,8 @@
  * cascading. REVOKE bumps descendant epochs, including a 65-level
  * chain; ROTATE recompiles the badge around a fresh tag. unreg()
  * clears the slot, cascades over revocable descendants, promotes them
- * to roots and spares irrevocable capabilities.
+ * to roots and spares irrevocable capabilities. Epochs advance
+ * through airy_epoch_next(), so a cleared slot never carries 0.
  *
  * airy_cap_derive() is non-static, so the suite links against
  * airy_cap_derive.o inside the airy module.
@@ -416,7 +417,7 @@ static void delete_clears_slot_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, (__u32)0, src->flags);
 	KUNIT_EXPECT_EQ(test, (__u32)0, src->randtag);
 	KUNIT_EXPECT_EQ(test, (__u16)0, src->perms);
-	KUNIT_EXPECT_EQ(test, (__u16)0, src->epoch);
+	KUNIT_EXPECT_EQ(test, (__u16)2, src->epoch);
 	KUNIT_EXPECT_EQ(test, (__u32)0, src->parent_agent);
 	KUNIT_EXPECT_EQ(test, (__u32)0, src->first_child);
 	KUNIT_EXPECT_EQ(test, (__u32)0, src->next_sibling);
@@ -483,7 +484,7 @@ static void unreg_clears_slot_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, (__u32)0, src->flags);
 	KUNIT_EXPECT_EQ(test, (__u32)0, src->randtag);
 	KUNIT_EXPECT_EQ(test, (__u16)0, src->perms);
-	KUNIT_EXPECT_EQ(test, (__u16)0, src->epoch);
+	KUNIT_EXPECT_EQ(test, (__u16)2, src->epoch);
 	KUNIT_EXPECT_EQ(test, (__u32)0, src->parent_agent);
 	KUNIT_EXPECT_EQ(test, (__u32)0, src->first_child);
 	KUNIT_EXPECT_EQ(test, (__u32)0, src->next_sibling);
@@ -617,6 +618,70 @@ static void derive_rejects_unbound_dst_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, (__u32)0, src->first_child);
 }
 
+/* ─── EPOCH ────────────────────────────────────────────────────────────── */
+
+static void epoch_next_skips_zero_test(struct kunit *test)
+{
+	KUNIT_EXPECT_EQ(test, (__u16)2, airy_epoch_next(1));
+	KUNIT_EXPECT_EQ(test, (__u16)0xffff, airy_epoch_next(0xfffe));
+	/* 0xffff + 1 would wrap to the reserved value; it lands on 1. */
+	KUNIT_EXPECT_EQ(test, (__u16)1, airy_epoch_next(0xffff));
+}
+
+static void revoke_wraps_epoch_test(struct kunit *test)
+{
+	struct airy_cap_slot *src = &agent_caps[TEST_SRC_AGENT];
+	__u64 old_badge;
+
+	KUNIT_ASSERT_EQ(test, 0,
+			register_agent(TEST_SRC_AGENT, AIRY_CAP_PERM_SEND));
+	/* Compile the highest live epoch, as a long-lived agent would. */
+	WRITE_ONCE(src->epoch, 0xffff);
+	WRITE_ONCE(src->badge,
+		   AIRY_BADGE_COMPILE(0xffff, src->randtag,
+				      AIRY_CAP_PERM_SEND));
+	old_badge = src->badge;
+
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_cap_derive(TEST_SRC_AGENT, 0,
+					AIRY_CAP_OP_REVOKE, 0));
+
+	KUNIT_EXPECT_EQ(test, (__u16)1, src->epoch);
+	KUNIT_EXPECT_EQ(test, (unsigned long long)1,
+			(unsigned long long)AIRY_BADGE_EPOCH(src->badge));
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_EPOCH,
+			airy_cap_badge_ok(old_badge, TEST_SRC_AGENT,
+					  AIRY_CAP_PERM_SEND));
+	/*
+	 * With a zero epoch the all-zero badge would match the slot and
+	 * pass a zero-permission check; the wrap to 1 keeps it out.
+	 */
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_EPOCH,
+			airy_cap_badge_ok(AIRY_CAP_NULL, TEST_SRC_AGENT, 0));
+}
+
+static void reset_keeps_epoch_nonzero_test(struct kunit *test)
+{
+	struct airy_cap_slot *src = &agent_caps[TEST_SRC_AGENT];
+
+	KUNIT_ASSERT_EQ(test, 0,
+			register_agent(TEST_SRC_AGENT, AIRY_CAP_PERM_SEND));
+	WRITE_ONCE(src->epoch, 0xffff);
+	WRITE_ONCE(src->badge,
+		   AIRY_BADGE_COMPILE(0xffff, src->randtag,
+				      AIRY_CAP_PERM_SEND));
+
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_cap_derive(TEST_SRC_AGENT, 0,
+					AIRY_CAP_OP_DELETE, 0));
+
+	KUNIT_EXPECT_EQ(test, (unsigned long long)AIRY_CAP_NULL,
+			(unsigned long long)src->badge);
+	KUNIT_EXPECT_EQ(test, (__u16)1, src->epoch);
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_EPOCH,
+			airy_cap_badge_ok(AIRY_CAP_NULL, TEST_SRC_AGENT, 0));
+}
+
 static struct kunit_case airy_cap_derive_cases[] = {
 	KUNIT_CASE(copy_cannot_mint_derive_perm_test),
 	KUNIT_CASE(copy_new_perms_zero_clones_source_test),
@@ -637,6 +702,9 @@ static struct kunit_case airy_cap_derive_cases[] = {
 	KUNIT_CASE(unreg_spares_irrevocable_test),
 	KUNIT_CASE(revoke_deep_chain_test),
 	KUNIT_CASE(derive_rejects_unbound_dst_test),
+	KUNIT_CASE(epoch_next_skips_zero_test),
+	KUNIT_CASE(revoke_wraps_epoch_test),
+	KUNIT_CASE(reset_keeps_epoch_nonzero_test),
 	{}
 };
 
