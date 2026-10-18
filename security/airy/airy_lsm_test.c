@@ -19,6 +19,7 @@
 #include <linux/sched.h>
 #include <linux/sched/signal.h>
 #include <linux/cred.h>
+#include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/moduleparam.h>
 #include <linux/lsm_hooks.h>
@@ -180,8 +181,10 @@ static void task_kill_unregistered_agent_skipped_test(struct kunit *test)
 	struct airy_task_sec *sec = current_sec();
 	int ret;
 
-	/* agent_id == 0 means unregistered; badge check is skipped for
-	 * backward compatibility (init/kernel threads). */
+	/*
+	 * agent_id == 0 means unregistered; badge check is skipped for
+	 * backward compatibility (init/kernel threads).
+	 */
 	sec->agent_id = 0;
 	sec->agent_state = AIRY_AGENT_RUNNING;
 
@@ -193,6 +196,7 @@ static void task_kill_unregistered_agent_skipped_test(struct kunit *test)
 
 static void file_open_without_perm_denied_test(struct kunit *test)
 {
+	struct file file = { .f_mode = FMODE_READ };
 	struct airy_task_sec *sec = current_sec();
 	int ret;
 
@@ -201,12 +205,13 @@ static void file_open_without_perm_denied_test(struct kunit *test)
 	sec->agent_state = AIRY_AGENT_RUNNING;
 	register_agent(test, AIRY_CAP_PERM_SEND);
 
-	ret = airy_file_open(NULL);
+	ret = airy_file_open(&file);
 	KUNIT_EXPECT_EQ(test, -EACCES, ret);
 }
 
 static void file_open_with_perm_allowed_test(struct kunit *test)
 {
+	struct file file = { .f_mode = FMODE_READ };
 	struct airy_task_sec *sec = current_sec();
 	int ret;
 
@@ -215,7 +220,7 @@ static void file_open_with_perm_allowed_test(struct kunit *test)
 	sec->agent_state = AIRY_AGENT_RUNNING;
 	register_agent(test, AIRY_CAP_PERM_FILE_OPEN);
 
-	ret = airy_file_open(NULL);
+	ret = airy_file_open(&file);
 	KUNIT_EXPECT_EQ(test, 0, ret);
 }
 
