@@ -747,6 +747,69 @@ static void reset_keeps_epoch_nonzero_test(struct kunit *test)
 			airy_cap_badge_ok(AIRY_CAP_NULL, TEST_SRC_AGENT, 0));
 }
 
+/* ─── SLOT INVARIANT ───────────────────────────────────────────────────── */
+
+static void expect_badge(struct kunit *test, __u32 agent)
+{
+	struct airy_cap_slot *slot = &agent_caps[agent];
+
+	KUNIT_EXPECT_EQ(test,
+			(unsigned long long)AIRY_BADGE_COMPILE(slot->epoch,
+							       slot->randtag,
+							       slot->perms),
+			(unsigned long long)slot->badge);
+}
+
+/*
+ * Every operation that installs or edits a badge must leave the slot
+ * self-consistent: badge == COMPILE(epoch, randtag, perms).  The
+ * publication order is what a concurrent slowpath reader relies on.
+ */
+static void slot_badge_invariant_test(struct kunit *test)
+{
+	KUNIT_ASSERT_EQ(test, 0,
+			register_agent(TEST_PARENT_AGENT,
+				       AIRY_CAP_PERM_SEND |
+				       AIRY_CAP_PERM_RECV |
+				       AIRY_CAP_PERM_DERIVE));
+	expect_badge(test, TEST_PARENT_AGENT);
+
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_cap_derive(TEST_PARENT_AGENT, TEST_CHILD_AGENT,
+					AIRY_CAP_OP_COPY, 0));
+	expect_badge(test, TEST_CHILD_AGENT);
+
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_cap_derive(TEST_PARENT_AGENT, TEST_SIBLING_AGENT,
+					AIRY_CAP_OP_MINT, AIRY_CAP_PERM_SEND));
+	expect_badge(test, TEST_SIBLING_AGENT);
+
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_cap_derive(TEST_PARENT_AGENT, 0,
+					AIRY_CAP_OP_MUTATE, AIRY_CAP_PERM_RECV));
+	expect_badge(test, TEST_PARENT_AGENT);
+
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_cap_derive(TEST_PARENT_AGENT, 0,
+					AIRY_CAP_OP_ROTATE, 0));
+	expect_badge(test, TEST_PARENT_AGENT);
+
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_cap_derive(TEST_PARENT_AGENT, TEST_SRC_AGENT,
+					AIRY_CAP_OP_MOVE, 0));
+	expect_badge(test, TEST_SRC_AGENT);
+	KUNIT_EXPECT_EQ(test, (unsigned long long)AIRY_CAP_NULL,
+			(unsigned long long)agent_caps[TEST_PARENT_AGENT].badge);
+
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_cap_derive(TEST_SRC_AGENT, 0,
+					AIRY_CAP_OP_REVOKE, 0));
+	expect_badge(test, TEST_SRC_AGENT);
+	/* The moved subtree follows and is rebuilt by the cascade. */
+	expect_badge(test, TEST_CHILD_AGENT);
+	expect_badge(test, TEST_SIBLING_AGENT);
+}
+
 static struct kunit_case airy_cap_derive_cases[] = {
 	KUNIT_CASE(copy_cannot_mint_derive_perm_test),
 	KUNIT_CASE(copy_new_perms_zero_clones_source_test),
@@ -773,6 +836,7 @@ static struct kunit_case airy_cap_derive_cases[] = {
 	KUNIT_CASE(epoch_next_skips_zero_test),
 	KUNIT_CASE(revoke_wraps_epoch_test),
 	KUNIT_CASE(reset_keeps_epoch_nonzero_test),
+	KUNIT_CASE(slot_badge_invariant_test),
 	{}
 };
 

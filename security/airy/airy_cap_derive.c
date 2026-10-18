@@ -241,6 +241,20 @@ static void cap_slot_reset(struct airy_cap_slot *slot, __u16 epoch)
 }
 
 /*
+ * Publish a badge into its slot.  Every caller writes the fields the
+ * badge embeds (epoch, randtag, perms) and the slot identity first, so
+ * the release store below orders those writes before the badge.  A
+ * reader that observes the new badge then also observes the fields it
+ * was compiled from.  Publishing the badge first would let
+ * phase5_slowpath_enforce() pair a fresh badge with stale permissions
+ * and accept authority the badge no longer carries.
+ */
+static void cap_pub_badge(struct airy_cap_slot *slot, __u64 badge)
+{
+	smp_store_release(&slot->badge, badge);
+}
+
+/*
  * Scratch stack for the MDB revoke walk.  REVOKE and airy_cap_unreg()
  * both hold all 64 bucket locks, so a single instance is serialised
  * across CPUs.  The MDB is a tree whose nodes are slots, hence at most
@@ -283,8 +297,7 @@ static void airy_cap_revoke_subtree(__u32 agent_id, __u16 new_epoch)
 		WRITE_ONCE(slot->flags,
 			   READ_ONCE(slot->flags) | AIRY_CAP_FL_REVOKED);
 		/* Publish the badge only after the fields it embeds. */
-		smp_store_release(&slot->badge,
-				  AIRY_BADGE_COMPILE(new_epoch, 0, perms));
+		cap_pub_badge(slot, AIRY_BADGE_COMPILE(new_epoch, 0, perms));
 
 		child = READ_ONCE(slot->first_child);
 		while (child != 0) {
@@ -505,7 +518,6 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 
 		epoch   = AIRY_BADGE_EPOCH(src->badge);
 		randtag = (__u64)src->randtag;
-		dst->badge    = AIRY_BADGE_COMPILE(epoch, randtag, perms);
 		dst->agent_id = dst_agent;
 		dst->flags    = src->flags;
 		dst->randtag  = src->randtag;
@@ -514,6 +526,8 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 
 		/* MDB tree: link dst as child of src */
 		airy_cap_mdb_link_child(src, dst, src_agent, dst_agent);
+		/* The slot becomes occupied only once fully formed. */
+		cap_pub_badge(dst, AIRY_BADGE_COMPILE(epoch, randtag, perms));
 
 		pr_debug_ratelimited("%s: COPY src=%u→dst=%u badge=0x%016llx epoch=%u perms=0x%04x (parent=%u gen=%u)\n",
 			__func__, src_agent, dst_agent,
@@ -542,7 +556,6 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		randtag = (__u64)src->randtag;
 		perms   = new_perms & src->perms;  /* may demote */
 
-		dst->badge    = AIRY_BADGE_COMPILE(epoch, randtag, perms);
 		dst->agent_id = dst_agent;
 		dst->flags    = src->flags;
 		dst->randtag  = src->randtag;
@@ -551,6 +564,8 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 
 		/* MDB tree: link dst as child of src */
 		airy_cap_mdb_link_child(src, dst, src_agent, dst_agent);
+		/* The slot becomes occupied only once fully formed. */
+		cap_pub_badge(dst, AIRY_BADGE_COMPILE(epoch, randtag, perms));
 
 		pr_debug_ratelimited("%s: MINT src=%u→dst=%u badge=0x%016llx epoch=%u perms=0x%04x (demoted from 0x%04x parent=%u gen=%u)\n",
 			__func__, src_agent, dst_agent,
@@ -562,6 +577,7 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 	case AIRY_CAP_OP_MOVE: {
 		struct airy_cap_slot *parent;
 		__u32 parent_id, child;
+		__u64 badge;
 		__u16 generation, revocable;
 
 		if (dst_agent >= AIRY_CAP_MAX_AGENTS) {
@@ -588,8 +604,8 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		child      = READ_ONCE(src->first_child);
 		generation = READ_ONCE(src->generation);
 		revocable  = READ_ONCE(src->revocable);
+		badge      = READ_ONCE(src->badge);
 
-		dst->badge    = src->badge;
 		dst->agent_id = dst_agent;
 		dst->flags    = src->flags;
 		dst->randtag  = src->randtag;
@@ -611,6 +627,8 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		}
 		WRITE_ONCE(dst->first_child, child);
 		cap_mdb_reparent(src_agent, dst_agent);
+		/* The slot becomes occupied only once fully formed. */
+		cap_pub_badge(dst, badge);
 
 		cap_slot_reset(src, airy_epoch_next(READ_ONCE(src->epoch)));
 
@@ -627,9 +645,10 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		epoch = AIRY_BADGE_EPOCH(src->badge);
 		randtag = (__u64)src->randtag;
 
-		WRITE_ONCE(src->badge, AIRY_BADGE_COMPILE(epoch, randtag,
-						       new_perms));
 		WRITE_ONCE(src->perms, new_perms);
+		/* The badge carries the new mask; publish it last. */
+		cap_pub_badge(src, AIRY_BADGE_COMPILE(epoch, randtag,
+						      new_perms));
 		pr_debug_ratelimited("%s: MUTATE agent=%u perms 0x%04x→0x%04x badge=0x%016llx\n",
 			__func__, src_agent, src->perms, new_perms,
 			(unsigned long long)AIRY_BADGE_COMPILE(epoch, randtag, new_perms));
@@ -697,8 +716,7 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		 */
 		smp_store_release(&src->randtag, new_tag);
 		/* Publish badge only after the tag store above. */
-		smp_store_release(&src->badge,
-				  AIRY_BADGE_COMPILE(epoch, new_tag, perms));
+		cap_pub_badge(src, AIRY_BADGE_COMPILE(epoch, new_tag, perms));
 		break;
 	}
 

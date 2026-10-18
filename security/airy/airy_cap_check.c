@@ -189,13 +189,13 @@ static int phase5_slowpath_enforce(__u32 agent_id, __u64 badge,
 
 	/*
 	 * Full badge comparison (not just fastpath fields).
-	 * READ_ONCE prevents torn reads on weakly-ordered architectures
-	 * (ARM64) when airy_cap_derive() concurrently writes slot->badge
-	 * under airy_cap_derive_lock (e.g. ROTATE/MUTATE/MOVE/DELETE).
-	 * This mirrors Linux 6.6 io_uring's defensive READ_ONCE pattern
-	 * for shared-memory reads (see io_uring.c io_get_sqe).
+	 * smp_load_acquire() pairs with cap_pub_badge(): writers store
+	 * the slot fields before publishing the badge, so once this load
+	 * observes the new badge the fields checked below belong to the
+	 * same generation.  Seeing the badge without that ordering could
+	 * pair a narrowed badge with the wider mask it replaced.
 	 */
-	slot_badge = READ_ONCE(slot->badge);
+	slot_badge = smp_load_acquire(&slot->badge);
 	if (slot_badge != badge) {
 		pr_debug_ratelimited("airy_cap_check: phase5 agent=%u FAIL - badge FORGED slot_badge=0x%016llx != req_badge=0x%016llx\n",
 			agent_id,
