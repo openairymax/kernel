@@ -48,6 +48,11 @@ enum airy_trace_reason {
  */
 enum airy_superv_action {
 	AIRY_SUPERV_ACTION_FREEZE = 1,	/* IPC ring frozen on a fatal fault */
+	AIRY_SUPERV_ACTION_WARN,	/* verdict recorded, no state change */
+	AIRY_SUPERV_ACTION_DEGRADE,	/* scheduling weight reduced */
+	AIRY_SUPERV_ACTION_PAUSE,	/* tasks stopped, blob marked STOPPED */
+	AIRY_SUPERV_ACTION_TERMINATE,	/* badge retired, rings frozen, tasks killed */
+	AIRY_SUPERV_ACTION_RESUME,	/* paused tasks returned to READY */
 	AIRY_SUPERV_ACTION_MAX
 };
 

@@ -5,9 +5,8 @@
  * airy_superv_ring.c — supervisor-driven IPC ring state transitions.
  *
  * A supervisor command names an agent, not a task, and an agent may
- * span several tasks with one ring each.  Rings are located by walking
- * the process list and matching the agent id in the task blob; there
- * is no agent id to task index that would have to track fork and exit.
+ * span several tasks with one ring each. The matching tasks come from
+ * airy_sv_walk(); this file decides what happens to their rings.
  *
  * Freeze and thaw both flip ring->frozen, so they share one lock: a
  * thaw that interleaved with a freeze could erase a freeze that had
@@ -20,15 +19,10 @@
 #include <linux/errno.h>
 #include <linux/ktime.h>
 #include <linux/mutex.h>
-#include <linux/rcupdate.h>
-#include <linux/sched.h>
-#include <linux/sched/signal.h>
-#include <linux/sched/task.h>
 #include <linux/types.h>
 
 #include <linux/airymax/error.h>
 #include <linux/airymax/lsm_types.h>
-#include <airymax/airy_agent.h>
 
 #include "../../security/airy/airy_cap.h"
 #include "../ipc/airy_ipc_capability.h"
@@ -47,52 +41,20 @@ enum sv_ring_op {
 };
 
 /**
- * struct sv_ring_stat - what a walk found
+ * struct sv_ring_req - one ring operation and what the walk found
+ * @op: action applied to every matching ring
+ * @reason: fault code recorded by a freeze; ignored otherwise
  * @rings: matching rings owned by the agent
  * @frozen: of those, the ones frozen before the action was applied
  */
-struct sv_ring_stat {
+struct sv_ring_req {
+	enum sv_ring_op op;
+	__u32 reason;
 	__u32 rings;
 	__u32 frozen;
 };
 
 static DEFINE_MUTEX(sv_ring_lock);
-
-/*
- * sv_target_chk - reject agent ids outside the supervised range.
- * @agent_id: id copied from the command
- *
- * Zero is the unbound sentinel: a task that never joined an agent
- * carries it, so a command naming zero can never match.  The upper
- * bound keeps every use of the id inside agent_caps[].
- *
- * Return: 0 when @agent_id names a possible agent.
- */
-static int sv_target_chk(__u32 agent_id)
-{
-	if (!agent_id)
-		return -EINVAL;
-	if (agent_id >= AIRY_CAP_MAX_AGENTS)
-		return -AIRY_ECAP_OVERFLOW;
-
-	return 0;
-}
-
-/*
- * sv_ring_match - does @task belong to @agent_id?
- * @task: task under the RCU walk
- * @agent_id: agent whose rings are being collected
- *
- * The idle task and tasks created before the LSM was active may still
- * carry a NULL blob; they own no agent and no ring.
- */
-static bool sv_ring_match(struct task_struct *task, __u32 agent_id)
-{
-	if (!task->security)
-		return false;
-
-	return airy_agent_id(task) == agent_id;
-}
 
 static void sv_ring_act(struct airy_ipc_ring_freeze_state *ring,
 			enum sv_ring_op op, __u32 reason)
@@ -109,67 +71,51 @@ static void sv_ring_act(struct airy_ipc_ring_freeze_state *ring,
 	}
 }
 
-/*
- * sv_ring_walk - apply @op to every ring owned by @agent_id.
- * @agent_id: agent whose rings are visited
- * @op: action to apply
- * @reason: fault code recorded by a freeze; ignored otherwise
- *
- * The returned frozen count is sampled before @op runs, so a probe
- * sees the live count and a freeze sees the rings frozen beforehand.
- *
- * Return: the number of matching and frozen rings.
- */
-static struct sv_ring_stat sv_ring_walk(__u32 agent_id, enum sv_ring_op op,
-					__u32 reason)
+static void sv_ring_task(struct task_struct *task, void *arg)
 {
-	struct sv_ring_stat stat = { };
-	struct task_struct *g, *t;
+	struct sv_ring_req *req = arg;
 	struct airy_ipc_ring_freeze_state *ring;
 
-	rcu_read_lock();
-	for_each_process_thread(g, t) {
-		if (!sv_ring_match(t, agent_id))
-			continue;
+	ring = airy_ipc_ring_for_task(task);
+	if (!ring)
+		return;
 
-		/*
-		 * Membership in the process list keeps the task_struct
-		 * valid under RCU but does not stop an exiting task from
-		 * reaching security_task_free(), which releases the ring.
-		 * Pinning the task across the lookup keeps the ring
-		 * allocation alive for the access below.
-		 */
-		get_task_struct(t);
-		ring = airy_ipc_ring_for_task(t);
-		if (ring) {
-			if (READ_ONCE(ring->frozen))
-				stat.frozen++;
-			sv_ring_act(ring, op, reason);
-			stat.rings++;
-		}
-		put_task_struct(t);
-	}
-	rcu_read_unlock();
+	if (READ_ONCE(ring->frozen))
+		req->frozen++;
+	sv_ring_act(ring, req->op, req->reason);
+	req->rings++;
+}
 
-	return stat;
+int airy_sv_frz(__u32 agent_id, __u32 reason)
+{
+	struct sv_ring_req req = {
+		.op = SV_RING_FREEZE,
+		.reason = reason,
+	};
+	int ret = airy_sv_id_chk(agent_id);
+
+	if (ret)
+		return ret;
+
+	mutex_lock(&sv_ring_lock);
+	airy_sv_walk(agent_id, sv_ring_task, &req);
+	mutex_unlock(&sv_ring_lock);
+
+	return req.rings ? 0 : -AIRY_EIPC_CONTEXT;
 }
 
 int airy_sv_freeze(struct airy_sv_ctx *ctx, __u32 agent_id, __u32 reason)
 {
-	struct sv_ring_stat stat;
-	int ret = sv_target_chk(agent_id);
+	int ret = airy_sv_id_chk(agent_id);
 
 	if (ret)
 		return ret;
 	if (!airy_sv_ready(ctx))
 		return -EAGAIN;
 
-	mutex_lock(&sv_ring_lock);
-	stat = sv_ring_walk(agent_id, SV_RING_FREEZE, reason);
-	mutex_unlock(&sv_ring_lock);
-
-	if (!stat.rings)
-		return -AIRY_EIPC_CONTEXT;
+	ret = airy_sv_frz(agent_id, reason);
+	if (ret)
+		return ret;
 
 	airy_eventfd_signal_fault(reason, agent_id, ktime_get_mono_fast_ns());
 
@@ -178,8 +124,9 @@ int airy_sv_freeze(struct airy_sv_ctx *ctx, __u32 agent_id, __u32 reason)
 
 int airy_sv_thaw(struct airy_sv_ctx *ctx, __u32 agent_id)
 {
-	struct sv_ring_stat stat;
-	int ret = sv_target_chk(agent_id);
+	struct sv_ring_req probe = { .op = SV_RING_PROBE };
+	struct sv_ring_req thaw = { .op = SV_RING_THAW };
+	int ret = airy_sv_id_chk(agent_id);
 
 	if (ret)
 		return ret;
@@ -187,9 +134,9 @@ int airy_sv_thaw(struct airy_sv_ctx *ctx, __u32 agent_id)
 		return -EAGAIN;
 
 	mutex_lock(&sv_ring_lock);
-	stat = sv_ring_walk(agent_id, SV_RING_PROBE, 0);
+	airy_sv_walk(agent_id, sv_ring_task, &probe);
 
-	if (!stat.rings) {
+	if (!probe.rings) {
 		mutex_unlock(&sv_ring_lock);
 		return -AIRY_EIPC_CONTEXT;
 	}
@@ -203,9 +150,9 @@ int airy_sv_thaw(struct airy_sv_ctx *ctx, __u32 agent_id)
 	 * nothing to reopen, so the epoch is left untouched rather than
 	 * revoking every badge in the system for a redundant command.
 	 */
-	if (stat.frozen) {
+	if (probe.frozen) {
 		airy_cap_epoch_bump_all();
-		sv_ring_walk(agent_id, SV_RING_THAW, 0);
+		airy_sv_walk(agent_id, sv_ring_task, &thaw);
 	}
 
 	mutex_unlock(&sv_ring_lock);

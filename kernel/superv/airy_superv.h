@@ -42,6 +42,46 @@ struct airy_sv_ctx {
 	u32 state;
 };
 
+struct task_struct;
+
+/**
+ * typedef airy_sv_task_fn - callback applied to one matching task
+ * @task: task pinned for the duration of the callback
+ * @arg: caller context passed through airy_sv_walk()
+ *
+ * The callback runs under the RCU read lock with the task pinned, so
+ * it must not sleep: ring state changes, signal delivery and priority
+ * changes are safe; anything taking a mutex is not.
+ */
+typedef void (*airy_sv_task_fn)(struct task_struct *task, void *arg);
+
+/**
+ * airy_sv_id_chk() - reject agent ids outside the supervised range
+ * @agent_id: id copied from a command
+ *
+ * Zero is the unbound sentinel: a task that never joined an agent
+ * carries it, so a command naming zero can never match.  The upper
+ * bound keeps every use of the id inside agent_caps[].
+ *
+ * Return: 0 when @agent_id names a possible agent; -EINVAL when it is
+ *         zero; -AIRY_ECAP_OVERFLOW when it is outside the agent range.
+ */
+int airy_sv_id_chk(__u32 agent_id);
+
+/**
+ * airy_sv_walk() - apply a callback to every task of an agent
+ * @agent_id: agent whose tasks are visited; must already be validated
+ * @fn: callback invoked once per matching task; must not sleep
+ * @arg: opaque pointer handed to @fn
+ *
+ * The walk holds the RCU read lock and pins each matching task, so the
+ * callback may read and write the task blob and its ring without
+ * racing against task exit.
+ *
+ * Return: the number of tasks that matched @agent_id.
+ */
+unsigned int airy_sv_walk(__u32 agent_id, airy_sv_task_fn fn, void *arg);
+
 /**
  * airy_sv_start() - bring a protocol context to RUNNING
  * @ctx: context to initialise; may be the global context or a local one
@@ -124,6 +164,22 @@ int airy_sv_cmd_chk(const struct airy_superv_cmd *cmd);
 int airy_sv_freeze(struct airy_sv_ctx *ctx, __u32 agent_id, __u32 reason);
 
 /**
+ * airy_sv_frz() - freeze every IPC ring of an agent without notifying
+ * @agent_id: target agent; zero is refused
+ * @reason: AIRY_FAULT_* code recorded in each ring
+ *
+ * Kernel half of airy_sv_freeze(), split out so the adjudication path
+ * can contain an agent without echoing a second fault notification for
+ * a verdict it is already reporting.
+ *
+ * Return: 0 when at least one ring was frozen; -EINVAL when @agent_id
+ *         is zero; -AIRY_ECAP_OVERFLOW when it is outside the agent
+ *         range; -AIRY_EIPC_CONTEXT when no task carries @agent_id or
+ *         none of them owns a ring.
+ */
+int airy_sv_frz(__u32 agent_id, __u32 reason);
+
+/**
  * airy_sv_thaw() - thaw every IPC ring owned by an agent
  * @ctx: protocol context; commands are refused unless it is RUNNING
  * @agent_id: target agent; zero is the unbound sentinel and is refused
@@ -146,5 +202,27 @@ int airy_sv_freeze(struct airy_sv_ctx *ctx, __u32 agent_id, __u32 reason);
  *         when no task carries @agent_id or none of them owns a ring.
  */
 int airy_sv_thaw(struct airy_sv_ctx *ctx, __u32 agent_id);
+
+/**
+ * airy_sv_adjud() - apply a supervisor verdict to every task of an agent
+ * @ctx: protocol context; commands are refused unless it is RUNNING
+ * @agent_id: target agent; zero is refused
+ * @adjud: one of &enum airy_adjud; AIRY_ADJUD_NR is refused
+ * @reason: diagnostic context recorded in logs and the trace event
+ *
+ * WARN only records the verdict.  DEGRADE lowers the scheduling weight
+ * so a misbehaving task yields sooner.  PAUSE stops the task and marks
+ * the blob STOPPED.  TERMINATE retires the badge and freezes the rings
+ * before killing, so a task never runs with a badge that has already
+ * been revoked.  RESUME restores a paused task to READY and undoes the
+ * degraded weight.
+ *
+ * Return: 0 when at least one task carried @agent_id; -EINVAL for a
+ *         zero id or an out-of-range verdict; -AIRY_ECAP_OVERFLOW for
+ *         an id outside the agent range; -EAGAIN when @ctx is not
+ *         RUNNING; -AIRY_EIPC_CONTEXT when no task carries @agent_id.
+ */
+int airy_sv_adjud(struct airy_sv_ctx *ctx, __u32 agent_id, __u32 adjud,
+		  __u32 reason);
 
 #endif /* _AIRY_SUPERV_H */
