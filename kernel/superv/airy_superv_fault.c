@@ -38,6 +38,7 @@ bool airy_fault_ok(__u32 code)
 	case AIRY_FAULT_TIMEOUT:
 	case AIRY_FAULT_ABNORMAL_CAP:
 	case AIRY_FAULT_VM_FAULT:
+	case AIRY_FAULT_DOUBLE_FAULT:
 		return true;
 	default:
 		return false;

@@ -90,6 +90,10 @@ int airy_sv_cmd_chk(const struct airy_superv_cmd *cmd)
 		if (unlikely(cmd->adjud))
 			return -EINVAL;
 		return 0;
+	case AIRY_IPC_OP_HEARTBEAT:
+		if (unlikely(cmd->agent_id || cmd->adjud))
+			return -EINVAL;
+		return 0;
 	default:
 		return -AIRY_EIPC_OPCODE;
 	}

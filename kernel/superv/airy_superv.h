@@ -16,6 +16,7 @@
 #define _AIRY_SUPERV_H
 
 #include <linux/init.h>
+#include <linux/time64.h>
 #include <linux/types.h>
 
 #include <linux/airymax/security_types.h>
@@ -85,6 +86,20 @@ int airy_sv_id_chk(__u32 agent_id);
 unsigned int airy_sv_walk(__u32 agent_id, airy_sv_task_fn fn, void *arg);
 
 /**
+ * airy_sv_each() - apply a callback to every supervised task
+ * @fn: callback invoked once per matching task; must not sleep
+ * @arg: opaque pointer handed to @fn
+ *
+ * System-wide companion of airy_sv_walk(), used when the event is not
+ * attributable to one agent: the loss of macro_d invalidates every
+ * ring at once.  Only tasks that carry an Airy security blob match,
+ * so unbound kernel threads are never touched.
+ *
+ * Return: the number of tasks that matched.
+ */
+unsigned int airy_sv_each(airy_sv_task_fn fn, void *arg);
+
+/**
  * airy_sv_start() - bring a protocol context to RUNNING
  * @ctx: context to initialise; may be the global context or a local one
  *
@@ -121,11 +136,13 @@ bool airy_sv_ready(const struct airy_sv_ctx *ctx);
  *   - a NULL command is a caller bug (-EINVAL)
  *   - an agent id at or above AIRY_CAP_MAX_AGENTS would index outside
  *     the capability array (-AIRY_ECAP_OVERFLOW)
- *   - an opcode outside the [IND] supervisor pair is not a supervision
+ *   - an opcode outside the [IND] supervisor set is not a supervision
  *     command (-AIRY_EIPC_OPCODE)
  *   - ADJUDICATE must carry a valid &enum airy_adjud (-EINVAL)
  *   - UNFREEZE carries no verdict, so its adjud field must be zero
  *     (-EINVAL)
+ *   - HEARTBEAT names no target, so both its agent id and its adjud
+ *     field must be zero (-EINVAL)
  *
  * @reason is deliberately unvalidated: it is diagnostic context copied
  * into logs and fault records, never used to select a code path.
@@ -182,6 +199,19 @@ int airy_sv_freeze(struct airy_sv_ctx *ctx, __u32 agent_id, __u32 reason);
 int airy_sv_frz(__u32 agent_id, __u32 reason);
 
 /**
+ * airy_sv_frz_all() - freeze every supervised IPC ring
+ * @reason: AIRY_FAULT_* code recorded in each ring
+ *
+ * Emergency containment for a loss of macro_d: no agent id exists to
+ * name, and leaving any ring usable would let agents keep trading
+ * capabilities while no supervisor is left to adjudicate faults.
+ *
+ * Return: 0 when at least one ring was frozen; -AIRY_EIPC_CONTEXT
+ *         when no supervised task owns a ring.
+ */
+int airy_sv_frz_all(__u32 reason);
+
+/**
  * airy_sv_thaw() - thaw every IPC ring owned by an agent
  * @ctx: protocol context; commands are refused unless it is RUNNING
  * @agent_id: target agent; zero is the unbound sentinel and is refused
@@ -233,7 +263,7 @@ int airy_sv_adjud(struct airy_sv_ctx *ctx, __u32 agent_id, __u32 adjud,
  * @ctx: protocol context; commands are refused unless it is RUNNING
  * @cmd: command copied from user space; shape-checked before dispatch
  *
- * The single execution entry for the [IND] supervisor opcode pair.
+ * The single execution entry for the [IND] supervisor opcode set.
  * Those opcodes live outside the [SC] AIRY_IPC_OP_* namespace on
  * purpose, so airy_op_plane() and airy_op_required_perms() classify
  * them as invalid and the syscall 548 dispatcher never sees them.
@@ -252,6 +282,74 @@ int airy_sv_adjud(struct airy_sv_ctx *ctx, __u32 agent_id, __u32 adjud,
  */
 int airy_sv_exec(airy_cap_t cap, struct airy_sv_ctx *ctx,
 		 const struct airy_superv_cmd *cmd);
+
+/* ─── Macro-Supervisor Liveness Guard ────────────────────────────────── */
+
+#define AIRY_WDOG_POLL_SEC	10
+#define AIRY_WDOG_TIMEOUT_SEC	30
+#define AIRY_WDOG_TMO_NS	((__u64)AIRY_WDOG_TIMEOUT_SEC * NSEC_PER_SEC)
+
+/**
+ * airy_wdog_beat() - record a liveness pulse from macro_d
+ *
+ * Called from the [IND] HEARTBEAT opcode.  The first pulse arms the
+ * guard: until macro_d has spoken once there is nothing to be late
+ * against, and arming at boot would contain a system whose supervisor
+ * daemon has not started yet.
+ */
+void airy_wdog_beat(void);
+
+/**
+ * airy_wdog_at() - record a pulse observed at @now_ns
+ * @now_ns: monotonic timestamp of the pulse
+ *
+ * The injectable half of airy_wdog_beat(), so KUnit can place pulses
+ * on an exact timeline instead of racing the clock.
+ */
+void airy_wdog_at(__u64 now_ns);
+
+/**
+ * airy_wdog_late() - has macro_d missed its deadline at @now_ns?
+ * @now_ns: monotonic timestamp to evaluate
+ *
+ * Return: true when the guard is armed, has not fired yet and the
+ *         time since the last pulse exceeds &AIRY_WDOG_TMO_NS.
+ */
+bool airy_wdog_late(__u64 now_ns);
+
+/**
+ * airy_wdog_fire() - contain a macro_d loss detected at @now_ns
+ * @now_ns: monotonic timestamp of the detection
+ *
+ * Idempotent per loss: the first caller that observes a late pulse
+ * latches the guard, freezes every supervised ring, retires every
+ * outstanding badge and reports &AIRY_FAULT_DOUBLE_FAULT.  Later
+ * callers observe the latch and do nothing, so a poll tick and a
+ * concurrent detection cannot contain twice.  A fresh pulse clears
+ * the latch.
+ *
+ * Return: true when this call performed the containment; false when
+ *         the pulse was on time or the guard had already fired.
+ */
+bool airy_wdog_fire(__u64 now_ns);
+
+/**
+ * airy_wdog_reset() - disarm the guard and clear its history
+ *
+ * Test and teardown hook.  The poll timer keeps running: with the
+ * guard disarmed a late pulse is never reported, so no work is
+ * produced and no timer restart races the caller.
+ */
+void airy_wdog_reset(void);
+
+/**
+ * airy_wdog_init() - start the liveness poll timer
+ *
+ * Called from the Micro-Supervisor late_initcall after the [IND] gate
+ * opens.  The guard starts disarmed and arms itself on the first pulse
+ * from macro_d.
+ */
+void __init airy_wdog_init(void);
 
 /**
  * airy_fault_ok() - is @code a fault the supervisor may act on?

@@ -5,7 +5,7 @@
  * airy_superv_exec.c — execution entry for [IND] supervisor commands.
  *
  * macro_d reaches the kernel through the io_uring data plane, but the
- * two supervisor opcodes are not part of the agent-facing IPC fabric:
+ * supervisor opcodes are not part of the agent-facing IPC fabric:
  * they sit outside the [SC] AIRY_IPC_OP_* namespace, where the plane
  * and permission classifiers deliberately report them as invalid. This
  * file is the one place that turns such a command into a ring or task
@@ -59,6 +59,9 @@ int airy_sv_exec(airy_cap_t cap, struct airy_sv_ctx *ctx,
 				     cmd->reason);
 	case AIRY_IPC_OP_UNFREEZE:
 		return airy_sv_thaw(ctx, cmd->agent_id);
+	case AIRY_IPC_OP_HEARTBEAT:
+		airy_wdog_beat();
+		return 0;
 	default:
 		return -AIRY_EIPC_OPCODE;
 	}

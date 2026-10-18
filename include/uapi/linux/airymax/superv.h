@@ -7,8 +7,9 @@
  * macro_d submits supervision commands through the io_uring data plane.
  * These opcodes sit outside the [SC] AIRY_IPC_OP_* namespace on purpose:
  * SEND/RECV/SEND_BATCH/CANCEL/FREEZE/CAP_REQUEST/CAP_RESPONSE are the
- * agent-facing IPC fabric, while adjudication and thaw are supervisor-only
- * operations that no agent badge may reach.
+ * agent-facing IPC fabric, while adjudication, thaw and the heartbeat
+ * liveness pulse are supervisor-only operations that no agent badge may
+ * reach.
  *
  * SSoT: 20-modules/09-kernel-agent-supervisor.md §3.5
  *       20-modules/10-user-supervisor-daemon.md §8.3
@@ -22,6 +23,7 @@
 /* ─── Supervisor Opcodes ([IND] layer) ──────────────────────────────── */
 #define AIRY_IPC_OP_ADJUDICATE	0x0020	/* macro_d verdict on a fault */
 #define AIRY_IPC_OP_UNFREEZE	0x0021	/* sec_d-serialised ring thaw */
+#define AIRY_IPC_OP_HEARTBEAT	0x0022	/* macro_d liveness pulse */
 
 /* ─── Adjudication Actions ──────────────────────────────────────────── */
 /**
@@ -45,9 +47,11 @@ enum airy_adjud {
 /* ─── Wire Command ──────────────────────────────────────────────────── */
 /**
  * struct airy_superv_cmd - one supervisor command
- * @opcode: AIRY_IPC_OP_ADJUDICATE or AIRY_IPC_OP_UNFREEZE
- * @agent_id: target slot; must be below AIRY_CAP_MAX_AGENTS
- * @adjud: &enum airy_adjud value; zero for UNFREEZE
+ * @opcode: AIRY_IPC_OP_ADJUDICATE, AIRY_IPC_OP_UNFREEZE or
+ *          AIRY_IPC_OP_HEARTBEAT
+ * @agent_id: target slot; must be below AIRY_CAP_MAX_AGENTS, and zero
+ *            for HEARTBEAT, which has no target
+ * @adjud: &enum airy_adjud value; zero for UNFREEZE and HEARTBEAT
  * @reason: AIRY_FAULT_* code that drove the command, or zero
  *
  * Fixed 16-byte layout, so the command crosses the kernel/user boundary

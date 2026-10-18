@@ -121,6 +121,20 @@ static void sv_chk_opcode(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, -AIRY_EIPC_OPCODE, airy_sv_cmd_chk(&cmd));
 }
 
+static void sv_chk_beat(struct kunit *test)
+{
+	struct airy_superv_cmd cmd;
+
+	cmd = sv_cmd(AIRY_IPC_OP_HEARTBEAT, 0, 0);
+	KUNIT_EXPECT_EQ(test, 0, airy_sv_cmd_chk(&cmd));
+
+	cmd = sv_cmd(AIRY_IPC_OP_HEARTBEAT, 1, 0);
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_sv_cmd_chk(&cmd));
+
+	cmd = sv_cmd(AIRY_IPC_OP_HEARTBEAT, 0, AIRY_ADJUD_DEGRADE);
+	KUNIT_EXPECT_EQ(test, -EINVAL, airy_sv_cmd_chk(&cmd));
+}
+
 static struct kunit_case airy_sv_proto_cases[] = {
 	KUNIT_CASE(sv_start_null),
 	KUNIT_CASE(sv_start_ok),
@@ -129,6 +143,7 @@ static struct kunit_case airy_sv_proto_cases[] = {
 	KUNIT_CASE(sv_chk_null),
 	KUNIT_CASE(sv_chk_adjud),
 	KUNIT_CASE(sv_chk_unfrz),
+	KUNIT_CASE(sv_chk_beat),
 	KUNIT_CASE(sv_chk_agent),
 	KUNIT_CASE(sv_chk_opcode),
 	{}

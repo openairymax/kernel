@@ -40,26 +40,32 @@ int airy_sv_id_chk(__u32 agent_id)
  * sv_task_match - does @task belong to @agent_id?
  * @task: task under the RCU walk
  * @agent_id: agent whose tasks are being collected
+ * @all: match every supervised task regardless of @agent_id
  *
  * The idle task and tasks created before the LSM was active may still
  * carry a NULL blob; they own no agent and no ring.
  */
-static bool sv_task_match(const struct task_struct *task, __u32 agent_id)
+static bool sv_task_match(const struct task_struct *task, __u32 agent_id,
+			  bool all)
 {
 	if (!task->security)
 		return false;
 
+	if (all)
+		return true;
+
 	return airy_agent_id(task) == agent_id;
 }
 
-unsigned int airy_sv_walk(__u32 agent_id, airy_sv_task_fn fn, void *arg)
+static unsigned int sv_walk(__u32 agent_id, bool all, airy_sv_task_fn fn,
+			    void *arg)
 {
 	struct task_struct *g, *t;
 	unsigned int hits = 0;
 
 	rcu_read_lock();
 	for_each_process_thread(g, t) {
-		if (!sv_task_match(t, agent_id))
+		if (!sv_task_match(t, agent_id, all))
 			continue;
 
 		/*
@@ -77,4 +83,14 @@ unsigned int airy_sv_walk(__u32 agent_id, airy_sv_task_fn fn, void *arg)
 	rcu_read_unlock();
 
 	return hits;
+}
+
+unsigned int airy_sv_walk(__u32 agent_id, airy_sv_task_fn fn, void *arg)
+{
+	return sv_walk(agent_id, false, fn, arg);
+}
+
+unsigned int airy_sv_each(airy_sv_task_fn fn, void *arg)
+{
+	return sv_walk(0, true, fn, arg);
 }

@@ -7,7 +7,7 @@
  *
  * Pins the order in which the entry refuses a command (shape, gate,
  * authority), the fact that authority is read from current rather than
- * from the command, and the two dispatch paths.  The suite binds
+ * from the command, and the dispatch paths.  The suite binds
  * current's own security blob to a test agent and installs a matching
  * badge in the agent's capability slot, so no live supervisor, ring or
  * worker task is needed.
@@ -15,8 +15,10 @@
 
 #include <kunit/test.h>
 #include <linux/errno.h>
+#include <linux/ktime.h>
 #include <linux/slab.h>
 #include <linux/string.h>
+#include <linux/time64.h>
 #include <linux/types.h>
 
 #include <linux/airymax/error.h>
@@ -84,6 +86,7 @@ static void sv_exec_exit(struct kunit *test)
 	sec->ipc_ring = fix->saved_ring;
 	agent_caps[SV_XA] = fix->saved;
 	kfree(fix->ring);
+	airy_wdog_reset();
 }
 
 static __u64 sv_badge(__u16 perms)
@@ -213,6 +216,27 @@ static void sv_exec_unfrz(struct kunit *test)
 				     &fix->ctx, &cmd));
 }
 
+static void sv_exec_beat(struct kunit *test)
+{
+	struct sv_exec_fix *fix = test->priv;
+	struct airy_superv_cmd cmd;
+	__u64 now;
+
+	cmd = sv_cmd(AIRY_IPC_OP_HEARTBEAT, 0, 0);
+
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_PERM,
+			airy_sv_exec(sv_badge(AIRY_CAP_PERM_SEND),
+				     &fix->ctx, &cmd));
+	KUNIT_EXPECT_EQ(test, 0,
+			airy_sv_exec(sv_badge(AIRY_CAP_PERM_SUPERVISE),
+				     &fix->ctx, &cmd));
+
+	now = ktime_get_mono_fast_ns();
+	KUNIT_EXPECT_FALSE(test, airy_wdog_late(now));
+	KUNIT_EXPECT_TRUE(test,
+			  airy_wdog_late(now + AIRY_WDOG_TMO_NS + NSEC_PER_SEC));
+}
+
 static struct kunit_case airy_sv_exec_cases[] = {
 	KUNIT_CASE(sv_exec_null),
 	KUNIT_CASE(sv_exec_shape),
@@ -221,6 +245,7 @@ static struct kunit_case airy_sv_exec_cases[] = {
 	KUNIT_CASE(sv_exec_perm),
 	KUNIT_CASE(sv_exec_adjud),
 	KUNIT_CASE(sv_exec_unfrz),
+	KUNIT_CASE(sv_exec_beat),
 	{}
 };
 

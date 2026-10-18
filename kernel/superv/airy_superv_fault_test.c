@@ -34,6 +34,7 @@ static void sv_fault_chk(struct kunit *test)
 	KUNIT_EXPECT_TRUE(test, airy_fault_ok(AIRY_FAULT_TIMEOUT));
 	KUNIT_EXPECT_TRUE(test, airy_fault_ok(AIRY_FAULT_ABNORMAL_CAP));
 	KUNIT_EXPECT_TRUE(test, airy_fault_ok(AIRY_FAULT_VM_FAULT));
+	KUNIT_EXPECT_TRUE(test, airy_fault_ok(AIRY_FAULT_DOUBLE_FAULT));
 
 	KUNIT_EXPECT_FALSE(test, airy_fault_ok(0));
 	KUNIT_EXPECT_FALSE(test, airy_fault_ok(0x1000));

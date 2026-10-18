@@ -6,7 +6,9 @@
  *
  * A supervisor command names an agent, not a task, and an agent may
  * span several tasks with one ring each. The matching tasks come from
- * airy_sv_walk(); this file decides what happens to their rings.
+ * airy_sv_walk(); this file decides what happens to their rings.  A
+ * lost macro_d has no agent to name, so the same machinery also runs
+ * system-wide through airy_sv_frz_all().
  *
  * Freeze and thaw both flip ring->frozen, so they share one lock: a
  * thaw that interleaved with a freeze could erase a freeze that had
@@ -86,22 +88,47 @@ static void sv_ring_task(struct task_struct *task, void *arg)
 	req->rings++;
 }
 
-int airy_sv_frz(__u32 agent_id, __u32 reason)
+/*
+ * sv_ring_run - apply one ring operation to an agent or to all agents
+ * @agent_id: target agent; ignored when @all is set
+ * @all: apply the operation to every supervised task
+ * @op: action applied to each matching ring
+ * @reason: fault code recorded by a freeze
+ *
+ * Return: 0 when at least one ring matched; -AIRY_EIPC_CONTEXT
+ *         otherwise.
+ */
+static int sv_ring_run(__u32 agent_id, bool all, enum sv_ring_op op,
+		       __u32 reason)
 {
 	struct sv_ring_req req = {
-		.op = SV_RING_FREEZE,
+		.op = op,
 		.reason = reason,
 	};
+
+	mutex_lock(&sv_ring_lock);
+	if (all)
+		airy_sv_each(sv_ring_task, &req);
+	else
+		airy_sv_walk(agent_id, sv_ring_task, &req);
+	mutex_unlock(&sv_ring_lock);
+
+	return req.rings ? 0 : -AIRY_EIPC_CONTEXT;
+}
+
+int airy_sv_frz(__u32 agent_id, __u32 reason)
+{
 	int ret = airy_sv_id_chk(agent_id);
 
 	if (ret)
 		return ret;
 
-	mutex_lock(&sv_ring_lock);
-	airy_sv_walk(agent_id, sv_ring_task, &req);
-	mutex_unlock(&sv_ring_lock);
+	return sv_ring_run(agent_id, false, SV_RING_FREEZE, reason);
+}
 
-	return req.rings ? 0 : -AIRY_EIPC_CONTEXT;
+int airy_sv_frz_all(__u32 reason)
+{
+	return sv_ring_run(0, true, SV_RING_FREEZE, reason);
 }
 
 int airy_sv_freeze(struct airy_sv_ctx *ctx, __u32 agent_id, __u32 reason)

@@ -187,6 +187,7 @@ typedef __s32 airy_err_t;
 #define AIRY_FAULT_TIMEOUT           0x1004  /* Agent heartbeat timeout */
 #define AIRY_FAULT_ABNORMAL_CAP      0x1005  /* Abnormal capability usage */
 #define AIRY_FAULT_VM_FAULT          0x1006  /* VM page fault in Agent */
+#define AIRY_FAULT_DOUBLE_FAULT      0x100C  /* Macro-Supervisor loss */
 
 /* ─── Helper macros ──────────────────────────────────────────────────── */
 #define AIRY_ERR_OK(err)    ((err) == AIRY_EOK)

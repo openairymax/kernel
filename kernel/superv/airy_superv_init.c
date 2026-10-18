@@ -6,10 +6,11 @@
  *
  * Provides late_initcall() to bring up the Micro-Supervisor: registers
  * its supplemental LSM hooks via airy_superv_register_hooks(), then
- * subscribes to the security fault chain the "airy" LSM publishes, and
- * finally opens the [IND] protocol gate. The kernel die_notifier itself
- * is registered by the "airy" LSM, so no redundant registration is
- * needed here; late_initcall runs after LSM init.
+ * subscribes to the security fault chain the "airy" LSM publishes,
+ * opens the [IND] protocol gate and finally starts the macro_d
+ * liveness guard. The kernel die_notifier itself is registered by the
+ * "airy" LSM, so no redundant registration is needed here;
+ * late_initcall runs after LSM init.
  *
  * Design rationale: docs/AirymaxOS/20-modules/09-kernel-agent-supervisor.md
  */
@@ -58,7 +59,12 @@ static int __init airy_superv_init(void)
 		return ret;
 	}
 
-	/* 4. The eventfd context is attached lazily: airy_eventfd_register()
+	/* 4. Start the macro_d liveness guard.  It arms itself on the first
+	 *    HEARTBEAT, so a system that never runs macro_d is unaffected.
+	 */
+	airy_wdog_init();
+
+	/* 5. The eventfd context is attached lazily: airy_eventfd_register()
 	 *    installs it once the Macro-Supervisor binds its fault listener;
 	 *    there is no userspace entry point for it yet, so until then the
 	 *    context stays NULL and faults are recorded in the airy_fev_* ring.
