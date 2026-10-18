@@ -227,10 +227,14 @@ static int phase5_slowpath_enforce(__u32 agent_id, __u64 badge,
  *
  * A slot is live only while its four fields are mutually consistent:
  * epoch, randtag and perms must match the copies embedded in badge.
- * airy_cap_revoke_subtree() bumps epoch and clears randtag but leaves
- * badge and perms untouched, so a live slot that was revoked fails the
- * epoch check even though its permission bits still look valid.  A pure
- * permission test would wrongly honour revoked capabilities.
+ * airy_cap_revoke_subtree() rebuilds the badge from the bumped epoch
+ * and the cleared random tag, so a revoked slot keeps the invariant
+ * badge == COMPILE(epoch, randtag, perms) yet must still be refused.
+ * The AIRY_CAP_FL_REVOKED flag carries that state: the cleared tag is
+ * no longer a secret, so consistency alone would let a forged badge
+ * through.  A revoked slot reports the same epoch error as a badge
+ * minted before the revoke, and a pure permission test must never make
+ * it look alive.
  *
  * The whole snapshot is taken under the bucket lock: ROTATE publishes
  * randtag before badge, and taking the lock guarantees the four fields
@@ -245,7 +249,7 @@ int airy_cap_check(__u32 agent_id, __u16 required_perms)
 	unsigned long flags;
 	__u64 badge;
 	__u16 perms, epoch;
-	__u32 tag;
+	__u32 tag, slot_flags;
 
 	if (agent_id >= AIRY_CAP_MAX_AGENTS)
 		return -AIRY_ECAP_MISSING;
@@ -258,10 +262,14 @@ int airy_cap_check(__u32 agent_id, __u16 required_perms)
 	epoch = slot->epoch;
 	tag = slot->randtag;
 	perms = slot->perms;
+	slot_flags = slot->flags;
 	spin_unlock_irqrestore(lock, flags);
 
 	if (badge == AIRY_CAP_NULL)
 		return -AIRY_ECAP_MISSING;
+
+	if (slot_flags & AIRY_CAP_FL_REVOKED)
+		return -AIRY_ECAP_EPOCH;
 
 	if (epoch != AIRY_BADGE_EPOCH(badge))
 		return -AIRY_ECAP_EPOCH;

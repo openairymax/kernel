@@ -402,9 +402,9 @@ static void cap_check_revoked_denied_test(struct kunit *test)
 	register_agent(test, AIRY_CAP_PERM_KILL);
 
 	/*
-	 * Mirror airy_cap_revoke_subtree(): epoch is bumped and randtag
-	 * cleared while badge and perms stay untouched.  The stale
-	 * permission bits must not keep the capability alive.
+	 * A slot left with a stale epoch and a cleared tag, as after a
+	 * revoke, must not keep the capability alive through its stale
+	 * permission bits.
 	 */
 	agent_caps[TEST_AGENT].epoch = 2;
 	agent_caps[TEST_AGENT].randtag = 0;

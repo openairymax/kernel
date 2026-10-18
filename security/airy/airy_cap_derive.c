@@ -244,6 +244,13 @@ static __u32 cap_revoke_stack[AIRY_CAP_MAX_AGENTS];
  * MDB derivation tree from the given agent, incrementing epoch and
  * clearing randtag for every revocable descendant.
  *
+ * The badge is rebuilt from the new epoch, the cleared random tag and
+ * the slot's permission mask, so the slot invariant
+ * badge == COMPILE(epoch, randtag, perms) keeps holding after a
+ * revocation.  Leaving the stale badge in place would let a later
+ * MUTATE or ROTATE resurrect the pre-revocation epoch and permanently
+ * desynchronise the slot.
+ *
  * Complexity: O(N) where N = subtree size.
  */
 static void airy_cap_revoke_subtree(__u32 agent_id, __u16 new_epoch)
@@ -254,11 +261,18 @@ static void airy_cap_revoke_subtree(__u32 agent_id, __u16 new_epoch)
 
 	while (nr != 0) {
 		struct airy_cap_slot *slot;
+		__u16 perms;
 		__u32 child;
 
 		slot = &agent_caps[cap_revoke_stack[--nr]];
+		perms = READ_ONCE(slot->perms);
 		WRITE_ONCE(slot->epoch, new_epoch);
 		WRITE_ONCE(slot->randtag, 0);
+		WRITE_ONCE(slot->flags,
+			   READ_ONCE(slot->flags) | AIRY_CAP_FL_REVOKED);
+		/* Publish the badge only after the fields it embeds. */
+		smp_store_release(&slot->badge,
+				  AIRY_BADGE_COMPILE(new_epoch, 0, perms));
 
 		child = READ_ONCE(slot->first_child);
 		while (child != 0) {
@@ -397,6 +411,22 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 			__func__, op < ARRAY_SIZE(cap_op_names) ? cap_op_names[op] : "UNKNOWN",
 			src_agent);
 		ret = -AIRY_ECAP_MISSING;
+		goto out;
+	}
+
+	/*
+	 * A revoked slot keeps its geometry but holds no authority: its
+	 * random tag was cleared, so any badge derived from it would use
+	 * a public tag.  Refuse every operation that would mint, move,
+	 * mutate or rotate authority out of it.  REVOKE stays idempotent
+	 * and DELETE is the only way to recycle the slot.
+	 */
+	if (op != AIRY_CAP_OP_REVOKE && op != AIRY_CAP_OP_DELETE &&
+	    (READ_ONCE(src->flags) & AIRY_CAP_FL_REVOKED)) {
+		pr_debug_ratelimited("%s: op=%s FAIL - src agent %u revoked\n",
+			__func__, op < ARRAY_SIZE(cap_op_names) ? cap_op_names[op] : "UNKNOWN",
+			src_agent);
+		ret = -AIRY_ECAP_EPOCH;
 		goto out;
 	}
 

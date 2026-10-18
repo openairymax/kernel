@@ -36,6 +36,20 @@
  *   [15:0]   permissions (16 bits)
  */
 
+/* ─── Slot Flags ───────────────────────────────────────────────────────── */
+/*
+ * AIRY_CAP_FL_REVOKED - the slot lost its authority through REVOKE.
+ *
+ * REVOKE clears the random tag, so the tag stops being a secret and a
+ * badge forged from the surviving epoch and permissions would otherwise
+ * pass the fastpath.  The flag is the authoritative "no authority"
+ * marker: both validation paths reject the slot while it is set, and
+ * every operation that would derive new authority from the slot is
+ * refused.  DELETE and airy_cap_unreg() clear the flag by resetting the
+ * slot; there is no other path back.
+ */
+#define AIRY_CAP_FL_REVOKED	0x00000001U
+
 /* ─── Global Capability Array: 1024 slots ────────────────────────────── */
 /* struct airy_cap_slot, AIRY_CAP_MAX_AGENTS, struct airy_task_sec 由
  * <linux/airymax/lsm_types.h> 统一定义（[SC] 单一宿主原则）。
@@ -84,7 +98,7 @@ static inline unsigned int airy_cap_bucket(__u32 agent_id)
 /*
  * airy_cap_badge_ok - Fastpath inline badge validation.
  *
- * Executes 2 READ_ONCE + constant-time comparisons.  Called from the
+ * Executes 3 READ_ONCE + constant-time comparisons.  Called from the
  * io_uring_cmd fastpath for every IPC message.
  *
  * SSoT §12.2.1: the epoch, random-tag and permission checks always run
@@ -92,7 +106,7 @@ static inline unsigned int airy_cap_bucket(__u32 agent_id)
  * (EPOCH > FORGED > PERM).  No check is skipped based on an earlier
  * result, so the failure path does not reveal which field mismatched.
  *
- * SSoT §12.2.2: the two slot fields are read with READ_ONCE() and a
+ * SSoT §12.2.2: the three slot fields are read with READ_ONCE() and a
  * smp_mb() orders them before the verdict is computed.  SSoT §12.2.3:
  * in paranoid mode a speculation fence precedes the slot reads.
  *
@@ -105,7 +119,7 @@ static __always_inline __must_check int airy_cap_badge_ok(__u64 badge, __u32 age
 	u32 randtag = (u32)AIRY_BADGE_RANDTAG(badge);
 	u32 perms = (u32)AIRY_BADGE_PERMS(badge);
 	u32 ok_epoch, ok_tag, ok_perm;
-	u32 err;
+	u32 flags, err;
 
 	if (unlikely(agent_id >= AIRY_CAP_MAX_AGENTS))
 		return -AIRY_ECAP_MISSING;
@@ -114,7 +128,10 @@ static __always_inline __must_check int airy_cap_badge_ok(__u64 badge, __u32 age
 		airy_ct_fence();
 
 	/* C-S9.1/C-S9.2: per-agent epoch and random tag, same cacheline. */
+	flags = READ_ONCE(agent_caps[agent_id].flags);
 	ok_epoch = airy_ct_eq32(epoch, READ_ONCE(agent_caps[agent_id].epoch));
+	/* A revoked slot cleared its tag, so the tag is no longer secret. */
+	ok_epoch &= airy_ct_eq32(0U, flags & AIRY_CAP_FL_REVOKED);
 	ok_tag = airy_ct_eq32(randtag, READ_ONCE(agent_caps[agent_id].randtag));
 	/* C-S9.2: order slot loads before the verdict is derived. */
 	smp_mb();

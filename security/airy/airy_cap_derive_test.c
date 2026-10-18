@@ -518,7 +518,7 @@ static void unreg_revokes_subtree_test(struct kunit *test)
 			(unsigned long long)parent->badge);
 	KUNIT_EXPECT_EQ(test, (__u32)0, parent->agent_id);
 
-	/* Direct child: revoked, badge kept, promoted to a root. */
+	/* Direct child: revoked, badge rebuilt, promoted to a root. */
 	KUNIT_EXPECT_EQ(test, (__u16)2, child->epoch);
 	KUNIT_EXPECT_EQ(test, (__u32)0, child->randtag);
 	KUNIT_EXPECT_EQ(test, (__u32)0, child->parent_agent);
