@@ -4,20 +4,14 @@
  *
  * airy_ipc_ring_test.c — KUnit coverage for the IPC ring core.
  *
- * Covers the SPSC ring's capacity and teardown contract
- * (airy_ipc_ring_init/destroy), cursor semantics (FIFO order,
- * exact-full/empty detection, wrap-around) guarded by the
- * release/acquire pairing in post()/consume(), the argument and
- * C-S0/C-S1/C-S6 rejection codes (-EINVAL, -ENOMSG,
- * -AIRY_EIPC_FROZEN, -AIRY_EIPC_MAGIC, -AIRY_EIPC_KFIFO), the C-S5
- * owner-CPU pin that degrades foreign senders to -EAGAIN ahead of the
- * C-S6 fullness check, P1-8
- * cancelBadgedSends (the agent-linux analogue of seL4's
- * cancelBadgedSends, endpoint.c:476-489), and the occupancy
- * accounting airy_ipc_ring_depth_stats() samples.
- *
- * The ring entry points are non-static (airy_ipc_internal.h), so the
- * test links against airy_ipc_ring.o within the airy_ck_ipc module.
+ * Covers capacity and teardown, cursor semantics (FIFO order,
+ * exact-full/empty, wrap-around) under the release/acquire pairing,
+ * the C-S0/C-S1/C-S6 rejection codes, the C-S5 owner-CPU pin that
+ * degrades foreign senders to -EAGAIN ahead of the C-S6 fullness
+ * check, P1-8 cancelBadgedSends and the occupancy accounting of
+ * airy_ipc_ring_depth_stats().  The ring entry points are non-static
+ * (airy_ipc_internal.h), so the test links against airy_ipc_ring.o
+ * within the airy_ck_ipc module.
  */
 
 #include <kunit/test.h>

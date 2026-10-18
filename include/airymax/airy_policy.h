@@ -5,22 +5,12 @@
  * airy_policy.h — the airy policy decision table mechanism.
  *
  * A policy is data, not code: tools/dsl/ compiles an .adl source into
- * constant struct airy_policy_table arrays, and this header supplies the
- * types those arrays are built from. The runtime in airy_policy.c only
+ * constant struct airy_policy_table arrays, and airy_policy.c only
  * registers tables, remaps hook field vectors and evaluates the first
- * matching row; it never contains a policy judgement of its own.
+ * matching row.  Verdict constants come from the shared contract in
+ * <linux/airymax/security_types.h>.
  *
- * The mechanism types are emitted once per translation unit through the
- * AIRY_POLICY_MECHANISM_DEFINED guard. Generated headers compiled inside
- * the kernel include this file; the same generated headers built in user
- * space carry an equivalent private copy so the toolchain tests do not
- * depend on kernel headers.
- *
- * Verdict constants come from the shared contract in
- * <linux/airymax/security_types.h> and are never redefined here.
- *
- * SSoT: 110-security/10-policy-compiler.md §4 (data model), §5 (hook
- *       field contract), §6 (verdict merge), §7 (registration).
+ * SSoT: 110-security/10-policy-compiler.md §4-§7.
  */
 
 #ifndef _AIRY_POLICY_H

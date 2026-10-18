@@ -5,27 +5,16 @@
  * airy_sched_test.c — KUnit coverage for the syscall 550 sched_tac
  * control entry defined in airy_sched.c.
  *
- * airy_sched_serve() is pure: it reads no kernel state, takes no lock and
- * depends on neither current nor a caller-owned object, so the suite
- * drives it directly and needs no init or exit hook. It checks the
- * boundary contract: every [SC] airy_sched_op is recognised and answered
- * with the explicit -AIRY_ENOTSUP degradation registered for milestone
- * M3, while every other op value is refused fail-closed with
- * -AIRY_EINVAL before the degradation answer is reached, so a malformed
- * request is never told its feature is merely missing.
- *
- * airy_sched_ctl() adds the two text arguments. An undefined op must be
- * refused before either pointer is touched, which the NULL-argument
- * cases below prove deterministically on every architecture. The text
- * policy itself lives in airy_sched_chk(), which takes kernel memory
- * and is therefore driven with stack strings; its UTF-8 boundary matrix
- * is owned by the airy_utf8_charset suite and only the integration
- * points are repeated here.
- *
- * The copy-fault path of airy_sched_arg() has no KUnit case: UML does
- * not recover from a fault on an unmapped user address, so driving it
- * with an unreadable pointer would panic the test kernel rather than
- * return -AIRY_EFAULT.
+ * airy_sched_serve() is pure: it reads no kernel state, takes no lock
+ * and depends on neither current nor a caller-owned object, so the
+ * suite drives it directly.  Every [SC] airy_sched_op is answered with
+ * the explicit -AIRY_ENOTSUP degradation registered for milestone M3,
+ * while every other op value is refused fail-closed with -AIRY_EINVAL
+ * before that answer, so a malformed request is never told its feature
+ * is merely missing.  airy_sched_ctl() adds the two text arguments: an
+ * undefined op is refused before either pointer is touched.  The
+ * copy-fault path of airy_sched_arg() has no KUnit case because UML
+ * does not recover from a fault on an unmapped user address.
  */
 
 #include <kunit/test.h>

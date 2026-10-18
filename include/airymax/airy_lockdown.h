@@ -4,20 +4,12 @@
  *
  * airy_lockdown.h — the Airymax lockdown ladder.
  *
- * Three monotonic levels close a growing set of agent-facing interfaces
- * as a deployment moves from "open" to "sealed":
+ * Three monotonic levels (early, late, full) close a growing set of
+ * agent-facing interfaces as a deployment moves from open to sealed.
+ * The level only ever increases: a boot parameter or the root-only
+ * securityfs knob raises it, nothing lowers it.
  *
- *   early  capability grants, RoVol tier writes, scheduler writes close
- *   late   the interfaces of early plus kernel memory and probe surfaces
- *   full   every interface the ladder knows about, plus every
- *          security_locked_down() reason
- *
- * The level only ever increases. A boot command line or the root-only
- * securityfs knob raises it; nothing lowers it, because a sealed
- * deployment must not be reopened by a later, weaker decision.
- *
- * SSoT: 110-security/09-lockdown.md §3 (rule table), §4 (state machine),
- *       §5 (gate semantics).
+ * SSoT: 110-security/09-lockdown.md §3-§5.
  */
 
 #ifndef _AIRY_LOCKDOWN_H

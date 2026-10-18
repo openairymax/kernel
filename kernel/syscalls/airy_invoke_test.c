@@ -5,18 +5,14 @@
  * airy_invoke_test.c — KUnit coverage for the syscall 548 control-plane
  * entry defined in airy_syscalls.c.
  *
- * Four layers are exercised: the delegation of the Layout C v4 header
- * contract to its shared corekern implementation (the contract itself is
- * covered by the airy_ipc_check suite); the opcode plane
- * classifier (airy_op_plane) and its agreement with the permission
- * mapping (airy_op_required_perms); the ordering rules of the
- * dispatch entry (airy_invoke_dispatch); and the two badge lifecycle
- * halves — install (COMPILE_BADGE) and revocation (REVOKE_BADGE).
- *
- * Both handlers read only the message header and the global capability
- * slot table — never current->security — so they are hermetic under KUnit:
- * the suite parks the run in one reserved slot, saves the live contents in
- * the test context and restores them on exit.
+ * Four layers are exercised: delegation of the Layout C v4 header
+ * contract to corekern (covered by the airy_ipc_check suite); the
+ * opcode plane classifier and its agreement with the permission
+ * mapping; the dispatch entry ordering rules; and the two badge
+ * lifecycle halves — install (COMPILE_BADGE) and revocation
+ * (REVOKE_BADGE).  Both handlers read only the message header and the
+ * global capability slot table, never current->security, so the suite
+ * parks the run in one reserved slot and restores it on exit.
  */
 
 #include <kunit/test.h>

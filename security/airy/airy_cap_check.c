@@ -4,22 +4,15 @@
  *
  * airy_cap_check.c — Slowpath capability check and fault reporting.
  *
- * Implements the five-phase slowpath capability enforcement for
- * io_uring_cmd IPC messages that fail the fastpath C-S9 validation.
+ * Implements the five-phase slowpath enforcement for io_uring_cmd IPC
+ * messages: frozen ring, CAP_REQUEST bootstrap, degradation, fastpath
+ * re-check and LSM enforcement.  airy_op_plane32() classifies cmd_op
+ * ahead of the phases: malformed opcodes are refused without a fault
+ * report, control-plane opcodes as not-offered-here.  Also hosts
+ * airy_security_fault() for unrecoverable violations.
  *
- * Phase 1: C-S0  Ring frozen check
- * Phase 2: CAP_REQUEST bootstrap path
- * Phase 3: [DSL]/agentrt degradation path
- * Phase 4: Fastpath C-S9 re-check (race-resolution)
- * Phase 5: Slowpath enforcement with LSM hooks
- *
- * Before any phase runs, the cmd_op is classified by airy_op_plane32().
- * This plane serves only DATA and BOOT; a malformed opcode is refused
- * ahead of the phases and without a fault report, while a valid opcode
- * owned by the control plane is refused as not-offered-here.
- *
- * Also provides airy_security_fault() for reporting unrecoverable
- * security violations to the die_notifier chain.
+ * SSoT: 110-security/03-capability-model.md §4.3,
+ *       110-security/06-io-uring-hardening.md §5.
  */
 
 #include <linux/lsm_hooks.h>
