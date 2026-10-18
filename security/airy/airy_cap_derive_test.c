@@ -7,13 +7,14 @@
  * COPY/MINT are checked for the P1-10 demotion rule (a copy never
  * mints a permission the source lacks) and for MDB linkage. MOVE is
  * checked to preserve the source's tree position, carry its derived
- * subtree, and keep an irrevocable marker. DELETE is checked to
- * detach its children as new roots without cascading. REVOKE proves
- * each link by bumping the descendants' epoch, and ROTATE is checked
- * to recompile the badge around a fresh random tag. airy_cap_unreg()
- * is checked to clear the terminating agent's slot, cascade the revoke
- * over its revocable descendants, promote them to roots, and spare
- * irrevocable capabilities.
+ * subtree, keep an irrevocable marker, and require an empty
+ * destination slot, which keeps the MDB acyclic (constraint I2).
+ * DELETE is checked to detach its children as new roots without
+ * cascading. REVOKE proves each link by bumping the descendants'
+ * epoch, and ROTATE is checked to recompile the badge around a fresh
+ * random tag. airy_cap_unreg() is checked to clear the terminating
+ * agent's slot, cascade the revoke over its revocable descendants,
+ * promote them to roots, and spare irrevocable capabilities.
  *
  * airy_cap_derive() is non-static (airy_cap.h), so the suite links
  * against airy_cap_derive.o inside the airy module.
@@ -306,6 +307,52 @@ static void move_keeps_irrevocable_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, (__u16)1, dst->epoch);
 }
 
+static void move_requires_empty_dst_test(struct kunit *test)
+{
+	struct airy_cap_slot *root = &agent_caps[TEST_PARENT_AGENT];
+	struct airy_cap_slot *src = &agent_caps[TEST_SRC_AGENT];
+	struct airy_cap_slot *child = &agent_caps[TEST_CHILD_AGENT];
+	int ret;
+
+	KUNIT_ASSERT_EQ(test, 0,
+			register_agent(TEST_PARENT_AGENT,
+				       AIRY_CAP_PERM_SEND));
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_cap_derive(TEST_PARENT_AGENT, TEST_SRC_AGENT,
+					AIRY_CAP_OP_COPY, 0));
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_cap_derive(TEST_SRC_AGENT, TEST_CHILD_AGENT,
+					AIRY_CAP_OP_COPY, 0));
+
+	/*
+	 * A destination inside the source's subtree already owns a
+	 * badge, so the empty-slot rule rejects it before any link is
+	 * rewritten.  Constraint I2 (no cycles in the MDB) therefore
+	 * follows from the slot-ownership check.
+	 */
+	ret = airy_cap_derive(TEST_PARENT_AGENT, TEST_CHILD_AGENT,
+			      AIRY_CAP_OP_MOVE, 0);
+	KUNIT_EXPECT_EQ(test, -AIRY_EEXIST, ret);
+	ret = airy_cap_derive(TEST_SRC_AGENT, TEST_CHILD_AGENT,
+			      AIRY_CAP_OP_MOVE, 0);
+	KUNIT_EXPECT_EQ(test, -AIRY_EEXIST, ret);
+
+	KUNIT_EXPECT_NE(test, (unsigned long long)AIRY_CAP_NULL,
+			(unsigned long long)root->badge);
+	KUNIT_EXPECT_EQ(test, (__u32)TEST_SRC_AGENT, root->first_child);
+	KUNIT_EXPECT_EQ(test, (__u32)TEST_PARENT_AGENT, src->parent_agent);
+	KUNIT_EXPECT_EQ(test, (__u32)TEST_CHILD_AGENT, src->first_child);
+	KUNIT_EXPECT_EQ(test, (__u32)TEST_SRC_AGENT, child->parent_agent);
+
+	/* A rejected MOVE must leave the tree walkable end to end. */
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_cap_derive(TEST_PARENT_AGENT, 0,
+					AIRY_CAP_OP_REVOKE, 0));
+	KUNIT_EXPECT_EQ(test, (__u16)2, root->epoch);
+	KUNIT_EXPECT_EQ(test, (__u16)2, src->epoch);
+	KUNIT_EXPECT_EQ(test, (__u16)2, child->epoch);
+}
+
 /* ─── DELETE ───────────────────────────────────────────────────────────── */
 
 static void delete_promotes_children_test(struct kunit *test)
@@ -503,6 +550,7 @@ static struct kunit_case airy_cap_derive_cases[] = {
 	KUNIT_CASE(move_child_keeps_parent_test),
 	KUNIT_CASE(move_carries_children_test),
 	KUNIT_CASE(move_keeps_irrevocable_test),
+	KUNIT_CASE(move_requires_empty_dst_test),
 	KUNIT_CASE(delete_promotes_children_test),
 	KUNIT_CASE(delete_clears_slot_test),
 	KUNIT_CASE(rotate_recompiles_badge_test),
