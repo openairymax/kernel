@@ -15,6 +15,7 @@
 #include <linux/atomic.h>
 #include <linux/cache.h>
 #include <linux/compiler.h>
+#include <asm/barrier.h>
 #include <linux/init.h>
 #include <linux/notifier.h>
 #include <linux/spinlock.h>
@@ -42,6 +43,16 @@
  */
 extern struct airy_cap_slot *agent_caps;
 extern atomic_t              airy_cap_global_epoch;
+
+/* ─── Paranoid Mode (SSoT §12.2.3) ───────────────────────────────────── */
+/*
+ * airy_security_paranoid - 侧信道高安全模式开关。
+ *
+ * 由 kernel/ipc/airy_ipc_capability.c 定义（与 agent_caps[] 同属一个
+ * 编译单元），以 boot-time 参数 security_paranoid 暴露，默认关闭。
+ * 开启后 fastpath C-S9 在读取槽位前插入投机执行屏障。
+ */
+extern bool airy_security_paranoid;
 
 /* ─── Per-Bucket Hashed Spinlock Array ───────────────────────────────────
  * Shared lock array protecting agent_caps[].  Both airy_cap_register()
@@ -79,6 +90,10 @@ static inline unsigned int airy_cap_bucket(__u32 agent_id)
  * (EPOCH > FORGED > PERM).  No check is skipped based on an earlier
  * result, so the failure path does not reveal which field mismatched.
  *
+ * SSoT §12.2.2: the two slot fields are read with READ_ONCE() and a
+ * smp_mb() orders them before the verdict is computed.  SSoT §12.2.3:
+ * in paranoid mode a speculation fence precedes the slot reads.
+ *
  * Returns 0 (AIRY_EOK) if valid, negative error otherwise.
  */
 static __always_inline __must_check int airy_cap_badge_ok(__u64 badge, __u32 agent_id,
@@ -93,9 +108,14 @@ static __always_inline __must_check int airy_cap_badge_ok(__u64 badge, __u32 age
 	if (unlikely(agent_id >= AIRY_CAP_MAX_AGENTS))
 		return -AIRY_ECAP_MISSING;
 
+	if (unlikely(READ_ONCE(airy_security_paranoid)))
+		airy_ct_fence();
+
 	/* C-S9.1/C-S9.2: per-agent epoch and random tag, same cacheline. */
 	ok_epoch = airy_ct_eq32(epoch, READ_ONCE(agent_caps[agent_id].epoch));
 	ok_tag = airy_ct_eq32(randtag, READ_ONCE(agent_caps[agent_id].randtag));
+	/* C-S9.2: order slot loads before the verdict is derived. */
+	smp_mb();
 
 	/* C-S9.3: permission mask carried by the badge itself. */
 	ok_perm = airy_ct_perm(perms, required_perms);

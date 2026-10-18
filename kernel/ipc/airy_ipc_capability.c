@@ -13,6 +13,7 @@
 #include <linux/atomic.h>
 #include <linux/types.h>
 #include <linux/cache.h>
+#include <linux/moduleparam.h>
 #include <linux/airymax/lsm_types.h>
 #include <linux/airymax/security_types.h>
 #include <linux/airymax/ipc.h>
@@ -35,6 +36,21 @@ struct airy_cap_slot *agent_caps __ro_after_init = __airymax_cap_table;
 
 /* ─── Global Epoch (authoritative definition) ────────────────────────── */
 atomic_t airy_cap_global_epoch;
+
+/* ─── Paranoid Mode (SSoT 110-security/07 §12.2.3) ───────────────────── */
+/*
+ * airy_security_paranoid — serialize fastpath badge checks with a
+ * speculation fence.  Defined next to agent_caps[] because that array
+ * (and the badge check reading it) belongs to this translation unit;
+ * CONFIG_SECURITY_AIRY selects AIRY_IPC, so the LSM shares this one
+ * definition instead of carrying a duplicate.  __read_mostly (not
+ * __ro_after_init) so KUnit can exercise both branches; the sysfs
+ * attribute is 0444, i.e. boot-time only in production.
+ */
+bool airy_security_paranoid __read_mostly;
+module_param_named(security_paranoid, airy_security_paranoid, bool, 0444);
+MODULE_PARM_DESC(security_paranoid,
+		 "Serialize fastpath badge checks with a speculation fence (default: false)");
 
 /* ─── Capability Initialization ──────────────────────────────────────── */
 void airy_cap_agent_caps_init(void)
@@ -77,10 +93,9 @@ void airy_cap_epoch_bump_all(void)
 {
 	int i;
 
-	for (i = 0; i < AIRY_CAP_MAX_AGENTS; i++) {
-		__u16 e = READ_ONCE(agent_caps[i].epoch) + 1;
-		WRITE_ONCE(agent_caps[i].epoch, e);
-	}
+	for (i = 0; i < AIRY_CAP_MAX_AGENTS; i++)
+		WRITE_ONCE(agent_caps[i].epoch,
+			   READ_ONCE(agent_caps[i].epoch) + 1);
 
 	atomic_inc(&airy_cap_global_epoch);
 }

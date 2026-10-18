@@ -35,6 +35,7 @@
 struct lsm_test_ctx {
 	__u32 saved_agent_id;
 	__u32 saved_agent_state;
+	bool saved_paranoid;
 	struct airy_cap_slot saved_slot;
 };
 
@@ -60,6 +61,7 @@ static int airy_lsm_test_init(struct kunit *test)
 	sec = current_sec();
 	ctx->saved_agent_id = sec->agent_id;
 	ctx->saved_agent_state = sec->agent_state;
+	ctx->saved_paranoid = READ_ONCE(airy_security_paranoid);
 
 	/* Save and zero the test agent's capability slot. */
 	ctx->saved_slot = agent_caps[TEST_AGENT];
@@ -78,6 +80,7 @@ static void airy_lsm_test_exit(struct kunit *test)
 	sec = current_sec();
 	sec->agent_id = ctx->saved_agent_id;
 	sec->agent_state = ctx->saved_agent_state;
+	WRITE_ONCE(airy_security_paranoid, ctx->saved_paranoid);
 	agent_caps[TEST_AGENT] = ctx->saved_slot;
 }
 
@@ -201,6 +204,53 @@ static void badge_ok_agent_out_of_range_test(struct kunit *test)
 			airy_cap_badge_ok(0, AIRY_CAP_MAX_AGENTS, 0));
 }
 
+/* ── paranoid mode (SSoT §12.2.3) ────────────────────────────────────── */
+
+static void badge_ok_paranoid_valid_test(struct kunit *test)
+{
+	__u64 badge;
+
+	agent_caps[TEST_AGENT].epoch = 1;
+	agent_caps[TEST_AGENT].randtag = 0x1234ABCD;
+	agent_caps[TEST_AGENT].perms = AIRY_CAP_PERM_KILL;
+
+	WRITE_ONCE(airy_security_paranoid, true);
+	badge = AIRY_BADGE_COMPILE(1, 0x1234ABCDu, AIRY_CAP_PERM_KILL);
+	KUNIT_EXPECT_EQ(test, 0,
+			airy_cap_badge_ok(badge, TEST_AGENT,
+					  AIRY_CAP_PERM_KILL));
+}
+
+static void badge_ok_paranoid_epoch_test(struct kunit *test)
+{
+	__u64 badge;
+
+	agent_caps[TEST_AGENT].epoch = 2;
+	agent_caps[TEST_AGENT].randtag = 0x1234ABCD;
+	agent_caps[TEST_AGENT].perms = AIRY_CAP_PERM_KILL;
+
+	WRITE_ONCE(airy_security_paranoid, true);
+	badge = AIRY_BADGE_COMPILE(1, 0x1234ABCDu, AIRY_CAP_PERM_KILL);
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_EPOCH,
+			airy_cap_badge_ok(badge, TEST_AGENT,
+					  AIRY_CAP_PERM_KILL));
+}
+
+static void badge_ok_paranoid_forged_test(struct kunit *test)
+{
+	__u64 badge;
+
+	agent_caps[TEST_AGENT].epoch = 1;
+	agent_caps[TEST_AGENT].randtag = 0xDEAD;
+	agent_caps[TEST_AGENT].perms = AIRY_CAP_PERM_KILL;
+
+	WRITE_ONCE(airy_security_paranoid, true);
+	badge = AIRY_BADGE_COMPILE(1, 0x1234ABCDu, AIRY_CAP_PERM_KILL);
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_FORGED,
+			airy_cap_badge_ok(badge, TEST_AGENT,
+					  AIRY_CAP_PERM_KILL));
+}
+
 /* ── task_kill hook (P1-4) ──────────────────────────────────────────── */
 
 static void task_kill_without_kill_perm_denied_test(struct kunit *test)
@@ -289,6 +339,9 @@ static struct kunit_case airy_lsm_cases[] = {
 	KUNIT_CASE(badge_ok_epoch_precedes_randtag_test),
 	KUNIT_CASE(badge_ok_randtag_precedes_perm_test),
 	KUNIT_CASE(badge_ok_agent_out_of_range_test),
+	KUNIT_CASE(badge_ok_paranoid_valid_test),
+	KUNIT_CASE(badge_ok_paranoid_epoch_test),
+	KUNIT_CASE(badge_ok_paranoid_forged_test),
 	KUNIT_CASE(task_kill_without_kill_perm_denied_test),
 	KUNIT_CASE(task_kill_with_kill_perm_allowed_test),
 	KUNIT_CASE(task_kill_unregistered_agent_skipped_test),
