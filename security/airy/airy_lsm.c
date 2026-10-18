@@ -31,6 +31,7 @@
 #include <airymax/airy_trace.h>
 
 #include "airy_cap.h"
+#include "airy_cap_sysctl.h"
 #include "airy_probe.h"
 
 /* ─── Module parameter ─────────────────────────────────────────────────── */
@@ -283,6 +284,16 @@ static int __init airy_init(void)
 	if (rc)
 		return rc;
 #endif
+
+	/*
+	 * Publish the capability observation entries.  They replace the
+	 * removed airy_sys_capability_inspect() syscall (SSoT
+	 * 110-security/03-capability-model.md §5.3) and must exist before
+	 * the presence marker advertises readiness.
+	 */
+	rc = airy_cap_sysctl_init();
+	if (rc)
+		return rc;
 
 	/*
 	 * Publish the agentrt presence marker last: its existence is the

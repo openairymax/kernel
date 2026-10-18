@@ -116,6 +116,7 @@ config AIRY_KUNIT
 	  fastpath latency replacing design estimates).  Builds:
 	    - security/airy/airy_lsm_test.c            (P1-4 Badge validation)
 	    - security/airy/airy_cap_derive_test.c     (P1-10 COPY downgrade)
+	    - security/airy/airy_cap_sysctl_test.c     (capability observation)
 	    - kernel/ipc/airy_ipc_capability_test.c    (P1-5 AIRY_ALIGNED layout)
 	    - kernel/corekern/ipc/airy_ipc_ring_test.c (P1-8 cancelBadgedSends)
 	    - kernel/corekern/ipc/airy_fastpath_bench.c (fastpath micro-benchmark)

@@ -11,6 +11,7 @@ airy-y := airy_fs.o \
 	  airy_cap_derive.o \
 	  airy_cap_check.o \
 	  airy_cap_rotate.o \
+	  airy_cap_sysctl.o \
 	  airy_contract_check.o \
 	  airy_superv_lsm.o \
 	  airy_ipc_freeze.o \
@@ -25,7 +26,8 @@ airy-y := airy_fs.o \
 # airy_cap_derive_test.c links against the non-static airy_cap_derive() so
 # airy_cap_derive.o stays in the build either way.
 ifeq ($(CONFIG_AIRY_KUNIT),y)
-	airy-y += airy_lsm_test.o airy_cap_derive_test.o airy_contract_test.o \
+	airy-y += airy_lsm_test.o airy_cap_derive_test.o \
+		  airy_cap_sysctl_test.o airy_contract_test.o \
 		  airy_eventfd_test.o airy_probe_test.o airy_lockdown_test.o \
 		  airy_policy_test.o
 else
