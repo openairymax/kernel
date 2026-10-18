@@ -63,9 +63,11 @@ extern bool airy_security_paranoid;
  * derive used this bucket array — the two did not mutually exclude,
  * so concurrent register+derive on the same dst slot could double-write.
  *
- * Non-REVOKE derive ops acquire 1–3 bucket locks in canonical ascending
- * pointer order; REVOKE acquires all AIRY_CAP_BUCKET_NR locks because
- * its MDB subtree cascade may touch arbitrary buckets.
+ * COPY/MINT derive ops acquire the src and dst bucket locks in canonical
+ * ascending pointer order; MUTATE/ROTATE acquire only the source bucket.
+ * REVOKE, MOVE and DELETE acquire all AIRY_CAP_BUCKET_NR locks because
+ * their MDB subtree and parent/child chain updates may touch arbitrary
+ * buckets.
  */
 #define AIRY_CAP_BUCKET_BITS	6
 #define AIRY_CAP_BUCKET_NR	(1U << AIRY_CAP_BUCKET_BITS)

@@ -5,8 +5,9 @@
  * airy_cap_derive.c — seL4-style CNode capability derivation.
  *
  * Dispatches airy_cap_derive() to seven operations: copy, mint, move,
- * mutate, revoke, delete, rotate. COPY/MINT/MOVE maintain a
- * left-child right-sibling MDB tree; REVOKE cascades along it. A
+ * mutate, revoke, delete, rotate. COPY/MINT/MOVE/DELETE maintain a
+ * left-child right-sibling MDB tree; REVOKE cascades along it. MOVE
+ * carries the derived subtree, DELETE promotes the children to roots. A
  * 64-bucket hashed spinlock array replaces the former global lock.
  *
  * Design rationale: docs/AirymaxOS/110-security/03-capability-model.md
@@ -26,30 +27,29 @@
 /*
  * Fine-grained per-bucket lock array (P1-11 fix, P2 shared with register).
  *
- * The lock array airy_cap_bucket_locks[] and airy_cap_bucket() are now
- * defined in airy_cap_array.c and shared via airy_cap.h so that BOTH
+ * The lock array airy_cap_bucket_locks[] and airy_cap_bucket() are defined
+ * in airy_cap_array.c and shared via airy_cap.h so that BOTH
  * airy_cap_register() and airy_cap_derive() acquire the same per-bucket
  * locks.  This closes the TOCTOU window across the register/derive
- * boundary (P2 fix): previously register used a separate global
- * spinlock that did not intersect with these bucket locks.
+ * boundary (P2 fix): previously register used a separate global spinlock
+ * that did not intersect with these bucket locks.
  *
  * Agent IDs are mapped to buckets via a bitmask, so operations on
- * disjoint agent sets proceed concurrently.  Multi-slot derivation ops
- * (COPY/MINT/MOVE/DELETE) acquire 1–3 bucket locks in canonical
- * ascending order to avoid deadlock.  REVOKE cascades through the MDB
- * subtree which may span arbitrary buckets, so it acquires all 64 locks
- * (acceptable since epoch changes are rare).
+ * disjoint agent sets proceed concurrently.  COPY/MINT acquire the src
+ * and dst buckets in canonical ascending order to avoid deadlock.
+ * REVOKE, MOVE and DELETE acquire all 64 locks because the subtree and
+ * the parent/child chain may span arbitrary buckets.
  */
 
 /*
- * Lock context for multi-bucket acquisition.  Acquires up to 3 bucket
+ * Lock context for multi-bucket acquisition.  Acquires up to 2 bucket
  * locks in canonical (ascending pointer) order.  The first (outermost)
  * lock saves+disables IRQs via spin_lock_irqsave; inner locks use
  * plain spin_lock since IRQs are already disabled.  Duplicate buckets
  * (two agents hashing to the same bucket) are acquired only once.
  */
 struct cap_derive_lock_ctx {
-	spinlock_t	*locks[3];
+	spinlock_t	*locks[2];
 	unsigned long	flags;
 	int		n;
 };
@@ -104,10 +104,11 @@ static void cap_derive_lock_end(struct cap_derive_lock_ctx *ctx)
 }
 
 /*
- * Acquire ALL bucket locks in ascending order for REVOKE.
- * REVOKE cascades through the MDB derivation subtree, which may touch
- * slots in arbitrary buckets.  Since epoch changes are rare, acquiring
- * all 64 locks is acceptable.
+ * Acquire ALL bucket locks in ascending order for REVOKE/MOVE/DELETE.
+ * These operations walk the MDB derivation subtree and rewrite the
+ * parent/child chain, which may touch slots in arbitrary buckets.
+ * Since they are rare control-plane operations, acquiring all 64 locks
+ * is acceptable.
  */
 static unsigned long cap_derive_lock_all(void)
 {
@@ -175,6 +176,7 @@ static void airy_cap_mdb_unlink_child(__u32 agent_id)
 
 	while (cur != 0 && cur != agent_id) {
 		struct airy_cap_slot *cur_slot = &agent_caps[cur];
+
 		prev_ptr = &cur_slot->next_sibling;
 		cur = READ_ONCE(*prev_ptr);
 	}
@@ -184,6 +186,46 @@ static void airy_cap_mdb_unlink_child(__u32 agent_id)
 
 	WRITE_ONCE(slot->parent_agent, 0);
 	WRITE_ONCE(slot->next_sibling, 0);
+}
+
+/*
+ * Reparent every child of @agent_id under @new_parent.  A non-zero
+ * @new_parent keeps the derivation depth, so MOVE carries the subtree
+ * along with the capability.  @new_parent == 0 promotes the children to
+ * roots and resets their depth, which is how DELETE avoids leaving
+ * parent_agent pointing at a recycled slot.
+ */
+static void cap_mdb_reparent(__u32 agent_id, __u32 new_parent)
+{
+	__u32 child = READ_ONCE(agent_caps[agent_id].first_child);
+
+	while (child != 0) {
+		struct airy_cap_slot *slot = &agent_caps[child];
+		__u32 next = READ_ONCE(slot->next_sibling);
+
+		WRITE_ONCE(slot->parent_agent, new_parent);
+		if (new_parent == 0) {
+			WRITE_ONCE(slot->next_sibling, 0);
+			WRITE_ONCE(slot->generation, 0);
+		}
+		child = next;
+	}
+}
+
+/* Clear every field of a slot, leaving it ready for re-registration. */
+static void cap_slot_reset(struct airy_cap_slot *slot)
+{
+	WRITE_ONCE(slot->badge, AIRY_CAP_NULL);
+	WRITE_ONCE(slot->agent_id, 0);
+	WRITE_ONCE(slot->flags, 0);
+	WRITE_ONCE(slot->randtag, 0);
+	WRITE_ONCE(slot->perms, 0);
+	WRITE_ONCE(slot->epoch, 0);
+	WRITE_ONCE(slot->parent_agent, 0);
+	WRITE_ONCE(slot->first_child, 0);
+	WRITE_ONCE(slot->next_sibling, 0);
+	WRITE_ONCE(slot->generation, 0);
+	WRITE_ONCE(slot->revocable, 0);
 }
 
 /*
@@ -225,13 +267,14 @@ static void airy_cap_revoke_subtree(__u32 agent_id, __u16 new_epoch)
  * Returns 0 on success, negative airy_err_t on failure.
  *
  * Locking (P1-11 fix): the former global spinlock is replaced by a
- * 64-bucket hashed lock array.  Non-REVOKE operations acquire only
- * the buckets covering the involved agents (1–3 locks).  REVOKE
- * acquires all 64 buckets because the cascading subtree may span
- * arbitrary buckets.  This closes the TOCTOU window between slot-state
- * checks and subsequent writes while allowing concurrent derivation
- * on disjoint agent sets.  get_random_u32() and atomic_inc() are
- * non-blocking and safe under the spinlock.
+ * 64-bucket hashed lock array.  COPY/MINT acquire the buckets covering
+ * src and dst, MUTATE/ROTATE only the source bucket.  REVOKE, MOVE and
+ * DELETE acquire all 64 buckets: the revocation subtree, the parent's
+ * child chain and the children's parent links may all span arbitrary
+ * buckets.  This closes the TOCTOU window between slot-state checks and
+ * subsequent writes while allowing concurrent derivation on disjoint
+ * agent sets.  get_random_u32() and atomic_inc() are non-blocking and
+ * safe under the spinlock.
  */
 int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		    enum airy_cap_op op, __u16 new_perms)
@@ -250,24 +293,28 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 
 	/*
 	 * Acquire locks before slot lookup to close the TOCTOU window.
-	 * REVOKE cascades through the entire MDB subtree and may touch
-	 * slots in arbitrary buckets, so it acquires all 64 locks.
-	 * Other ops acquire only the buckets for the agents they touch.
+	 * REVOKE cascades through the entire MDB subtree, while MOVE and
+	 * DELETE rewrite the parent's child chain and (for MOVE) the
+	 * children's parent links, so all three may touch slots in
+	 * arbitrary buckets and acquire all 64 locks.  COPY/MINT/MUTATE/
+	 * ROTATE touch only the slots they name.
 	 */
-	if (op == AIRY_CAP_OP_REVOKE) {
+	if (op == AIRY_CAP_OP_REVOKE || op == AIRY_CAP_OP_MOVE ||
+	    op == AIRY_CAP_OP_DELETE) {
 		all_flags = cap_derive_lock_all();
 		all_locked = true;
 	} else {
 		cap_derive_lock_begin(&ctx);
 		cap_derive_lock_add(&ctx, src_agent);
-		if (op == AIRY_CAP_OP_COPY || op == AIRY_CAP_OP_MINT ||
-		    op == AIRY_CAP_OP_MOVE)
+		if (op == AIRY_CAP_OP_COPY || op == AIRY_CAP_OP_MINT)
 			cap_derive_lock_add(&ctx, dst_agent);
 	}
 
-	/* Validate source slot for all operations.  REVOKE needs the
-	 * slot to increment its epoch (K9-1 changed REVOKE to cascading
-	 * via MDB tree, src is the root of the revocation subtree). */
+	/*
+	 * Validate source slot for all operations.  REVOKE needs the slot
+	 * to increment its epoch (K9-1 changed REVOKE to cascading via the
+	 * MDB tree, src is the root of the revocation subtree).
+	 */
 	src = airy_cap_lookup(src_agent);
 	if (!src) {
 		pr_debug_ratelimited("airy_cap_derive: op=%s FAIL - src agent %u not found\n",
@@ -275,20 +322,6 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 			src_agent);
 		ret = -AIRY_ECAP_MISSING;
 		goto out;
-	}
-
-	/*
-	 * For MOVE/DELETE: the MDB unlink helper walks the parent's
-	 * sibling chain and modifies either parent->first_child or a
-	 * sibling's next_sibling.  Acquire the parent's bucket lock to
-	 * serialize concurrent child-chain modifications.  Safe to read
-	 * parent_agent here because we hold src's bucket lock.
-	 */
-	if (op == AIRY_CAP_OP_MOVE || op == AIRY_CAP_OP_DELETE) {
-		__u32 parent = READ_ONCE(src->parent_agent);
-
-		if (parent != 0)
-			cap_derive_lock_add(&ctx, parent);
 	}
 
 	switch (op) {
@@ -374,7 +407,11 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		break;
 
 	/* ─── MOVE (transfer + unlink from parent) ─────────────────── */
-	case AIRY_CAP_OP_MOVE:
+	case AIRY_CAP_OP_MOVE: {
+		struct airy_cap_slot *parent;
+		__u32 parent_id, child;
+		__u16 generation, revocable;
+
 		if (dst_agent >= AIRY_CAP_MAX_AGENTS) {
 			pr_debug_ratelimited("airy_cap_derive: MOVE FAIL - dst %u >= MAX %u\n",
 				dst_agent, AIRY_CAP_MAX_AGENTS);
@@ -389,7 +426,17 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 			goto out;
 		}
 
-		/* Transfer badge */
+		/*
+		 * The capability moves as a whole: the destination takes
+		 * over the badge and the MDB position, and the derived
+		 * children follow it.  Snapshot the links before the
+		 * source slot is unlinked and cleared.
+		 */
+		parent_id  = READ_ONCE(src->parent_agent);
+		child      = READ_ONCE(src->first_child);
+		generation = READ_ONCE(src->generation);
+		revocable  = READ_ONCE(src->revocable);
+
 		dst->badge    = src->badge;
 		dst->agent_id = dst_agent;
 		dst->flags    = src->flags;
@@ -397,31 +444,30 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 		dst->perms    = src->perms;
 		dst->epoch    = src->epoch;
 
-		/* MDB tree: unlink src, link dst as child of src's parent */
-		airy_cap_mdb_unlink_child(src_agent);
-		if (src->parent_agent != 0) {
-			struct airy_cap_slot *parent = &agent_caps[src->parent_agent];
-			airy_cap_mdb_link_child(parent, dst,
-						src->parent_agent, dst_agent);
+		if (parent_id != 0) {
+			parent = &agent_caps[parent_id];
+			airy_cap_mdb_unlink_child(src_agent);
+			airy_cap_mdb_link_child(parent, dst, parent_id,
+						dst_agent);
+			WRITE_ONCE(dst->generation, generation);
+			WRITE_ONCE(dst->revocable, revocable);
+		} else {
+			WRITE_ONCE(dst->parent_agent, 0);
+			WRITE_ONCE(dst->next_sibling, 0);
+			WRITE_ONCE(dst->generation, generation);
+			WRITE_ONCE(dst->revocable, revocable);
 		}
+		WRITE_ONCE(dst->first_child, child);
+		cap_mdb_reparent(src_agent, dst_agent);
 
-		/* Invalidate source slot */
-		WRITE_ONCE(src->badge, AIRY_CAP_NULL);
-		WRITE_ONCE(src->agent_id, 0);
-		WRITE_ONCE(src->flags, 0);
-		WRITE_ONCE(src->randtag, 0);
-		WRITE_ONCE(src->perms, 0);
-		WRITE_ONCE(src->epoch, 0);
-		WRITE_ONCE(src->parent_agent, 0);
-		WRITE_ONCE(src->first_child, 0);
-		WRITE_ONCE(src->next_sibling, 0);
-		WRITE_ONCE(src->generation, 0);
-		WRITE_ONCE(src->revocable, 0);
+		cap_slot_reset(src);
 
-		pr_debug_ratelimited("airy_cap_derive: MOVE src=%u→dst=%u badge=0x%016llx epoch=%u (src invalidated, MDB re-linked)\n",
+		pr_debug_ratelimited("airy_cap_derive: MOVE src=%u→dst=%u badge=0x%016llx epoch=%u parent=%u gen=%u children=%u\n",
 			src_agent, dst_agent,
-			(unsigned long long)dst->badge, dst->epoch);
+			(unsigned long long)dst->badge, dst->epoch,
+			dst->parent_agent, dst->generation, child);
 		break;
+	}
 
 	/* ─── MUTATE ────────────────────────────────────────────────── */
 	case AIRY_CAP_OP_MUTATE:
@@ -467,20 +513,16 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 			src_agent, (unsigned long long)src->badge,
 			READ_ONCE(src->epoch));
 
-		/* MDB tree: unlink from parent's child chain */
+		/*
+		 * DELETE never cascades (SSoT §3.4): the derived children
+		 * stay valid and are promoted to roots.  Leaving their
+		 * parent_agent pointing at the cleared slot would let a
+		 * later registration of the same index inherit the old
+		 * subtree and revoke it.
+		 */
+		cap_mdb_reparent(src_agent, 0);
 		airy_cap_mdb_unlink_child(src_agent);
-
-		WRITE_ONCE(src->badge, AIRY_CAP_NULL);
-		WRITE_ONCE(src->agent_id, 0);
-		WRITE_ONCE(src->flags, 0);
-		WRITE_ONCE(src->randtag, 0);
-		WRITE_ONCE(src->perms, 0);
-		WRITE_ONCE(src->epoch, 0);
-		WRITE_ONCE(src->parent_agent, 0);
-		WRITE_ONCE(src->first_child, 0);
-		WRITE_ONCE(src->next_sibling, 0);
-		WRITE_ONCE(src->generation, 0);
-		WRITE_ONCE(src->revocable, 0);
+		cap_slot_reset(src);
 		break;
 
 	/* ─── ROTATE ────────────────────────────────────────────────── */
@@ -496,9 +538,11 @@ int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 			src_agent, src->randtag, new_tag,
 			(__u16)epoch, perms);
 
-		/* Write randtag first, then badge — see airy_cap_rotate.c
-		 * C-S5.5 for ordering rationale. smp_store_release prevents
-		 * store-store reordering on weakly-ordered architectures. */
+		/*
+		 * Write randtag first, then badge — see airy_cap_rotate.c
+		 * C-S5.5 for ordering rationale.  smp_store_release prevents
+		 * store-store reordering on weakly-ordered architectures.
+		 */
 		smp_store_release(&src->randtag, new_tag);
 		smp_store_release(&src->badge,
 				  AIRY_BADGE_COMPILE(epoch, new_tag, perms));
