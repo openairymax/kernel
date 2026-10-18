@@ -12,7 +12,7 @@
  * state change, so the [IND] contract has a single authority check and
  * a single dispatch table instead of one per transport.
  *
- * Design rationale: docs-linux/20-modules/09-kernel-agent-supervisor.md
+ * Design rationale: docs-linux/20-modules/09-kernel-agent-supervisor.md §3.6
  */
 
 #include <linux/compiler.h>

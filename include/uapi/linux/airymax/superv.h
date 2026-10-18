@@ -11,7 +11,7 @@
  * liveness pulse are supervisor-only operations that no agent badge may
  * reach.
  *
- * SSoT: 20-modules/09-kernel-agent-supervisor.md §3.5
+ * SSoT: 20-modules/09-kernel-agent-supervisor.md §3.6
  *       20-modules/10-user-supervisor-daemon.md §8.3
  */
 

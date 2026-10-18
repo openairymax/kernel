@@ -13,7 +13,7 @@
  * A task therefore never runs with a badge that has already been
  * revoked, and no peer can feed it through a ring after the verdict.
  *
- * Design rationale: docs-linux/20-modules/09-kernel-agent-supervisor.md §1.4
+ * Design rationale: docs-linux/20-modules/09-kernel-agent-supervisor.md §3.6
  */
 
 #include <linux/errno.h>

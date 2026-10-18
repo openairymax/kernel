@@ -14,6 +14,7 @@
 
 #include <kunit/test.h>
 #include <linux/errno.h>
+#include <linux/stddef.h>
 #include <linux/string.h>
 #include <linux/types.h>
 
@@ -84,6 +85,9 @@ static void sv_chk_adjud(struct kunit *test)
 
 	cmd = sv_cmd(AIRY_IPC_OP_ADJUDICATE, 1, AIRY_ADJUD_NR);
 	KUNIT_EXPECT_EQ(test, -EINVAL, airy_sv_cmd_chk(&cmd));
+
+	cmd = sv_cmd(AIRY_IPC_OP_ADJUDICATE, 0, AIRY_ADJUD_WARN);
+	KUNIT_EXPECT_EQ(test, 0, airy_sv_cmd_chk(&cmd));
 }
 
 static void sv_chk_unfrz(struct kunit *test)
@@ -135,6 +139,30 @@ static void sv_chk_beat(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, -EINVAL, airy_sv_cmd_chk(&cmd));
 }
 
+static void sv_abi_cmd(struct kunit *test)
+{
+	KUNIT_EXPECT_EQ(test, AIRY_SUPERV_CMD_SIZE,
+			sizeof(struct airy_superv_cmd));
+	KUNIT_EXPECT_EQ(test, 0, offsetof(struct airy_superv_cmd, opcode));
+	KUNIT_EXPECT_EQ(test, 4, offsetof(struct airy_superv_cmd, agent_id));
+	KUNIT_EXPECT_EQ(test, 8, offsetof(struct airy_superv_cmd, adjud));
+	KUNIT_EXPECT_EQ(test, 12, offsetof(struct airy_superv_cmd, reason));
+}
+
+static void sv_abi_codes(struct kunit *test)
+{
+	KUNIT_EXPECT_EQ(test, 0x0020, AIRY_IPC_OP_ADJUDICATE);
+	KUNIT_EXPECT_EQ(test, 0x0021, AIRY_IPC_OP_UNFREEZE);
+	KUNIT_EXPECT_EQ(test, 0x0022, AIRY_IPC_OP_HEARTBEAT);
+
+	KUNIT_EXPECT_EQ(test, 0, AIRY_ADJUD_WARN);
+	KUNIT_EXPECT_EQ(test, 1, AIRY_ADJUD_DEGRADE);
+	KUNIT_EXPECT_EQ(test, 2, AIRY_ADJUD_PAUSE);
+	KUNIT_EXPECT_EQ(test, 3, AIRY_ADJUD_TERMINATE);
+	KUNIT_EXPECT_EQ(test, 4, AIRY_ADJUD_RESUME);
+	KUNIT_EXPECT_EQ(test, 5, AIRY_ADJUD_NR);
+}
+
 static struct kunit_case airy_sv_proto_cases[] = {
 	KUNIT_CASE(sv_start_null),
 	KUNIT_CASE(sv_start_ok),
@@ -146,6 +174,8 @@ static struct kunit_case airy_sv_proto_cases[] = {
 	KUNIT_CASE(sv_chk_beat),
 	KUNIT_CASE(sv_chk_agent),
 	KUNIT_CASE(sv_chk_opcode),
+	KUNIT_CASE(sv_abi_cmd),
+	KUNIT_CASE(sv_abi_codes),
 	{}
 };
 

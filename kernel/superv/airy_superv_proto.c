@@ -9,7 +9,7 @@
  * touched. Execution of the commands themselves belongs to the later
  * freeze/thaw/adjudication slices, so this file stays free of policy.
  *
- * Design rationale: docs-linux/20-modules/09-kernel-agent-supervisor.md
+ * Design rationale: docs-linux/20-modules/09-kernel-agent-supervisor.md §3.6
  */
 
 #include <asm/barrier.h>
