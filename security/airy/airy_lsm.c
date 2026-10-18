@@ -19,12 +19,14 @@
 #include <linux/cred.h>
 #include <linux/sched.h>
 #include <linux/sched/signal.h>
+#include <linux/stat.h>
 #include <linux/build_bug.h>
 #include <linux/airymax/lsm_types.h>
 #include <linux/airymax/sched.h>
 #include <linux/airymax/error.h>
 
 #include <airymax/airy_contract.h>
+#include <airymax/airy_policy.h>
 #include <airymax/airy_trace.h>
 
 #include "airy_cap.h"
@@ -41,15 +43,21 @@ struct lsm_blob_sizes airy_blob_sizes __ro_after_init = {
 	.lbs_inode = sizeof(struct airy_inode_sec),
 };
 
+static struct airy_task_sec *airy_tsec(const struct task_struct *task)
+{
+	return task->security + airy_blob_sizes.lbs_task;
+}
+
 /* ─── Hook: task_alloc — initialise agent security blob ───────────────── */
 static int airy_task_alloc(struct task_struct *task, unsigned long clone_flags)
 {
 	struct airy_task_sec *sec;
+	u64 fields[AIRY_POLICY_MAX_FIELDS] = { };
 
 	if (!airy_enabled)
 		return 0;
 
-	sec = task->security + airy_blob_sizes.lbs_task;
+	sec = airy_tsec(task);
 	sec->agent_id       = 0;
 	sec->cap_space_root = 0;
 	sec->agent_state    = 0;
@@ -60,26 +68,42 @@ static int airy_task_alloc(struct task_struct *task, unsigned long clone_flags)
 	sec->_reserved       = 0;
 	sec->ipc_ring        = NULL;
 
-	return 0;
+	fields[0] = clone_flags;
+	fields[1] = (task->flags & PF_KTHREAD) ? 0 : 1;
+	fields[2] = sec->agent_id;
+
+	return airy_policy_check(AIRY_POLICY_HOOK_TASK_ALLOC, fields, NULL);
 }
 
 /* ─── Hook: task_free — cleanup agent security blob ──────────────────── */
 static void airy_task_free(struct task_struct *task)
 {
-	/* No dynamic allocations to free; capability slots are persistent. */
+	struct airy_task_sec *sec;
+	u64 fields[AIRY_POLICY_MAX_FIELDS] = { };
+
+	if (!airy_enabled)
+		return;
+
+	sec = airy_tsec(task);
+	fields[0] = sec->agent_id;
+	fields[1] = sec->agent_state;
+
+	/* Observation hook: the task is already gone, record only. */
+	airy_policy_check(AIRY_POLICY_HOOK_TASK_FREE, fields, NULL);
 }
 
 /* ─── Hook: task_kill — enforce capability KILL (P1-4 fix: entry symmetry) */
 static int airy_task_kill(struct task_struct *p, struct kernel_siginfo *info,
 			  int sig, const struct cred *cred)
 {
-	struct airy_task_sec *sec;
+	struct airy_task_sec *sec, *target;
 	__u64 caller_badge;
+	u64 fields[AIRY_POLICY_MAX_FIELDS] = { };
 
 	if (!airy_enabled)
 		return 0;
 
-	sec = current->security + airy_blob_sizes.lbs_task;
+	sec = airy_tsec(current);
 
 	/* Phase 1: agent_state check (retained from original) */
 	if (sec->agent_state == AIRY_AGENT_STOPPED ||
@@ -99,7 +123,13 @@ static int airy_task_kill(struct task_struct *p, struct kernel_siginfo *info,
 			return -EPERM;
 	}
 
-	return 0;
+	target = airy_tsec(p);
+	fields[0] = sig;
+	fields[1] = target->agent_id;
+	fields[2] = target->agent_state;
+	fields[3] = sec->agent_id;
+
+	return airy_policy_check(AIRY_POLICY_HOOK_TASK_KILL, fields, NULL);
 }
 
 /* ─── Hook: file_open — capability-gated file access (P1-4 fix) ────────── */
@@ -107,11 +137,12 @@ static int airy_file_open(struct file *file)
 {
 	struct airy_task_sec *sec;
 	__u64 caller_badge;
+	u64 fields[AIRY_POLICY_MAX_FIELDS] = { };
 
 	if (!airy_enabled)
 		return 0;
 
-	sec = current->security + airy_blob_sizes.lbs_task;
+	sec = airy_tsec(current);
 
 	/* Phase 1: agent_state check (retained from original) */
 	if (sec->agent_state == AIRY_AGENT_STOPPED ||
@@ -131,13 +162,18 @@ static int airy_file_open(struct file *file)
 			return -EACCES;
 	}
 
-	return 0;
+	fields[0] = file->f_flags;
+	fields[1] = file->f_mode & (FMODE_READ | FMODE_WRITE);
+	fields[2] = sec->agent_id;
+
+	return airy_policy_check(AIRY_POLICY_HOOK_FILE_OPEN, fields, NULL);
 }
 
 /* ─── Hook: inode_alloc — initialise inode security blob (P1-6 fix) ───── */
 static int airy_inode_alloc(struct inode *inode)
 {
 	struct airy_inode_sec *sec;
+	u64 fields[AIRY_POLICY_MAX_FIELDS] = { };
 
 	if (!airy_enabled)
 		return 0;
@@ -146,22 +182,45 @@ static int airy_inode_alloc(struct inode *inode)
 	sec->cap_required = 0;
 	sec->owner_agent  = 0;
 
-	return 0;
+	fields[0] = inode->i_mode & S_IFMT;
+
+	return airy_policy_check(AIRY_POLICY_HOOK_INODE_ALLOC, fields, NULL);
 }
 
 /* ─── Hook: inode_free — cleanup inode security blob (P1-6 fix) ────────── */
 static void airy_inode_free(struct inode *inode)
 {
-	/* No dynamic allocations to free; blob is inline in inode. */
+	u64 fields[AIRY_POLICY_MAX_FIELDS] = { };
+
+	if (!airy_enabled)
+		return;
+
+	fields[0] = inode->i_mode & S_IFMT;
+
+	/* Observation hook: the inode is already gone, record only. */
+	airy_policy_check(AIRY_POLICY_HOOK_INODE_FREE, fields, NULL);
 }
 
 /* ─── Hook: uring_cmd — entry point for capability-based IPC ──────────── */
 static int airy_uring_cmd(struct io_uring_cmd *ioucmd)
 {
+	struct airy_task_sec *sec;
+	u64 fields[AIRY_POLICY_MAX_FIELDS] = { };
+	int rc;
+
 	if (!airy_enabled)
 		return 0;
 
-	return airy_uring_cmd_check(ioucmd);
+	rc = airy_uring_cmd_check(ioucmd);
+	if (rc)
+		return rc;
+
+	sec = airy_tsec(current);
+	fields[0] = ioucmd->cmd_op;
+	fields[1] = ioucmd->flags;
+	fields[2] = sec->agent_id;
+
+	return airy_policy_check(AIRY_POLICY_HOOK_URING_CMD, fields, NULL);
 }
 
 /* ─── Hook list ────────────────────────────────────────────────────────── */
