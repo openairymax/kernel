@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+obj-y += airy_ck_charset.o
+
+airy_ck_charset-y := airy_utf8.o
+
+# Strict UTF-8 boundary matrix: structural faults, policy faults and the
+# untouched-output contract of airy_u8_dec().
+airy_ck_charset-$(CONFIG_AIRY_KUNIT) += airy_utf8_test.o

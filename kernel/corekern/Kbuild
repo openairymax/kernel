@@ -14,5 +14,6 @@ obj-y += time/
 obj-y += object/
 obj-y += locking/
 obj-y += irq/
+obj-y += charset/
 obj-$(CONFIG_AIRY_AGENT_TRACING) += airy/
 obj-$(CONFIG_BPF) += bpf/

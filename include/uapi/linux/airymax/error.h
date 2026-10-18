@@ -155,7 +155,20 @@ typedef __s32 airy_err_t;
 #define AIRY_ESYS_DISABLED    223   /* Syscall disabled in [DSL] mode */
 #define AIRY_ESYS_ABI         224   /* ABI mismatch */
 
-/* ─── Reserved Sub-spaces (241 to 300) ───────────────────────────────────
+/* ─── Encoding Error Codes (sub-space: 241 to 260) ──────────────────────
+ * Strict UTF-8 validation of text crossing a kernel boundary.  The
+ * codes name the first illegal sequence so a caller can distinguish a
+ * structural fault from a policy refusal without rescanning the input.
+ * See 180-i18n/02-encoding-spec.md §7 and 08-sc-error-contract.md.
+ */
+#define AIRY_EENC_INVALID     241   /* Malformed UTF-8 sequence */
+#define AIRY_EENC_OVERLONG    242   /* Overlong encoding */
+#define AIRY_EENC_SURROGATE   243   /* UTF-16 surrogate code point */
+#define AIRY_EENC_NONCHAR     244   /* Unicode noncharacter */
+#define AIRY_EENC_RANGE       245   /* Code point beyond U+10FFFF */
+#define AIRY_EENC_BOM         246   /* U+FEFF byte order mark */
+
+/* ─── Reserved Sub-spaces (261 to 300) ───────────────────────────────────
  * Reserved for future Airymax subsystems. Do not allocate without
  * updating docs/AirymaxOS/30-interfaces/08-sc-error-contract.md.
  */
