@@ -113,6 +113,15 @@ static void airy_task_free(struct task_struct *task)
 	airy_policy_check(AIRY_POLICY_HOOK_TASK_FREE, fields, NULL);
 
 	/*
+	 * Release the capability slot before the blob goes away.  Agent 0
+	 * is the unbound marker and owns no slot; airy_cap_unreg() also
+	 * drops already-released slots, so repeated frees of a shared
+	 * agent_id stay harmless.
+	 */
+	if (sec->agent_id != 0)
+		airy_cap_unreg(sec->agent_id);
+
+	/*
 	 * The ring is owned by this blob.  The init task never runs the
 	 * alloc hook and kernel threads never get a ring, so both reach
 	 * here with ipc_ring == NULL and drain through kfree(NULL).

@@ -255,6 +255,50 @@ static void airy_cap_revoke_subtree(__u32 agent_id, __u16 new_epoch)
 	}
 }
 
+/* ─── airy_cap_unreg ───────────────────────────────────────────────────── */
+/*
+ * Release an agent's capability slot when the agent terminates.
+ *
+ * SSoT 110-security/03-capability-model.md §13.3: revoke the agent's
+ * derivation subtree first, then delete the slot itself.  Both steps
+ * run under a single acquisition of all bucket locks: splitting them
+ * into two airy_cap_derive() calls would open a window in which a
+ * concurrent COPY/MINT from the dying agent could attach a fresh child
+ * after the revoke and survive it.
+ *
+ * Revoked children keep their slots but lose their authority: the
+ * revoke bumps their epoch and clears the random tag, so every badge
+ * minted before the revoke fails validation.  The children are then
+ * promoted to MDB roots so no parent_agent points at the slot about to
+ * be recycled.  agent_id 0 is the unbound marker and never owns a slot,
+ * so it is ignored along with out-of-range IDs.
+ */
+void airy_cap_unreg(__u32 agent_id)
+{
+	struct airy_cap_slot *slot;
+	unsigned long flags;
+
+	if (agent_id == 0 || agent_id >= AIRY_CAP_MAX_AGENTS)
+		return;
+
+	flags = cap_derive_lock_all();
+
+	slot = &agent_caps[agent_id];
+	if (READ_ONCE(slot->badge) != AIRY_CAP_NULL) {
+		__u16 epoch = READ_ONCE(slot->epoch) + 1;
+
+		airy_cap_revoke_subtree(agent_id, epoch);
+		cap_mdb_reparent(agent_id, 0);
+		airy_cap_mdb_unlink_child(agent_id);
+		cap_slot_reset(slot);
+
+		pr_debug_ratelimited("airy_cap_unreg: agent=%u epoch %u\n",
+				     agent_id, epoch);
+	}
+
+	cap_derive_unlock_all(flags);
+}
+
 /* ─── airy_cap_derive ──────────────────────────────────────────────────── */
 /*
  * Dispatch capability derivation operation.

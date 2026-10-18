@@ -10,7 +10,10 @@
  * subtree, and keep an irrevocable marker. DELETE is checked to
  * detach its children as new roots without cascading. REVOKE proves
  * each link by bumping the descendants' epoch, and ROTATE is checked
- * to recompile the badge around a fresh random tag.
+ * to recompile the badge around a fresh random tag. airy_cap_unreg()
+ * is checked to clear the terminating agent's slot, cascade the revoke
+ * over its revocable descendants, promote them to roots, and spare
+ * irrevocable capabilities.
  *
  * airy_cap_derive() is non-static (airy_cap.h), so the suite links
  * against airy_cap_derive.o inside the airy module.
@@ -384,6 +387,112 @@ static void rotate_recompiles_badge_test(struct kunit *test)
 			(unsigned long long)src->randtag);
 }
 
+/* ─── UNREG ────────────────────────────────────────────────────────────── */
+
+static void unreg_skips_unbound_test(struct kunit *test)
+{
+	struct airy_cap_slot *src = &agent_caps[TEST_SRC_AGENT];
+	__u64 badge;
+
+	KUNIT_ASSERT_EQ(test, 0,
+			register_agent(TEST_SRC_AGENT, AIRY_CAP_PERM_SEND));
+	badge = src->badge;
+
+	/* Agent 0 never owns a slot; out-of-range IDs must be ignored. */
+	airy_cap_unreg(0);
+	airy_cap_unreg(AIRY_CAP_MAX_AGENTS);
+
+	KUNIT_EXPECT_EQ(test, badge, src->badge);
+	KUNIT_EXPECT_EQ(test, (__u16)1, src->epoch);
+}
+
+static void unreg_clears_slot_test(struct kunit *test)
+{
+	struct airy_cap_slot *src = &agent_caps[TEST_SRC_AGENT];
+
+	KUNIT_ASSERT_EQ(test, 0,
+			register_agent(TEST_SRC_AGENT, AIRY_CAP_PERM_SEND));
+
+	airy_cap_unreg(TEST_SRC_AGENT);
+	KUNIT_EXPECT_EQ(test, (unsigned long long)AIRY_CAP_NULL,
+			(unsigned long long)src->badge);
+	KUNIT_EXPECT_EQ(test, (__u32)0, src->agent_id);
+	KUNIT_EXPECT_EQ(test, (__u32)0, src->flags);
+	KUNIT_EXPECT_EQ(test, (__u32)0, src->randtag);
+	KUNIT_EXPECT_EQ(test, (__u16)0, src->perms);
+	KUNIT_EXPECT_EQ(test, (__u16)0, src->epoch);
+	KUNIT_EXPECT_EQ(test, (__u32)0, src->parent_agent);
+	KUNIT_EXPECT_EQ(test, (__u32)0, src->first_child);
+	KUNIT_EXPECT_EQ(test, (__u32)0, src->next_sibling);
+	KUNIT_EXPECT_EQ(test, (__u16)0, src->generation);
+	KUNIT_EXPECT_EQ(test, (__u16)0, src->revocable);
+
+	/* A second release of the same ID must be a no-op. */
+	airy_cap_unreg(TEST_SRC_AGENT);
+	KUNIT_EXPECT_EQ(test, (unsigned long long)AIRY_CAP_NULL,
+			(unsigned long long)src->badge);
+}
+
+static void unreg_revokes_subtree_test(struct kunit *test)
+{
+	struct airy_cap_slot *parent = &agent_caps[TEST_PARENT_AGENT];
+	struct airy_cap_slot *child = &agent_caps[TEST_CHILD_AGENT];
+	struct airy_cap_slot *grand = &agent_caps[TEST_SIBLING_AGENT];
+
+	KUNIT_ASSERT_EQ(test, 0,
+			register_agent(TEST_PARENT_AGENT,
+				       AIRY_CAP_PERM_SEND));
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_cap_derive(TEST_PARENT_AGENT, TEST_CHILD_AGENT,
+					AIRY_CAP_OP_COPY, 0));
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_cap_derive(TEST_CHILD_AGENT, TEST_SIBLING_AGENT,
+					AIRY_CAP_OP_COPY, 0));
+
+	airy_cap_unreg(TEST_PARENT_AGENT);
+
+	KUNIT_EXPECT_EQ(test, (unsigned long long)AIRY_CAP_NULL,
+			(unsigned long long)parent->badge);
+	KUNIT_EXPECT_EQ(test, (__u32)0, parent->agent_id);
+
+	/* Direct child: revoked, badge kept, promoted to a root. */
+	KUNIT_EXPECT_EQ(test, (__u16)2, child->epoch);
+	KUNIT_EXPECT_EQ(test, (__u32)0, child->randtag);
+	KUNIT_EXPECT_EQ(test, (__u32)0, child->parent_agent);
+	KUNIT_EXPECT_EQ(test, (__u16)0, child->generation);
+	KUNIT_EXPECT_NE(test, (unsigned long long)AIRY_CAP_NULL,
+			(unsigned long long)child->badge);
+
+	/* Grandchild keeps its position below the surviving child. */
+	KUNIT_EXPECT_EQ(test, (__u16)2, grand->epoch);
+	KUNIT_EXPECT_EQ(test, (__u32)TEST_CHILD_AGENT, grand->parent_agent);
+	KUNIT_EXPECT_EQ(test, (__u16)2, grand->generation);
+}
+
+static void unreg_spares_irrevocable_test(struct kunit *test)
+{
+	struct airy_cap_slot *child = &agent_caps[TEST_CHILD_AGENT];
+
+	KUNIT_ASSERT_EQ(test, 0,
+			register_agent(TEST_PARENT_AGENT,
+				       AIRY_CAP_PERM_SEND));
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_cap_derive(TEST_PARENT_AGENT, TEST_CHILD_AGENT,
+					AIRY_CAP_OP_COPY, 0));
+	WRITE_ONCE(child->revocable, 0);
+
+	airy_cap_unreg(TEST_PARENT_AGENT);
+
+	/*
+	 * The irrevocable capability survives, but must no longer name
+	 * the released parent as its derivation source.
+	 */
+	KUNIT_EXPECT_EQ(test, (__u16)1, child->epoch);
+	KUNIT_EXPECT_NE(test, (__u32)0, child->randtag);
+	KUNIT_EXPECT_EQ(test, (__u32)0, child->parent_agent);
+	KUNIT_EXPECT_EQ(test, (__u16)0, child->generation);
+}
+
 static struct kunit_case airy_cap_derive_cases[] = {
 	KUNIT_CASE(copy_cannot_mint_derive_perm_test),
 	KUNIT_CASE(copy_new_perms_zero_clones_source_test),
@@ -397,6 +506,10 @@ static struct kunit_case airy_cap_derive_cases[] = {
 	KUNIT_CASE(delete_promotes_children_test),
 	KUNIT_CASE(delete_clears_slot_test),
 	KUNIT_CASE(rotate_recompiles_badge_test),
+	KUNIT_CASE(unreg_skips_unbound_test),
+	KUNIT_CASE(unreg_clears_slot_test),
+	KUNIT_CASE(unreg_revokes_subtree_test),
+	KUNIT_CASE(unreg_spares_irrevocable_test),
 	{}
 };
 

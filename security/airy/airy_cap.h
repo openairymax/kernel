@@ -143,6 +143,7 @@ __must_check int airy_cap_register(__u32 agent_id, __u64 badge);
 __must_check int airy_cap_derive(__u32 src_agent, __u32 dst_agent,
 				 enum airy_cap_op op, __u16 new_perms);
 __must_check int airy_cap_rotate(__u32 agent_id);
+void airy_cap_unreg(__u32 agent_id);
 
 /* ─── IPC Ring Freeze State (single-host for security/airy + kernel/superv) ─ */
 /**
