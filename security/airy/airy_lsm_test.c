@@ -11,7 +11,8 @@
  * exercise both hooks directly via #include "airy_lsm.c" (the hooks are
  * static), pin the airy_cap_badge_ok() inline that underpins the
  * fastpath, and cover the airy_cap_check() slowpath slot validation
- * including revoked capabilities.
+ * including revoked and forged slots.  The agent_state gate of the two
+ * enforcement hooks and the inode blob hooks are covered as well.
  *
  * airy_lsm.o is dropped from the airy module when CONFIG_AIRY_KUNIT=y so
  * that DEFINE_LSM(airy) and the hook table remain single-defined.
@@ -452,6 +453,89 @@ static void file_open_after_revoke_denied_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, -EACCES, airy_file_open(&file));
 }
 
+static void kill_stopped_denied_test(struct kunit *test)
+{
+	struct airy_task_sec *sec = current_sec();
+
+	sec->agent_id = TEST_AGENT;
+	sec->agent_state = AIRY_AGENT_STOPPED;
+	register_agent(test, AIRY_CAP_PERM_KILL);
+
+	/* Phase 1 rejects the caller before any capability is consulted. */
+	KUNIT_EXPECT_EQ(test, -EPERM, airy_task_kill(current, NULL, 0, NULL));
+}
+
+static void open_dead_denied_test(struct kunit *test)
+{
+	struct file file = { .f_mode = FMODE_READ };
+	struct airy_task_sec *sec = current_sec();
+
+	sec->agent_id = TEST_AGENT;
+	sec->agent_state = AIRY_AGENT_DEAD;
+	register_agent(test, AIRY_CAP_PERM_FILE_OPEN);
+
+	/* Phase 1 rejects the caller before any capability is consulted. */
+	KUNIT_EXPECT_EQ(test, -EACCES, airy_file_open(&file));
+}
+
+static void cap_check_forged_denied_test(struct kunit *test)
+{
+	register_agent(test, AIRY_CAP_PERM_KILL);
+
+	/*
+	 * A slot whose perms field no longer matches the copy embedded
+	 * in badge is forged even though its epoch is still live.
+	 */
+	agent_caps[TEST_AGENT].perms = AIRY_CAP_PERM_ALL;
+
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_FORGED,
+			airy_cap_check(TEST_AGENT, AIRY_CAP_PERM_KILL));
+}
+
+/* ── inode hooks (P1-6) ─────────────────────────────────────────────── */
+
+static void inode_alloc_blob_test(struct kunit *test)
+{
+	struct inode inode = { .i_mode = S_IFREG | 0644 };
+	struct airy_inode_sec *sec;
+
+	inode.i_security = kunit_kzalloc(test,
+					 airy_blob_sizes.lbs_inode +
+						 sizeof(*sec),
+					 GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, inode.i_security);
+
+	sec = inode.i_security + airy_blob_sizes.lbs_inode;
+	sec->cap_required = AIRY_CAP_PERM_ALL;
+	sec->owner_agent = TEST_AGENT;
+
+	KUNIT_EXPECT_EQ(test, 0, airy_inode_alloc(&inode));
+	KUNIT_EXPECT_EQ(test, 0, sec->cap_required);
+	KUNIT_EXPECT_EQ(test, 0, sec->owner_agent);
+}
+
+static void inode_free_blob_test(struct kunit *test)
+{
+	struct inode inode = { .i_mode = S_IFDIR | 0755 };
+	struct airy_inode_sec *sec;
+
+	inode.i_security = kunit_kzalloc(test,
+					 airy_blob_sizes.lbs_inode +
+						 sizeof(*sec),
+					 GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, inode.i_security);
+
+	sec = inode.i_security + airy_blob_sizes.lbs_inode;
+	sec->cap_required = AIRY_CAP_PERM_FILE_OPEN;
+	sec->owner_agent = TEST_AGENT;
+
+	airy_inode_free(&inode);
+
+	/* Observation hook: the blob is recorded, never rewritten. */
+	KUNIT_EXPECT_EQ(test, AIRY_CAP_PERM_FILE_OPEN, sec->cap_required);
+	KUNIT_EXPECT_EQ(test, TEST_AGENT, sec->owner_agent);
+}
+
 static void uring_cmd_opcode_gate_test(struct kunit *test)
 {
 	struct io_uring_cmd cmd = { };
@@ -630,6 +714,11 @@ static struct kunit_case airy_lsm_cases[] = {
 	KUNIT_CASE(cap_check_out_of_range_denied_test),
 	KUNIT_CASE(task_kill_after_revoke_denied_test),
 	KUNIT_CASE(file_open_after_revoke_denied_test),
+	KUNIT_CASE(kill_stopped_denied_test),
+	KUNIT_CASE(open_dead_denied_test),
+	KUNIT_CASE(cap_check_forged_denied_test),
+	KUNIT_CASE(inode_alloc_blob_test),
+	KUNIT_CASE(inode_free_blob_test),
 	KUNIT_CASE(uring_cmd_opcode_gate_test),
 	KUNIT_CASE(task_alloc_creates_ring_test),
 	KUNIT_CASE(task_alloc_skips_kthread_test),
