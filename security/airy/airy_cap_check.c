@@ -226,6 +226,63 @@ static int phase5_slowpath_enforce(__u32 agent_id, __u64 badge,
 	return 0;
 }
 
+/* ─── Slowpath Slot Check ──────────────────────────────────────────────── */
+/*
+ * Verify that the capability slot of agent_id is live and carries every
+ * permission bit in required_perms.  This is the slowpath entry used by
+ * the LSM hooks, which have no caller-supplied badge to compare against.
+ *
+ * A slot is live only while its four fields are mutually consistent:
+ * epoch, randtag and perms must match the copies embedded in badge.
+ * airy_cap_revoke_subtree() bumps epoch and clears randtag but leaves
+ * badge and perms untouched, so a live slot that was revoked fails the
+ * epoch check even though its permission bits still look valid.  A pure
+ * permission test would wrongly honour revoked capabilities.
+ *
+ * The whole snapshot is taken under the bucket lock: ROTATE publishes
+ * randtag before badge, and taking the lock guarantees the four fields
+ * come from the same generation instead of a torn intermediate state.
+ * The order of the checks matches airy_cap_badge_ok() so both paths
+ * report the same reason for the same slot state.
+ */
+int airy_cap_check(__u32 agent_id, __u16 required_perms)
+{
+	struct airy_cap_slot *slot;
+	spinlock_t *lock;
+	unsigned long flags;
+	__u64 badge;
+	__u16 perms, epoch;
+	__u32 tag;
+
+	if (agent_id >= AIRY_CAP_MAX_AGENTS)
+		return -AIRY_ECAP_MISSING;
+
+	slot = &agent_caps[agent_id];
+	lock = &airy_cap_bucket_locks[airy_cap_bucket(agent_id)];
+
+	spin_lock_irqsave(lock, flags);
+	badge = slot->badge;
+	epoch = slot->epoch;
+	tag = slot->randtag;
+	perms = slot->perms;
+	spin_unlock_irqrestore(lock, flags);
+
+	if (badge == AIRY_CAP_NULL)
+		return -AIRY_ECAP_MISSING;
+
+	if (epoch != AIRY_BADGE_EPOCH(badge))
+		return -AIRY_ECAP_EPOCH;
+
+	if (tag != AIRY_BADGE_RANDTAG(badge) ||
+	    perms != AIRY_BADGE_PERMS(badge))
+		return -AIRY_ECAP_FORGED;
+
+	if ((perms & required_perms) != required_perms)
+		return -AIRY_ECAP_PERM;
+
+	return 0;
+}
+
 /* ─── Enforcement Failure to Fault Code ────────────────────────────────── */
 /*
  * Map an enforcement failure to the fault code the Supervisor records.

@@ -238,6 +238,7 @@ void __init airy_die_notify_init(void);
 /* ─── Slowpath Capability Check ───────────────────────────────────────── */
 struct io_uring_cmd;
 __must_check int airy_uring_cmd_check(struct io_uring_cmd *ioucmd);
+__must_check int airy_cap_check(__u32 agent_id, __u16 required_perms);
 void airy_security_fault(__u32 agent_id, __u32 fault_code);
 
 /* ─── Micro-Supervisor Supplemental Hook Registration ─────────────────── */

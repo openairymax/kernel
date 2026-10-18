@@ -126,7 +126,6 @@ static int airy_task_kill(struct task_struct *p, struct kernel_siginfo *info,
 			  int sig, const struct cred *cred)
 {
 	struct airy_task_sec *sec, *target;
-	__u64 caller_badge;
 	u64 fields[AIRY_POLICY_MAX_FIELDS] = { };
 
 	sec = airy_tsec(current);
@@ -137,17 +136,13 @@ static int airy_task_kill(struct task_struct *p, struct kernel_siginfo *info,
 		return -EPERM;
 
 	/*
-	 * Phase 2: Badge check (P1-4 fix — symmetric with io_uring_cmd).
-	 * The calling agent must hold AIRY_CAP_PERM_KILL in its badge.
-	 * agent_id == 0 means unregistered (init/kernel thread), skip
-	 * badge check for backward compatibility.
+	 * Phase 2: the calling agent must hold a live capability carrying
+	 * AIRY_CAP_PERM_KILL.  agent_id == 0 means unregistered (init or
+	 * kernel thread) and skips the capability check.
 	 */
-	if (sec->agent_id != 0 && sec->agent_id < AIRY_CAP_MAX_AGENTS) {
-		caller_badge = READ_ONCE(agent_caps[sec->agent_id].badge);
-		if (airy_cap_badge_ok(caller_badge, sec->agent_id,
-				      AIRY_CAP_PERM_KILL))
-			return -EPERM;
-	}
+	if (sec->agent_id != 0 &&
+	    airy_cap_check(sec->agent_id, AIRY_CAP_PERM_KILL))
+		return -EPERM;
 
 	target = airy_tsec(p);
 	fields[0] = sig;
@@ -162,7 +157,6 @@ static int airy_task_kill(struct task_struct *p, struct kernel_siginfo *info,
 static int airy_file_open(struct file *file)
 {
 	struct airy_task_sec *sec;
-	__u64 caller_badge;
 	u64 fields[AIRY_POLICY_MAX_FIELDS] = { };
 
 	sec = airy_tsec(current);
@@ -173,17 +167,13 @@ static int airy_file_open(struct file *file)
 		return -EACCES;
 
 	/*
-	 * Phase 2: Badge check (P1-4 fix — symmetric with io_uring_cmd).
-	 * The calling agent must hold AIRY_CAP_PERM_FILE_OPEN in its badge.
-	 * agent_id == 0 means unregistered (init/kernel thread), skip
-	 * badge check for backward compatibility.
+	 * Phase 2: the calling agent must hold a live capability carrying
+	 * AIRY_CAP_PERM_FILE_OPEN.  agent_id == 0 means unregistered (init
+	 * or kernel thread) and skips the capability check.
 	 */
-	if (sec->agent_id != 0 && sec->agent_id < AIRY_CAP_MAX_AGENTS) {
-		caller_badge = READ_ONCE(agent_caps[sec->agent_id].badge);
-		if (airy_cap_badge_ok(caller_badge, sec->agent_id,
-				      AIRY_CAP_PERM_FILE_OPEN))
-			return -EACCES;
-	}
+	if (sec->agent_id != 0 &&
+	    airy_cap_check(sec->agent_id, AIRY_CAP_PERM_FILE_OPEN))
+		return -EACCES;
 
 	fields[0] = file->f_flags;
 	fields[1] = file->f_mode & (FMODE_READ | FMODE_WRITE);

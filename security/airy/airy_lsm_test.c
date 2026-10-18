@@ -5,11 +5,13 @@
  * airy_lsm_test.c — KUnit regression for the P1-4 Badge-validation fix.
  *
  * P1-4 added symmetric Badge validation to the task_kill and file_open
- * LSM hooks: a registered agent (agent_id != 0) must hold
- * AIRY_CAP_PERM_KILL / AIRY_CAP_PERM_FILE_OPEN in its badge, otherwise
- * the hook denies with -EPERM / -EACCES.  These tests exercise both
- * hooks directly via #include "airy_lsm.c" (the hooks are static) and
- * also pin the airy_cap_badge_ok() inline that underpins the check.
+ * LSM hooks: a registered agent (agent_id != 0) must hold a live
+ * capability carrying AIRY_CAP_PERM_KILL / AIRY_CAP_PERM_FILE_OPEN,
+ * otherwise the hook denies with -EPERM / -EACCES.  These tests
+ * exercise both hooks directly via #include "airy_lsm.c" (the hooks are
+ * static), pin the airy_cap_badge_ok() inline that underpins the
+ * fastpath, and cover the airy_cap_check() slowpath slot validation
+ * including revoked capabilities.
  *
  * airy_lsm.o is dropped from the airy module when CONFIG_AIRY_KUNIT=y so
  * that DEFINE_LSM(airy) and the hook table remain single-defined.
@@ -374,6 +376,82 @@ static void file_open_with_perm_allowed_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 0, ret);
 }
 
+/* ── airy_cap_check slowpath slot validation ─────────────────────────── */
+
+static void cap_check_live_slot_allows_test(struct kunit *test)
+{
+	register_agent(test, AIRY_CAP_PERM_KILL | AIRY_CAP_PERM_FILE_OPEN);
+
+	KUNIT_EXPECT_EQ(test, 0,
+			airy_cap_check(TEST_AGENT,
+				       AIRY_CAP_PERM_KILL |
+					       AIRY_CAP_PERM_FILE_OPEN));
+}
+
+static void cap_check_missing_perm_denied_test(struct kunit *test)
+{
+	register_agent(test, AIRY_CAP_PERM_SEND);
+
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_PERM,
+			airy_cap_check(TEST_AGENT, AIRY_CAP_PERM_KILL));
+}
+
+static void cap_check_revoked_denied_test(struct kunit *test)
+{
+	register_agent(test, AIRY_CAP_PERM_KILL);
+
+	/*
+	 * Mirror airy_cap_revoke_subtree(): epoch is bumped and randtag
+	 * cleared while badge and perms stay untouched.  The stale
+	 * permission bits must not keep the capability alive.
+	 */
+	agent_caps[TEST_AGENT].epoch = 2;
+	agent_caps[TEST_AGENT].randtag = 0;
+
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_EPOCH,
+			airy_cap_check(TEST_AGENT, AIRY_CAP_PERM_KILL));
+}
+
+static void cap_check_empty_slot_denied_test(struct kunit *test)
+{
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_MISSING,
+			airy_cap_check(TEST_AGENT, AIRY_CAP_PERM_NONE));
+}
+
+static void cap_check_out_of_range_denied_test(struct kunit *test)
+{
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_MISSING,
+			airy_cap_check(AIRY_CAP_MAX_AGENTS,
+				       AIRY_CAP_PERM_NONE));
+}
+
+static void task_kill_after_revoke_denied_test(struct kunit *test)
+{
+	struct airy_task_sec *sec = current_sec();
+
+	sec->agent_id = TEST_AGENT;
+	sec->agent_state = AIRY_AGENT_RUNNING;
+	register_agent(test, AIRY_CAP_PERM_KILL);
+	agent_caps[TEST_AGENT].epoch = 2;
+	agent_caps[TEST_AGENT].randtag = 0;
+
+	KUNIT_EXPECT_EQ(test, -EPERM, airy_task_kill(current, NULL, 0, NULL));
+}
+
+static void file_open_after_revoke_denied_test(struct kunit *test)
+{
+	struct file file = { .f_mode = FMODE_READ };
+	struct airy_task_sec *sec = current_sec();
+
+	sec->agent_id = TEST_AGENT;
+	sec->agent_state = AIRY_AGENT_RUNNING;
+	register_agent(test, AIRY_CAP_PERM_FILE_OPEN);
+	agent_caps[TEST_AGENT].epoch = 2;
+	agent_caps[TEST_AGENT].randtag = 0;
+
+	KUNIT_EXPECT_EQ(test, -EACCES, airy_file_open(&file));
+}
+
 static void uring_cmd_opcode_gate_test(struct kunit *test)
 {
 	struct io_uring_cmd cmd = { };
@@ -545,6 +623,13 @@ static struct kunit_case airy_lsm_cases[] = {
 	KUNIT_CASE(task_kill_unregistered_agent_skipped_test),
 	KUNIT_CASE(file_open_without_perm_denied_test),
 	KUNIT_CASE(file_open_with_perm_allowed_test),
+	KUNIT_CASE(cap_check_live_slot_allows_test),
+	KUNIT_CASE(cap_check_missing_perm_denied_test),
+	KUNIT_CASE(cap_check_revoked_denied_test),
+	KUNIT_CASE(cap_check_empty_slot_denied_test),
+	KUNIT_CASE(cap_check_out_of_range_denied_test),
+	KUNIT_CASE(task_kill_after_revoke_denied_test),
+	KUNIT_CASE(file_open_after_revoke_denied_test),
 	KUNIT_CASE(uring_cmd_opcode_gate_test),
 	KUNIT_CASE(task_alloc_creates_ring_test),
 	KUNIT_CASE(task_alloc_skips_kthread_test),
