@@ -19,8 +19,16 @@
 #include <linux/airymax/error.h>
 #include <linux/airymax/syscalls.h>
 
+#include <airymax/airy_lockdown.h>
+
 #include "airy_rovol.h"
 #include "airy_sysabi.h"
+
+/* Read-only operations stay available at every ladder level. */
+static bool rovol_is_read(__u32 op)
+{
+	return op == AIRY_ROVOL_LIST || op == AIRY_ROVOL_TIER_GET;
+}
 
 /* ─── Syscall 549 entry policy ────────────────────────────────────────── */
 
@@ -42,8 +50,14 @@
  */
 __must_check int airy_rovol_serve(__u32 op)
 {
+	int ret;
+
 	if (unlikely(airy_op_check(AIRY_SYS_ROVOL_CTL, op)))
 		return -AIRY_EINVAL;
+
+	ret = rovol_is_read(op) ? 0 : airy_lock_gate(AIRY_LOCK_IF_ROVOL);
+	if (ret)
+		return ret;
 
 	return -AIRY_ENOTSUP;
 }

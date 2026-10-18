@@ -31,6 +31,8 @@
 #include <linux/airymax/lsm_types.h>
 #include <linux/airymax/sched.h>
 
+#include <airymax/airy_lockdown.h>
+
 #include "airy_cap.h"
 
 /* ─── Phase 1: C-S0 Ring Frozen Check ──────────────────────────────────── */
@@ -229,6 +231,9 @@ int airy_uring_cmd_check(struct io_uring_cmd *ioucmd)
 
 	if (required_perms == 0) {
 		/* CAP_REQUEST bootstrap: no perms required */
+		ret = airy_lock_gate(AIRY_LOCK_IF_CAP_GRANT);
+		if (ret)
+			return ret;
 		return phase2_cap_request(ioucmd, agent_id, badge);
 	}
 

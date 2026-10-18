@@ -168,7 +168,14 @@ typedef __s32 airy_err_t;
 #define AIRY_EENC_RANGE       245   /* Code point beyond U+10FFFF */
 #define AIRY_EENC_BOM         246   /* U+FEFF byte order mark */
 
-/* ─── Reserved Sub-spaces (261 to 300) ───────────────────────────────────
+/* ─── Lockdown Error Codes (sub-space: 261 to 280) ──────────────────────
+ * Policy refusals raised by the Airymax lockdown ladder.  A refusal is
+ * not a security violation: callers must propagate the value and must
+ * not raise a fault (see 110-security/09-lockdown.md §5).
+ */
+#define AIRY_ELOCKDOWN        261   /* Interface blocked at the active lockdown level */
+
+/* ─── Reserved Sub-spaces (262 to 300) ───────────────────────────────────
  * Reserved for future Airymax subsystems. Do not allocate without
  * updating docs/AirymaxOS/30-interfaces/08-sc-error-contract.md.
  */

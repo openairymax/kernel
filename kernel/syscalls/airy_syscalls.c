@@ -30,6 +30,7 @@
 #include <linux/airymax/error.h>
 
 #include <airymax/airy_agent.h>
+#include <airymax/airy_lockdown.h>
 
 #include "../../security/airy/airy_cap.h"
 #include "../corekern/ipc/airy_ipc_check.h"
@@ -138,6 +139,10 @@ __must_check int airy_badge_install(const struct airy_ipc_msg_hdr *msg)
 
 	if (unlikely(!msg))
 		return -EINVAL;
+
+	ret = airy_lock_gate(AIRY_LOCK_IF_CAP_GRANT);
+	if (unlikely(ret))
+		return ret;
 
 	if (unlikely(msg->dst_task >= AIRY_CAP_MAX_AGENTS))
 		return -AIRY_ECAP_OVERFLOW;

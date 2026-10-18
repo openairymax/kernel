@@ -24,10 +24,19 @@
 #include <linux/airymax/error.h>
 #include <linux/airymax/syscalls.h>
 
+#include <airymax/airy_lockdown.h>
 #include <airymax/airy_utf8.h>
 
 #include "airy_sched.h"
 #include "airy_sysabi.h"
+
+/* Operations that change scheduler state; the ladder gates these. */
+static bool sched_is_mutate(__u32 op)
+{
+	return op == AIRY_SCHED_SET_POLICY ||
+	       op == AIRY_SCHED_SET_BUDGET ||
+	       op == AIRY_SCHED_SET_PRIORITY;
+}
 
 /* ─── Syscall 550 entry policy ────────────────────────────────────────── */
 
@@ -49,8 +58,14 @@
  */
 __must_check int airy_sched_serve(__u32 op)
 {
+	int ret;
+
 	if (unlikely(airy_op_check(AIRY_SYS_SCHED_CTL, op)))
 		return -AIRY_EINVAL;
+
+	ret = sched_is_mutate(op) ? airy_lock_gate(AIRY_LOCK_IF_SCHED) : 0;
+	if (ret)
+		return ret;
 
 	return -AIRY_ENOTSUP;
 }

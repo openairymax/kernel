@@ -195,6 +195,58 @@ TRACE_EVENT(airy_ring_buffer_write,
 		__entry->level, __entry->size, __entry->overrun)
 );
 
+TRACE_EVENT(airy_lockdown_change,
+
+	TP_PROTO(u32 prev, u32 level, u32 trigger),
+
+	TP_ARGS(prev, level, trigger),
+
+	TP_STRUCT__entry(
+		__field(	u32,	prev	)
+		__field(	u32,	level	)
+		__field(	u32,	trigger	)
+	),
+
+	TP_fast_assign(
+		__entry->prev = prev;
+		__entry->level = level;
+		__entry->trigger = trigger;
+	),
+
+	TP_printk("prev=%u level=%u trigger=%u",
+		__entry->prev, __entry->level, __entry->trigger)
+);
+
+/*
+ * domain: 0 = agent-facing interface gate, 1 = security_locked_down()
+ * reason. id names the enum airy_lock_iface or enum lockdown_reason
+ * entry that was refused; required/active are ladder levels.
+ */
+TRACE_EVENT(airy_lockdown_reject,
+
+	TP_PROTO(u32 domain, u32 id, u32 required, u32 active),
+
+	TP_ARGS(domain, id, required, active),
+
+	TP_STRUCT__entry(
+		__field(	u32,	domain		)
+		__field(	u32,	id		)
+		__field(	u32,	required	)
+		__field(	u32,	active		)
+	),
+
+	TP_fast_assign(
+		__entry->domain = domain;
+		__entry->id = id;
+		__entry->required = required;
+		__entry->active = active;
+	),
+
+	TP_printk("domain=%u id=%u required=%u active=%u",
+		__entry->domain, __entry->id, __entry->required,
+		__entry->active)
+);
+
 #endif /* _TRACE_AIRY_H */
 
 /* This part must be outside protection */
