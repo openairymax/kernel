@@ -9,11 +9,11 @@
  * authority and refuses reserved permission bits. MOVE preserves the
  * source's tree position, carries its subtree and requires an empty
  * destination. DELETE promotes children to roots without cascading.
- * REVOKE bumps descendant epochs, including a 65-level chain; ROTATE
- * recompiles the badge around a fresh tag. unreg() clears the slot,
- * cascades over revocable descendants and spares irrevocable ones.
- * Epochs advance through airy_epoch_next(), so a cleared slot never
- * carries 0.
+ * REVOKE bumps descendant epochs (including a 65-level chain) and
+ * ROTATE recompiles the badge around a fresh tag; unreg() clears the
+ * slot, cascades over revocable descendants and spares irrevocable.
+ * Revoked slots refuse authority-bearing ops until DELETE; bad
+ * targets or a missing source change nothing. Epochs skip 0.
  *
  * airy_cap_derive() is non-static; the suite links against its object.
  */
@@ -653,6 +653,72 @@ static void revoke_deep_chain_test(struct kunit *test)
 }
 
 /*
+ * A revoked slot keeps its geometry but holds no authority.  Every
+ * operation that would mint, move, mutate or rotate authority out of
+ * it must fail with ECAP_EPOCH, while REVOKE stays idempotent and
+ * DELETE remains the only way to recycle the slot.
+ */
+static void revoked_slot_refuses_ops_test(struct kunit *test)
+{
+	struct airy_cap_slot *src = &agent_caps[TEST_SRC_AGENT];
+	struct airy_cap_slot *dst = &agent_caps[TEST_DST_AGENT];
+	__u64 badge;
+	__u16 epoch;
+
+	KUNIT_ASSERT_EQ(test, 0,
+			register_agent(TEST_SRC_AGENT,
+				       AIRY_CAP_PERM_SEND |
+				       AIRY_CAP_PERM_RECV));
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_cap_derive(TEST_SRC_AGENT, 0,
+					AIRY_CAP_OP_REVOKE, 0));
+	epoch  = src->epoch;
+	badge  = src->badge;
+
+	KUNIT_EXPECT_EQ(test, (__u32)AIRY_CAP_FL_REVOKED, src->flags);
+	/* The rebuilt badge carries the live epoch but no authority. */
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_EPOCH,
+			airy_cap_badge_ok(badge, TEST_SRC_AGENT,
+					  AIRY_CAP_PERM_SEND));
+
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_EPOCH,
+			airy_cap_derive(TEST_SRC_AGENT, TEST_DST_AGENT,
+					AIRY_CAP_OP_COPY, 0));
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_EPOCH,
+			airy_cap_derive(TEST_SRC_AGENT, TEST_DST_AGENT,
+					AIRY_CAP_OP_MINT,
+					AIRY_CAP_PERM_SEND));
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_EPOCH,
+			airy_cap_derive(TEST_SRC_AGENT, TEST_DST_AGENT,
+					AIRY_CAP_OP_MOVE, 0));
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_EPOCH,
+			airy_cap_derive(TEST_SRC_AGENT, 0,
+					AIRY_CAP_OP_MUTATE,
+					AIRY_CAP_PERM_SEND));
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_EPOCH,
+			airy_cap_derive(TEST_SRC_AGENT, 0,
+					AIRY_CAP_OP_ROTATE, 0));
+
+	/* Every refused operation must leave both slots untouched. */
+	KUNIT_EXPECT_EQ(test, (unsigned long long)AIRY_CAP_NULL,
+			(unsigned long long)dst->badge);
+	KUNIT_EXPECT_EQ(test, epoch, src->epoch);
+	KUNIT_EXPECT_EQ(test, badge, src->badge);
+
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_cap_derive(TEST_SRC_AGENT, 0,
+					AIRY_CAP_OP_REVOKE, 0));
+	KUNIT_EXPECT_EQ(test, (__u16)(epoch + 1), src->epoch);
+
+	KUNIT_ASSERT_EQ(test, 0,
+			airy_cap_derive(TEST_SRC_AGENT, 0,
+					AIRY_CAP_OP_DELETE, 0));
+	KUNIT_EXPECT_EQ(test, (unsigned long long)AIRY_CAP_NULL,
+			(unsigned long long)src->badge);
+	KUNIT_EXPECT_EQ(test, (__u32)0, src->flags);
+}
+
+/*
  * Agent 0 is the unbound sentinel: the three operations that install a
  * badge must refuse it exactly as airy_cap_register() does, and a
  * rejected derivation must leave both slots untouched.
@@ -681,6 +747,76 @@ static void derive_rejects_unbound_dst_test(struct kunit *test)
 			(unsigned long long)agent_caps[0].badge);
 	KUNIT_EXPECT_EQ(test, badge, src->badge);
 	KUNIT_EXPECT_EQ(test, (__u32)0, src->first_child);
+}
+
+/*
+ * A destination index past the table end must be refused before the
+ * slot is dereferenced, and the refusal must not disturb the source.
+ */
+static void derive_rejects_overflow_dst_test(struct kunit *test)
+{
+	struct airy_cap_slot *src = &agent_caps[TEST_SRC_AGENT];
+	__u64 badge;
+
+	KUNIT_ASSERT_EQ(test, 0,
+			register_agent(TEST_SRC_AGENT, AIRY_CAP_PERM_SEND));
+	badge = src->badge;
+
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_OVERFLOW,
+			airy_cap_derive(TEST_SRC_AGENT, AIRY_CAP_MAX_AGENTS,
+					AIRY_CAP_OP_COPY, 0));
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_OVERFLOW,
+			airy_cap_derive(TEST_SRC_AGENT, AIRY_CAP_MAX_AGENTS,
+					AIRY_CAP_OP_MINT, AIRY_CAP_PERM_SEND));
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_OVERFLOW,
+			airy_cap_derive(TEST_SRC_AGENT, AIRY_CAP_MAX_AGENTS,
+					AIRY_CAP_OP_MOVE, 0));
+
+	KUNIT_EXPECT_EQ(test, badge, src->badge);
+	KUNIT_EXPECT_EQ(test, (__u32)0, src->first_child);
+}
+
+/*
+ * Deriving into an occupied slot would overwrite live authority, so
+ * COPY and MINT refuse it and leave the destination badge intact.
+ */
+static void derive_rejects_busy_dst_test(struct kunit *test)
+{
+	struct airy_cap_slot *src = &agent_caps[TEST_SRC_AGENT];
+	struct airy_cap_slot *dst = &agent_caps[TEST_DST_AGENT];
+	__u64 badge;
+
+	KUNIT_ASSERT_EQ(test, 0,
+			register_agent(TEST_SRC_AGENT, AIRY_CAP_PERM_SEND));
+	KUNIT_ASSERT_EQ(test, 0,
+			register_agent(TEST_DST_AGENT, AIRY_CAP_PERM_RECV));
+	badge = dst->badge;
+
+	KUNIT_EXPECT_EQ(test, -AIRY_EEXIST,
+			airy_cap_derive(TEST_SRC_AGENT, TEST_DST_AGENT,
+					AIRY_CAP_OP_COPY, 0));
+	KUNIT_EXPECT_EQ(test, -AIRY_EEXIST,
+			airy_cap_derive(TEST_SRC_AGENT, TEST_DST_AGENT,
+					AIRY_CAP_OP_MINT, AIRY_CAP_PERM_SEND));
+
+	KUNIT_EXPECT_EQ(test, badge, dst->badge);
+	KUNIT_EXPECT_EQ(test, (__u32)0, src->first_child);
+}
+
+/* An unregistered source owns no capability to derive from. */
+static void derive_rejects_missing_src_test(struct kunit *test)
+{
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_MISSING,
+			airy_cap_derive(TEST_SRC_AGENT, TEST_DST_AGENT,
+					AIRY_CAP_OP_COPY, 0));
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_MISSING,
+			airy_cap_derive(TEST_SRC_AGENT, 0,
+					AIRY_CAP_OP_REVOKE, 0));
+
+	KUNIT_EXPECT_EQ(test, (unsigned long long)AIRY_CAP_NULL,
+			(unsigned long long)agent_caps[TEST_DST_AGENT].badge);
+	KUNIT_EXPECT_EQ(test, (__u16)0,
+			agent_caps[TEST_SRC_AGENT].epoch);
 }
 
 /* ─── EPOCH ────────────────────────────────────────────────────────────── */
@@ -832,7 +968,11 @@ static struct kunit_case airy_cap_derive_cases[] = {
 	KUNIT_CASE(unreg_revokes_subtree_test),
 	KUNIT_CASE(unreg_spares_irrevocable_test),
 	KUNIT_CASE(revoke_deep_chain_test),
+	KUNIT_CASE(revoked_slot_refuses_ops_test),
 	KUNIT_CASE(derive_rejects_unbound_dst_test),
+	KUNIT_CASE(derive_rejects_overflow_dst_test),
+	KUNIT_CASE(derive_rejects_busy_dst_test),
+	KUNIT_CASE(derive_rejects_missing_src_test),
 	KUNIT_CASE(epoch_next_skips_zero_test),
 	KUNIT_CASE(revoke_wraps_epoch_test),
 	KUNIT_CASE(reset_keeps_epoch_nonzero_test),
