@@ -33,9 +33,15 @@
 #include "airy_probe.h"
 
 /* ─── Module parameter ─────────────────────────────────────────────────── */
-static bool airy_enabled __ro_after_init = true;
-module_param(airy_enabled, bool, 0444);
-MODULE_PARM_DESC(airy_enabled, "Enable Airy Pure-C LSM (default: true)");
+/*
+ * airy_enabled 必须是 int：OLK 6.6 的 struct lsm_info.enabled 是 int *，
+ * ordered_lsm_parse() 直接写 *lsm->enabled，用 bool 会越界写 4 字节。
+ * 该变量同时受 CONFIG_LSM 与 lsm= 控制，0444 表示只在启动期可改；
+ * 运行期关停需要重新注册钩子，不在支持范围内。
+ */
+static int airy_enabled __ro_after_init = 1;
+module_param(airy_enabled, int, 0444);
+MODULE_PARM_DESC(airy_enabled, "Enable Airy Pure-C LSM (default: 1)");
 
 /* ─── LSM blob sizes ──────────────────────────────────────────────────── */
 struct lsm_blob_sizes airy_blob_sizes __ro_after_init = {
@@ -53,9 +59,6 @@ static int airy_task_alloc(struct task_struct *task, unsigned long clone_flags)
 {
 	struct airy_task_sec *sec;
 	u64 fields[AIRY_POLICY_MAX_FIELDS] = { };
-
-	if (!airy_enabled)
-		return 0;
 
 	sec = airy_tsec(task);
 	sec->agent_id       = 0;
@@ -81,9 +84,6 @@ static void airy_task_free(struct task_struct *task)
 	struct airy_task_sec *sec;
 	u64 fields[AIRY_POLICY_MAX_FIELDS] = { };
 
-	if (!airy_enabled)
-		return;
-
 	sec = airy_tsec(task);
 	fields[0] = sec->agent_id;
 	fields[1] = sec->agent_state;
@@ -99,9 +99,6 @@ static int airy_task_kill(struct task_struct *p, struct kernel_siginfo *info,
 	struct airy_task_sec *sec, *target;
 	__u64 caller_badge;
 	u64 fields[AIRY_POLICY_MAX_FIELDS] = { };
-
-	if (!airy_enabled)
-		return 0;
 
 	sec = airy_tsec(current);
 
@@ -139,9 +136,6 @@ static int airy_file_open(struct file *file)
 	__u64 caller_badge;
 	u64 fields[AIRY_POLICY_MAX_FIELDS] = { };
 
-	if (!airy_enabled)
-		return 0;
-
 	sec = airy_tsec(current);
 
 	/* Phase 1: agent_state check (retained from original) */
@@ -175,9 +169,6 @@ static int airy_inode_alloc(struct inode *inode)
 	struct airy_inode_sec *sec;
 	u64 fields[AIRY_POLICY_MAX_FIELDS] = { };
 
-	if (!airy_enabled)
-		return 0;
-
 	sec = inode->i_security + airy_blob_sizes.lbs_inode;
 	sec->cap_required = 0;
 	sec->owner_agent  = 0;
@@ -192,9 +183,6 @@ static void airy_inode_free(struct inode *inode)
 {
 	u64 fields[AIRY_POLICY_MAX_FIELDS] = { };
 
-	if (!airy_enabled)
-		return;
-
 	fields[0] = inode->i_mode & S_IFMT;
 
 	/* Observation hook: the inode is already gone, record only. */
@@ -207,9 +195,6 @@ static int airy_uring_cmd(struct io_uring_cmd *ioucmd)
 	struct airy_task_sec *sec;
 	u64 fields[AIRY_POLICY_MAX_FIELDS] = { };
 	int rc;
-
-	if (!airy_enabled)
-		return 0;
 
 	rc = airy_uring_cmd_check(ioucmd);
 	if (rc)
@@ -242,11 +227,6 @@ static_assert(ARRAY_SIZE(airy_hooks) == AIRY_LSM_HOOK_IMPLEMENTED,
 static int __init airy_init(void)
 {
 	int rc;
-
-	if (!airy_enabled) {
-		pr_info("airy: disabled via module parameter\n");
-		return 0;
-	}
 
 	/*
 	 * Attest the [SC] contract snapshot before anything is registered: a
@@ -292,6 +272,7 @@ static int __init airy_init(void)
 DEFINE_LSM(airy) = {
 	.name   = "airy",
 	.order  = LSM_ORDER_MUTABLE,
+	.enabled = &airy_enabled,
 	.init   = airy_init,
 	.blobs  = &airy_blob_sizes,
 };

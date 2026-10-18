@@ -49,9 +49,6 @@ static int airy_lsm_test_init(struct kunit *test)
 	struct lsm_test_ctx *ctx;
 	struct airy_task_sec *sec;
 
-	if (!airy_enabled)
-		kunit_skip(test, "airy LSM disabled (airy.enabled=0)");
-
 	ctx = kunit_kzalloc(test, sizeof(*ctx), GFP_KERNEL);
 	KUNIT_ASSERT_NOT_NULL(test, ctx);
 	test->priv = ctx;
