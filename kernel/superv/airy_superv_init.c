@@ -16,6 +16,7 @@
 #include <linux/airymax/error.h>
 
 #include "../../security/airy/airy_cap.h"
+#include "airy_superv.h"
 
 /* ─── Micro-Supervisor late_initcall ──────────────────────────────────── */
 static int __init airy_superv_init(void)
@@ -33,7 +34,18 @@ static int __init airy_superv_init(void)
 		return ret;
 	}
 
-	/* 2. The eventfd context is attached lazily: airy_eventfd_register()
+	/* 2. Open the [IND] protocol gate. Until this point a macro_d
+	 *    command would reach rings whose freeze state is still being
+	 *    set up, so the gate starts closed and publishes RUNNING only
+	 *    after the hooks above are in place.
+	 */
+	ret = airy_sv_start(airy_sv_ctx());
+	if (ret) {
+		pr_err("airy_superv: protocol gate failed: %d\n", ret);
+		return ret;
+	}
+
+	/* 3. The eventfd context is attached lazily: airy_eventfd_register()
 	 *    installs it once the Macro-Supervisor binds its fault listener;
 	 *    there is no userspace entry point for it yet, so until then the
 	 *    context stays NULL and faults are recorded in the airy_fev_* ring.
