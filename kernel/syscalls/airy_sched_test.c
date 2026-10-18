@@ -13,6 +13,19 @@
  * M3, while every other op value is refused fail-closed with
  * -AIRY_EINVAL before the degradation answer is reached, so a malformed
  * request is never told its feature is merely missing.
+ *
+ * airy_sched_ctl() adds the two text arguments. An undefined op must be
+ * refused before either pointer is touched, which the NULL-argument
+ * cases below prove deterministically on every architecture. The text
+ * policy itself lives in airy_sched_chk(), which takes kernel memory
+ * and is therefore driven with stack strings; its UTF-8 boundary matrix
+ * is owned by the airy_utf8_charset suite and only the integration
+ * points are repeated here.
+ *
+ * The copy-fault path of airy_sched_arg() has no KUnit case: UML does
+ * not recover from a fault on an unmapped user address, so driving it
+ * with an unreadable pointer would panic the test kernel rather than
+ * return -AIRY_EFAULT.
  */
 
 #include <kunit/test.h>
@@ -73,10 +86,48 @@ static void airy_sched_serve_priority_test(struct kunit *test)
 			airy_sched_serve(AIRY_SCHED_OP_MAX));
 }
 
+static void airy_sched_ctl_invalid_op_test(struct kunit *test)
+{
+	/*
+	 * The op space is classified before either text pointer is read:
+	 * NULL arguments do not turn an undefined op into a copy fault.
+	 */
+	KUNIT_EXPECT_EQ(test, -AIRY_EINVAL,
+			airy_sched_ctl(0, NULL, NULL));
+	KUNIT_EXPECT_EQ(test, -AIRY_EINVAL,
+			airy_sched_ctl(AIRY_SCHED_OP_MAX, NULL, NULL));
+	KUNIT_EXPECT_EQ(test, -AIRY_EINVAL,
+			airy_sched_ctl(0xffffffffu, NULL, NULL));
+}
+
+static void airy_sched_chk_ok_test(struct kunit *test)
+{
+	KUNIT_EXPECT_EQ(test, AIRY_EOK, airy_sched_chk(""));
+	KUNIT_EXPECT_EQ(test, AIRY_EOK, airy_sched_chk("cpu.max"));
+	KUNIT_EXPECT_EQ(test, AIRY_EOK,
+			airy_sched_chk("/sys/fs/cgroup/\xe4\xb8\xad"));
+	KUNIT_EXPECT_EQ(test, AIRY_EOK,
+			airy_sched_chk("latency-\xf0\x9f\x98\x80"));
+}
+
+static void airy_sched_chk_fault_test(struct kunit *test)
+{
+	KUNIT_EXPECT_EQ(test, -AIRY_EINVAL, airy_sched_chk(NULL));
+	KUNIT_EXPECT_EQ(test, -AIRY_EENC_INVALID,
+			airy_sched_chk("cpu.\xc2"));
+	KUNIT_EXPECT_EQ(test, -AIRY_EENC_SURROGATE,
+			airy_sched_chk("cpu.\xed\xa0\x80"));
+	KUNIT_EXPECT_EQ(test, -AIRY_EENC_BOM,
+			airy_sched_chk("cpu.\xef\xbb\xbf"));
+}
+
 static struct kunit_case airy_sched_cases[] = {
 	KUNIT_CASE(airy_sched_serve_degraded_test),
 	KUNIT_CASE(airy_sched_serve_invalid_test),
 	KUNIT_CASE(airy_sched_serve_priority_test),
+	KUNIT_CASE(airy_sched_ctl_invalid_op_test),
+	KUNIT_CASE(airy_sched_chk_ok_test),
+	KUNIT_CASE(airy_sched_chk_fault_test),
 	{}
 };
 

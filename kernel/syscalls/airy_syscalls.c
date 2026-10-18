@@ -335,21 +335,21 @@ SYSCALL_DEFINE3(airy_sys_rovol_ctl, __u32, op, __u32, pid, __u64, arg)
  * @cgroup_path: User-space path to the target cgroup.
  * @policy:      User-space scheduling policy string.
  *
- * A thin wrapper over airy_sched_serve(), which owns the entry decision:
- * check the op against the syscall registry and then either refuse an
- * undefined op with -AIRY_EINVAL or answer a recognised op with
- * -AIRY_ENOTSUP, since the policy/budget/latency/priority/vtime/yield
- * backends it names belong to milestone M3 (01-kernel.md §9.1). Keeping
- * the decision in one non-static place lets KUnit drive it directly
- * instead of through the syscall ABI. @cgroup_path and @policy are part
- * of the frozen 3-argument ABI but carry no meaning until those backends
- * exist, so they are not examined.
+ * A thin wrapper over airy_sched_ctl(), which owns the entry decision:
+ * classify the op through the syscall registry, then copy and strictly
+ * UTF-8-validate both text arguments before answering. An undefined op
+ * is refused with -AIRY_EINVAL before either pointer is dereferenced;
+ * a malformed string is refused with -AIRY_EINVAL, -AIRY_EFAULT or
+ * -AIRY_EENC_*; only a well-formed request reaches -AIRY_ENOTSUP, the
+ * degradation registered for the M3 backends (01-kernel.md §9.1).
+ * Keeping the decision in one non-static place lets KUnit drive it
+ * directly instead of through the syscall ABI.
  */
 SYSCALL_DEFINE3(airy_sys_sched_ctl, __u32, op,
 		const char __user *, cgroup_path,
 		const char __user *, policy)
 {
-	return airy_sched_serve(op);
+	return airy_sched_ctl(op, cgroup_path, policy);
 }
 
 /*

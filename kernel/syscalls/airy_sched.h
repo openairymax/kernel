@@ -23,6 +23,13 @@
 
 #include <linux/airymax/sched.h>
 
+/*
+ * 550 的两个文本参数（cgroup 路径与策略标识）在进入内核前必须有界
+ * 复制并逐序列校验。4096 是 PATH_MAX，覆盖最长 cgroup 路径；更大的
+ * 输入按 -AIRY_EINVAL 拒绝，而不是静默截断。
+ */
+#define AIRY_SCHED_ARG_MAX	4096
+
 /* Entry point (defined in airy_sched.c) */
 /**
  * airy_sched_serve - serve the op half of syscall 550
@@ -44,5 +51,54 @@
  *         in this release.
  */
 __must_check int airy_sched_serve(__u32 op);
+
+/**
+ * airy_sched_chk - validate one NUL-terminated kernel string
+ * @s: string already copied into kernel space.
+ *
+ * The policy shared by both 550 text arguments, kept separate from the
+ * copy so that its entire decision can be exercised without a user
+ * pointer. A NULL string is refused with -AIRY_EINVAL instead of being
+ * dereferenced; a non-NULL string is scanned once as strict UTF-8.
+ *
+ * Return: AIRY_EOK when @s is valid UTF-8, -AIRY_EINVAL for a NULL
+ *         string, otherwise the -AIRY_EENC_* code of the first
+ *         malformed sequence.
+ */
+__must_check int airy_sched_chk(const char *s);
+
+/**
+ * airy_sched_arg - validate one text argument of syscall 550
+ * @arg: user-space string argument.
+ *
+ * Copies at most AIRY_SCHED_ARG_MAX bytes from @arg and validates the
+ * result as one strict UTF-8 string. Copy faults, oversize input and
+ * illegal encodings are reported as -AIRY_EFAULT, -AIRY_EINVAL and
+ * -AIRY_EENC_* respectively; AIRY_EOK means the string may be consumed
+ * by the sched_tac backend that milestone M3 will add.
+ *
+ * Return: AIRY_EOK when @arg is a valid UTF-8 string; a negative
+ *         AIRY_E* code otherwise.
+ */
+__must_check int airy_sched_arg(const char __user *arg);
+
+/**
+ * airy_sched_ctl - serve syscall 550
+ * @op: sched_tac operation code.
+ * @cgroup_path: user-space path to the target cgroup.
+ * @policy: user-space scheduling policy string.
+ *
+ * The complete entry decision. @op is classified first through
+ * airy_sched_serve(), so an undefined op is refused before either
+ * pointer is dereferenced. A recognised op then requires both strings
+ * to pass airy_sched_arg(); only a well-formed request reaches the
+ * -AIRY_ENOTSUP degradation that marks the unbuilt M3 backend.
+ *
+ * Return: -AIRY_EINVAL for an undefined @op, the AIRY_E* code of the
+ *         first malformed string, or -AIRY_ENOTSUP for a well-formed
+ *         request whose backend is not built in this release.
+ */
+__must_check int airy_sched_ctl(__u32 op, const char __user *cgroup_path,
+				const char __user *policy);
 
 #endif /* _AIRY_SCHED_H */

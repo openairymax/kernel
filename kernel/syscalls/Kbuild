@@ -31,11 +31,13 @@ obj-$(CONFIG_AIRY_KUNIT) += airy_clt_test.o
 obj-$(CONFIG_AIRY_KUNIT) += airy_rovol_test.o
 
 # KUnit regression for the syscall 550 sched_tac entry: the
-# registry-backed op check of airy_sched_serve() and its fail-closed
-# split into -AIRY_EINVAL for an undefined op and the -AIRY_ENOTSUP
-# milestone M3 degradation for a recognised one.
-# airy_sched_test.c links against the non-static airy_sched_serve()
-# defined in airy_sched.c.
+# registry-backed op check of airy_sched_serve(), its fail-closed split
+# into -AIRY_EINVAL for an undefined op and the -AIRY_ENOTSUP milestone
+# M3 degradation for a recognised one, the argument ordering of
+# airy_sched_ctl() before either text pointer is read, and the UTF-8
+# policy that airy_sched_chk() applies to both text arguments.
+# airy_sched_test.c links against the non-static airy_sched_serve(),
+# airy_sched_chk() and airy_sched_ctl() defined in airy_sched.c.
 obj-$(CONFIG_AIRY_KUNIT) += airy_sched_test.o
 
 # KUnit regression for the core syscall registry: the immutable and
