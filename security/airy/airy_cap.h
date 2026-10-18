@@ -24,6 +24,8 @@
 
 #include <airymax/airy_agent.h>
 
+#include "airy_consttime.h"
+
 /* ─── Badge Field Macros ─────────────────────────────────────────────────
  * AIRY_BADGE_EPOCH/RANDTAG/PERMS 提取宏和 AIRY_BADGE_COMPILE 构造宏
  * 由 <linux/airymax/ipc.h> 统一定义（[SC] 单一宿主原则）。
@@ -36,7 +38,8 @@
 /* ─── Global Capability Array: 1024 slots ────────────────────────────── */
 /* struct airy_cap_slot, AIRY_CAP_MAX_AGENTS, struct airy_task_sec 由
  * <linux/airymax/lsm_types.h> 统一定义（[SC] 单一宿主原则）。
- * 本头文件通过 #include <linux/airymax/lsm_types.h> 引入这些类型。 */
+ * 本头文件通过 #include <linux/airymax/lsm_types.h> 引入这些类型。
+ */
 extern struct airy_cap_slot *agent_caps;
 extern atomic_t              airy_cap_global_epoch;
 
@@ -66,40 +69,44 @@ static inline unsigned int airy_cap_bucket(__u32 agent_id)
 
 /* ─── Fastpath Inline: C-S9 Badge Validation (~10ns) ─────────────────── */
 /*
- * airy_cap_badge_ok — Fastpath inline badge validation.
+ * airy_cap_badge_ok - Fastpath inline badge validation.
  *
- * Executes 3 READ_ONCE + bit operations + comparisons.
- * Called from io_uring_cmd fastpath for every IPC message.
+ * Executes 2 READ_ONCE + constant-time comparisons.  Called from the
+ * io_uring_cmd fastpath for every IPC message.
+ *
+ * SSoT §12.2.1: the epoch, random-tag and permission checks always run
+ * to completion, and the failure code is selected arithmetically
+ * (EPOCH > FORGED > PERM).  No check is skipped based on an earlier
+ * result, so the failure path does not reveal which field mismatched.
  *
  * Returns 0 (AIRY_EOK) if valid, negative error otherwise.
  */
 static __always_inline __must_check int airy_cap_badge_ok(__u64 badge, __u32 agent_id,
 					     __u16 required_perms)
 {
-	__u64 epoch = AIRY_BADGE_EPOCH(badge);
-	__u64 perms = AIRY_BADGE_PERMS(badge);
-	__u64 randtag = AIRY_BADGE_RANDTAG(badge);
-	__u16 slot_epoch;
-	__u32 slot_randtag;
+	u32 epoch = (u32)AIRY_BADGE_EPOCH(badge);
+	u32 randtag = (u32)AIRY_BADGE_RANDTAG(badge);
+	u32 perms = (u32)AIRY_BADGE_PERMS(badge);
+	u32 ok_epoch, ok_tag, ok_perm;
+	u32 err;
 
 	if (unlikely(agent_id >= AIRY_CAP_MAX_AGENTS))
 		return -AIRY_ECAP_MISSING;
 
-	/* C-S9.1: Per-agent epoch check — 1 READ_ONCE (same cacheline as randtag) */
-	slot_epoch = READ_ONCE(agent_caps[agent_id].epoch);
-	if (unlikely(epoch != (__u64)slot_epoch))
-		return -AIRY_ECAP_EPOCH;
+	/* C-S9.1/C-S9.2: per-agent epoch and random tag, same cacheline. */
+	ok_epoch = airy_ct_eq32(epoch, READ_ONCE(agent_caps[agent_id].epoch));
+	ok_tag = airy_ct_eq32(randtag, READ_ONCE(agent_caps[agent_id].randtag));
 
-	/* C-S9.2: RandomTag check — 1 READ_ONCE from same cacheline */
-	slot_randtag = READ_ONCE(agent_caps[agent_id].randtag);
-	if (unlikely(randtag != (__u64)slot_randtag))
-		return -AIRY_ECAP_FORGED;
+	/* C-S9.3: permission mask carried by the badge itself. */
+	ok_perm = airy_ct_perm(perms, required_perms);
 
-	/* C-S9.3: Permission check */
-	if (unlikely((perms & (__u64)required_perms) != (__u64)required_perms))
-		return -AIRY_ECAP_PERM;
+	err = (1U - ok_epoch) * AIRY_ECAP_EPOCH +
+	      ok_epoch * ((1U - ok_tag) * AIRY_ECAP_FORGED +
+			  ok_tag * (1U - ok_perm) * AIRY_ECAP_PERM);
 
-	return 0;
+	if (unlikely(err))
+		airy_ct_delay();
+	return -(int)err;
 }
 
 /* ─── Capability Initialization ───────────────────────────────────────── */

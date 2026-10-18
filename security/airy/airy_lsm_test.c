@@ -146,6 +146,61 @@ static void badge_ok_randtag_mismatch_returns_error_test(struct kunit *test)
 					  AIRY_CAP_PERM_KILL));
 }
 
+/* ── constant-time primitives (SSoT §12.2.1) ────────────────────────── */
+
+static void ct_eq32_matches_equality_test(struct kunit *test)
+{
+	KUNIT_EXPECT_EQ(test, 1U, airy_ct_eq32(0U, 0U));
+	KUNIT_EXPECT_EQ(test, 1U, airy_ct_eq32(0xFFFFFFFFU, 0xFFFFFFFFU));
+	KUNIT_EXPECT_EQ(test, 1U, airy_ct_eq32(0x1234ABCDU, 0x1234ABCDU));
+	KUNIT_EXPECT_EQ(test, 0U, airy_ct_eq32(0U, 0x80000000U));
+	KUNIT_EXPECT_EQ(test, 0U, airy_ct_eq32(0U, 1U));
+	KUNIT_EXPECT_EQ(test, 0U, airy_ct_eq32(0x1234ABCDU, 0x1234ABCEU));
+}
+
+static void ct_perm_requires_all_bits_test(struct kunit *test)
+{
+	KUNIT_EXPECT_EQ(test, 1U, airy_ct_perm(0x3U, 0x3U));
+	KUNIT_EXPECT_EQ(test, 1U, airy_ct_perm(0x7U, 0x3U));
+	KUNIT_EXPECT_EQ(test, 1U, airy_ct_perm(0U, 0U));
+	KUNIT_EXPECT_EQ(test, 0U, airy_ct_perm(0x1U, 0x3U));
+	KUNIT_EXPECT_EQ(test, 0U, airy_ct_perm(0U, 0x1U));
+}
+
+static void badge_ok_epoch_precedes_randtag_test(struct kunit *test)
+{
+	__u64 badge;
+
+	agent_caps[TEST_AGENT].epoch = 7;
+	agent_caps[TEST_AGENT].randtag = 0xDEAD;
+	agent_caps[TEST_AGENT].perms = AIRY_CAP_PERM_SEND;
+
+	badge = AIRY_BADGE_COMPILE(3, 0x1234ABCDu, AIRY_CAP_PERM_KILL);
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_EPOCH,
+			airy_cap_badge_ok(badge, TEST_AGENT,
+					  AIRY_CAP_PERM_KILL));
+}
+
+static void badge_ok_randtag_precedes_perm_test(struct kunit *test)
+{
+	__u64 badge;
+
+	agent_caps[TEST_AGENT].epoch = 3;
+	agent_caps[TEST_AGENT].randtag = 0xDEAD;
+	agent_caps[TEST_AGENT].perms = AIRY_CAP_PERM_SEND;
+
+	badge = AIRY_BADGE_COMPILE(3, 0x1234ABCDu, AIRY_CAP_PERM_SEND);
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_FORGED,
+			airy_cap_badge_ok(badge, TEST_AGENT,
+					  AIRY_CAP_PERM_KILL));
+}
+
+static void badge_ok_agent_out_of_range_test(struct kunit *test)
+{
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_MISSING,
+			airy_cap_badge_ok(0, AIRY_CAP_MAX_AGENTS, 0));
+}
+
 /* ── task_kill hook (P1-4) ──────────────────────────────────────────── */
 
 static void task_kill_without_kill_perm_denied_test(struct kunit *test)
@@ -229,6 +284,11 @@ static struct kunit_case airy_lsm_cases[] = {
 	KUNIT_CASE(badge_ok_perm_missing_returns_error_test),
 	KUNIT_CASE(badge_ok_epoch_mismatch_returns_error_test),
 	KUNIT_CASE(badge_ok_randtag_mismatch_returns_error_test),
+	KUNIT_CASE(ct_eq32_matches_equality_test),
+	KUNIT_CASE(ct_perm_requires_all_bits_test),
+	KUNIT_CASE(badge_ok_epoch_precedes_randtag_test),
+	KUNIT_CASE(badge_ok_randtag_precedes_perm_test),
+	KUNIT_CASE(badge_ok_agent_out_of_range_test),
 	KUNIT_CASE(task_kill_without_kill_perm_denied_test),
 	KUNIT_CASE(task_kill_with_kill_perm_allowed_test),
 	KUNIT_CASE(task_kill_unregistered_agent_skipped_test),
