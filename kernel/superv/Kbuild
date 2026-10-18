@@ -12,10 +12,13 @@ airy_superv-y := airy_superv_init.o \
 		 airy_cap_check_superv.o \
 		 airy_eventfd_superv.o \
 		 airy_ipc_freeze_superv.o \
-		 airy_superv_proto.o
+		 airy_superv_proto.o \
+		 airy_superv_freeze.o
 
 # KUnit regression for the [IND] supervisor protocol contract: the
-# IDLE->RUNNING gate that keeps commands out of a half-built ring, and
-# the shape check every macro_d command passes before any ring or task
-# state is touched.
-airy_superv-$(CONFIG_AIRY_KUNIT) += airy_superv_proto_test.o
+# IDLE->RUNNING gate that keeps commands out of a half-built ring, the
+# shape check every macro_d command passes before any ring or task
+# state is touched, and the freeze chain that walks the process list to
+# freeze every ring owned by the target agent.
+airy_superv-$(CONFIG_AIRY_KUNIT) += airy_superv_proto_test.o \
+				    airy_superv_freeze_test.o

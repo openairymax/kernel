@@ -93,4 +93,34 @@ bool airy_sv_ready(const struct airy_sv_ctx *ctx);
  */
 int airy_sv_cmd_chk(const struct airy_superv_cmd *cmd);
 
+/**
+ * airy_sv_freeze() - freeze every IPC ring owned by an agent
+ * @ctx: protocol context; commands are refused unless it is RUNNING
+ * @agent_id: target agent; zero is the unbound sentinel and is refused
+ * @reason: AIRY_FAULT_* code recorded in each ring and in the event
+ *
+ * A command names an agent, not a task.  An agent may spread over
+ * several tasks and every task owns its own ring, so all of them are
+ * frozen before the call reports success.  Freezing an already frozen
+ * ring is a no-op that still counts, which makes a retried command
+ * succeed without special-casing the retry.
+ *
+ * There is no agent id to task index in the kernel and the capability
+ * slot carries no task pointer, so the rings are located by walking
+ * the process list under RCU and matching the agent id in each task's
+ * security blob.  Freezing is a cold, supervisor-initiated path; the
+ * walk costs nothing on the IPC fastpath and adds no per-task index
+ * that would need to be kept in step with fork and exit.
+ *
+ * One eventfd notification is posted per command, not per ring: the
+ * counter carries a single (agent id, fault code) pair, so a second
+ * post for the same command would only duplicate the wakeup.
+ *
+ * Return: 0 when at least one ring was frozen; -EINVAL when @agent_id
+ *         is zero; -AIRY_ECAP_OVERFLOW when it is outside the agent
+ *         range; -EAGAIN when @ctx is not RUNNING; -AIRY_EIPC_CONTEXT
+ *         when no task carries @agent_id or none of them owns a ring.
+ */
+int airy_sv_freeze(struct airy_sv_ctx *ctx, __u32 agent_id, __u32 reason);
+
 #endif /* _AIRY_SUPERV_H */
