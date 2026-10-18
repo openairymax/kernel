@@ -27,6 +27,8 @@
 #include <linux/airymax/error.h>
 #include <airymax/airy_lockdown.h>
 
+#include "airy_fs.h"
+
 #if IS_ENABLED(CONFIG_AIRY_AGENT_TRACING)
 #include <trace/events/airy.h>
 #endif
@@ -263,19 +265,16 @@ static int __init airy_lock_fs(void)
 {
 	struct dentry *dir, *file;
 
-	if (!IS_ENABLED(CONFIG_SECURITYFS))
+	dir = airy_fs_dir();
+	if (!dir)
 		return 0;
-
-	dir = securityfs_create_dir("airy", NULL);
 	if (IS_ERR(dir))
 		return PTR_ERR(dir);
 
 	file = securityfs_create_file("lockdown", 0600, dir, NULL,
 				      &airy_lock_ops);
-	if (IS_ERR(file)) {
-		securityfs_remove(dir);
+	if (IS_ERR(file))
 		return PTR_ERR(file);
-	}
 
 	return 0;
 }
