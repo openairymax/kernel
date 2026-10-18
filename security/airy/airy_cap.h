@@ -224,6 +224,7 @@ struct task_struct;
 
 void airy_ipc_freeze_ring(struct airy_ipc_ring_freeze_state *ring, __u32 reason);
 void airy_ipc_thaw_ring(struct airy_ipc_ring_freeze_state *ring);
+int airy_ipc_fastpath_check(struct airy_ipc_ring_freeze_state *ring);
 struct airy_ipc_ring_freeze_state *airy_ipc_ring_for_task(struct task_struct *task);
 
 int airy_eventfd_register(int efd);

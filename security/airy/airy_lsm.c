@@ -20,6 +20,7 @@
 #include <linux/sched.h>
 #include <linux/sched/signal.h>
 #include <linux/stat.h>
+#include <linux/slab.h>
 #include <linux/build_bug.h>
 #include <linux/airymax/lsm_types.h>
 #include <linux/airymax/sched.h>
@@ -58,7 +59,9 @@ static struct airy_task_sec *airy_tsec(const struct task_struct *task)
 static int airy_task_alloc(struct task_struct *task, unsigned long clone_flags)
 {
 	struct airy_task_sec *sec;
+	struct airy_ipc_ring_freeze_state *ring;
 	u64 fields[AIRY_POLICY_MAX_FIELDS] = { };
+	int rc;
 
 	sec = airy_tsec(task);
 	sec->agent_id       = 0;
@@ -71,11 +74,29 @@ static int airy_task_alloc(struct task_struct *task, unsigned long clone_flags)
 	sec->_reserved       = 0;
 	sec->ipc_ring        = NULL;
 
+	/*
+	 * Only user tasks can become agents.  Kernel threads carry no
+	 * agent identity, so their blob keeps ipc_ring == NULL and every
+	 * freeze lookup stays a no-op without a read-side special case.
+	 */
+	if (!(task->flags & PF_KTHREAD)) {
+		ring = kzalloc(sizeof(*ring), GFP_KERNEL);
+		if (!ring)
+			return -ENOMEM;
+		sec->ipc_ring = ring;
+	}
+
 	fields[0] = clone_flags;
 	fields[1] = (task->flags & PF_KTHREAD) ? 0 : 1;
 	fields[2] = sec->agent_id;
 
-	return airy_policy_check(AIRY_POLICY_HOOK_TASK_ALLOC, fields, NULL);
+	rc = airy_policy_check(AIRY_POLICY_HOOK_TASK_ALLOC, fields, NULL);
+	/*
+	 * security_task_alloc() runs security_task_free() when a hook
+	 * rejects the fork, and that reaches airy_task_free(), which
+	 * releases the ring.  Freeing it here too would double-free it.
+	 */
+	return rc;
 }
 
 /* ─── Hook: task_free — cleanup agent security blob ──────────────────── */
@@ -90,6 +111,14 @@ static void airy_task_free(struct task_struct *task)
 
 	/* Observation hook: the task is already gone, record only. */
 	airy_policy_check(AIRY_POLICY_HOOK_TASK_FREE, fields, NULL);
+
+	/*
+	 * The ring is owned by this blob.  The init task never runs the
+	 * alloc hook and kernel threads never get a ring, so both reach
+	 * here with ipc_ring == NULL and drain through kfree(NULL).
+	 */
+	kfree(sec->ipc_ring);
+	sec->ipc_ring = NULL;
 }
 
 /* ─── Hook: task_kill — enforce capability KILL (P1-4 fix: entry symmetry) */

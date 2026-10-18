@@ -24,6 +24,7 @@
 #include <linux/moduleparam.h>
 #include <linux/lsm_hooks.h>
 #include <linux/io_uring.h>
+#include <asm/unaligned.h>
 
 #include "airy_cap.h"
 
@@ -35,7 +36,11 @@
 struct lsm_test_ctx {
 	__u32 saved_agent_id;
 	__u32 saved_agent_state;
+	__u32 saved_fault_count;
+	__u32 saved_frozen_reason;
 	bool saved_paranoid;
+	void *saved_ipc_ring;
+	struct airy_ipc_ring_freeze_state *test_ring;
 	struct airy_cap_slot saved_slot;
 };
 
@@ -58,6 +63,9 @@ static int airy_lsm_test_init(struct kunit *test)
 	sec = current_sec();
 	ctx->saved_agent_id = sec->agent_id;
 	ctx->saved_agent_state = sec->agent_state;
+	ctx->saved_fault_count = sec->fault_count;
+	ctx->saved_frozen_reason = sec->frozen_reason;
+	ctx->saved_ipc_ring = sec->ipc_ring;
 	ctx->saved_paranoid = READ_ONCE(airy_security_paranoid);
 
 	/* Save and zero the test agent's capability slot. */
@@ -77,8 +85,14 @@ static void airy_lsm_test_exit(struct kunit *test)
 	sec = current_sec();
 	sec->agent_id = ctx->saved_agent_id;
 	sec->agent_state = ctx->saved_agent_state;
+	sec->fault_count = ctx->saved_fault_count;
+	sec->frozen_reason = ctx->saved_frozen_reason;
+	sec->ipc_ring = ctx->saved_ipc_ring;
 	WRITE_ONCE(airy_security_paranoid, ctx->saved_paranoid);
 	agent_caps[TEST_AGENT] = ctx->saved_slot;
+
+	/* Ring allocated by a test, never by the production hooks. */
+	kfree(ctx->test_ring);
 }
 
 static void register_agent(struct kunit *test, __u16 perms)
@@ -86,6 +100,40 @@ static void register_agent(struct kunit *test, __u16 perms)
 	__u64 badge = AIRY_BADGE_COMPILE(1, 0x1234ABCDu, perms);
 
 	KUNIT_ASSERT_EQ(test, 0, airy_cap_register(TEST_AGENT, badge));
+}
+
+/* ── IPC freeze-state helpers ───────────────────────────────────────── */
+
+static struct task_struct *fake_task(struct kunit *test, unsigned int flags)
+{
+	struct task_struct *task;
+	void *blob;
+
+	task = kunit_kzalloc(test, sizeof(*task), GFP_KERNEL);
+	blob = kunit_kzalloc(test,
+			     airy_blob_sizes.lbs_task +
+				     sizeof(struct airy_task_sec),
+			     GFP_KERNEL);
+	if (!task || !blob)
+		return NULL;
+
+	task->security = blob;
+	task->flags = flags;
+	return task;
+}
+
+static struct airy_ipc_ring_freeze_state *attach_ring(struct kunit *test)
+{
+	struct lsm_test_ctx *ctx = test->priv;
+	struct airy_ipc_ring_freeze_state *ring;
+
+	ring = kzalloc(sizeof(*ring), GFP_KERNEL);
+	if (!ring)
+		return NULL;
+
+	ctx->test_ring = ring;
+	current_sec()->ipc_ring = ring;
+	return ring;
 }
 
 /* ── airy_cap_badge_ok inline (core of P1-4) ────────────────────────── */
@@ -356,6 +404,129 @@ static void uring_cmd_opcode_gate_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, -AIRY_ENOTSUP, airy_uring_cmd_check(&cmd));
 }
 
+/* ── IPC freeze-state lifecycle ─────────────────────────────────────── */
+
+static void task_alloc_creates_ring_test(struct kunit *test)
+{
+	struct task_struct *task = fake_task(test, 0);
+	struct airy_ipc_ring_freeze_state *ring;
+	struct airy_task_sec *sec;
+
+	KUNIT_ASSERT_NOT_NULL(test, task);
+	KUNIT_EXPECT_EQ(test, 0, airy_task_alloc(task, 0));
+
+	sec = task->security + airy_blob_sizes.lbs_task;
+	ring = sec->ipc_ring;
+	KUNIT_ASSERT_NOT_NULL(test, ring);
+	KUNIT_EXPECT_FALSE(test, ring->frozen);
+
+	airy_task_free(task);
+}
+
+static void task_alloc_skips_kthread_test(struct kunit *test)
+{
+	struct task_struct *task = fake_task(test, PF_KTHREAD);
+	struct airy_task_sec *sec;
+
+	KUNIT_ASSERT_NOT_NULL(test, task);
+	KUNIT_EXPECT_EQ(test, 0, airy_task_alloc(task, 0));
+
+	sec = task->security + airy_blob_sizes.lbs_task;
+	KUNIT_EXPECT_NULL(test, sec->ipc_ring);
+
+	airy_task_free(task);
+}
+
+static void task_free_releases_ring_test(struct kunit *test)
+{
+	struct task_struct *task = fake_task(test, 0);
+	struct airy_task_sec *sec;
+
+	KUNIT_ASSERT_NOT_NULL(test, task);
+	KUNIT_ASSERT_EQ(test, 0, airy_task_alloc(task, 0));
+
+	sec = task->security + airy_blob_sizes.lbs_task;
+	KUNIT_ASSERT_NOT_NULL(test, sec->ipc_ring);
+
+	airy_task_free(task);
+	KUNIT_EXPECT_NULL(test, sec->ipc_ring);
+}
+
+static void uring_cmd_frozen_ring_rejected_test(struct kunit *test)
+{
+	struct io_uring_cmd cmd = { };
+	struct airy_ipc_ring_freeze_state *ring;
+	struct airy_task_sec *sec = current_sec();
+	__u32 faults_before;
+
+	ring = attach_ring(test);
+	KUNIT_ASSERT_NOT_NULL(test, ring);
+
+	airy_ipc_freeze_ring(ring, AIRY_FAULT_CAP_FORGED);
+
+	faults_before = READ_ONCE(sec->fault_count);
+	cmd.cmd_op = AIRY_IPC_OP_SEND;
+	KUNIT_EXPECT_EQ(test, -AIRY_EIPC_FROZEN,
+			airy_uring_cmd_check(&cmd));
+
+	/*
+	 * A frozen ring is a plain error, not a new violation: the fault
+	 * counter must not move or a suspended agent would keep feeding
+	 * the die_notifier with every rejected command.
+	 */
+	KUNIT_EXPECT_EQ(test, faults_before, READ_ONCE(sec->fault_count));
+}
+
+static void security_fault_freezes_ring_test(struct kunit *test)
+{
+	struct airy_ipc_ring_freeze_state *ring;
+	struct airy_task_sec *sec = current_sec();
+	__u32 faults_before;
+
+	sec->agent_id = TEST_AGENT;
+	ring = attach_ring(test);
+	KUNIT_ASSERT_NOT_NULL(test, ring);
+
+	faults_before = READ_ONCE(sec->fault_count);
+	airy_security_fault(TEST_AGENT, AIRY_FAULT_CAP_FORGED);
+
+	KUNIT_EXPECT_TRUE(test, READ_ONCE(ring->frozen));
+	KUNIT_EXPECT_EQ(test, AIRY_FAULT_CAP_FORGED,
+			READ_ONCE(ring->freeze_reason));
+	KUNIT_EXPECT_EQ(test, AIRY_FAULT_CAP_FORGED,
+			READ_ONCE(sec->frozen_reason));
+	KUNIT_EXPECT_EQ(test, faults_before + 1,
+			READ_ONCE(sec->fault_count));
+}
+
+static void uring_cmd_perm_fault_is_abnormal_test(struct kunit *test)
+{
+	struct io_uring_cmd cmd = { };
+	struct airy_ipc_ring_freeze_state *ring;
+	struct airy_task_sec *sec = current_sec();
+	__u64 badge = AIRY_BADGE_COMPILE(1, 0x1234ABCDu, AIRY_CAP_PERM_RECV);
+	__u32 faults_before;
+
+	sec->agent_id = TEST_AGENT;
+	sec->agent_state = AIRY_AGENT_RUNNING;
+	KUNIT_ASSERT_EQ(test, 0, airy_cap_register(TEST_AGENT, badge));
+
+	ring = attach_ring(test);
+	KUNIT_ASSERT_NOT_NULL(test, ring);
+
+	faults_before = READ_ONCE(sec->fault_count);
+	cmd.cmd_op = AIRY_IPC_OP_SEND;
+	put_unaligned_le64(badge, &cmd.pdu[0]);
+
+	KUNIT_EXPECT_EQ(test, -AIRY_ECAP_PERM,
+			airy_uring_cmd_check(&cmd));
+	KUNIT_EXPECT_TRUE(test, READ_ONCE(ring->frozen));
+	KUNIT_EXPECT_EQ(test, AIRY_FAULT_ABNORMAL_CAP,
+			READ_ONCE(ring->freeze_reason));
+	KUNIT_EXPECT_EQ(test, faults_before + 1,
+			READ_ONCE(sec->fault_count));
+}
+
 static struct kunit_case airy_lsm_cases[] = {
 	KUNIT_CASE(badge_ok_valid_returns_zero_test),
 	KUNIT_CASE(badge_ok_perm_missing_returns_error_test),
@@ -375,6 +546,12 @@ static struct kunit_case airy_lsm_cases[] = {
 	KUNIT_CASE(file_open_without_perm_denied_test),
 	KUNIT_CASE(file_open_with_perm_allowed_test),
 	KUNIT_CASE(uring_cmd_opcode_gate_test),
+	KUNIT_CASE(task_alloc_creates_ring_test),
+	KUNIT_CASE(task_alloc_skips_kthread_test),
+	KUNIT_CASE(task_free_releases_ring_test),
+	KUNIT_CASE(uring_cmd_frozen_ring_rejected_test),
+	KUNIT_CASE(security_fault_freezes_ring_test),
+	KUNIT_CASE(uring_cmd_perm_fault_is_abnormal_test),
 	{}
 };
 

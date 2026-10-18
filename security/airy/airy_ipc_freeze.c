@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
@@ -80,10 +80,13 @@ void airy_ipc_thaw_ring(struct airy_ipc_ring_freeze_state *ring)
  * Uses READ_ONCE to avoid tearing and unlikely() to hint the
  * branch predictor that frozen rings are the exceptional case.
  *
- * Return: 0 if the ring is active, -AIRY_EIPC_FROZEN if frozen.
+ * Return: 0 if the ring is active or absent, -AIRY_EIPC_FROZEN if frozen.
  */
 int airy_ipc_fastpath_check(struct airy_ipc_ring_freeze_state *ring)
 {
+	if (!ring)
+		return 0;
+
 	if (unlikely(READ_ONCE(ring->frozen)))
 		return -AIRY_EIPC_FROZEN;
 
@@ -99,13 +102,10 @@ int airy_ipc_fastpath_check(struct airy_ipc_ring_freeze_state *ring)
  * Returns the IPC ring freeze-state registered for @task's agent, or
  * NULL if no ring is currently associated.
  *
- * The per-task security blob (struct airy_task_sec) carries an ipc_ring
- * pointer that stores the address of the agent's airy_ipc_ring_freeze_state.
- * In M0 this field is initialised to NULL by airy_task_alloc() because the
- * per-agent ring allocation logic is not yet wired.  When the io_uring IPC
- * ring pool is implemented (OS-IRON-004), the Micro-Supervisor will populate
- * sec->ipc_ring during agent registration, and this function will return a
- * valid pointer so that die_notifier can freeze the ring on fatal faults.
+ * The ring is owned by the task's security blob: airy_task_alloc()
+ * allocates it for every user task and airy_task_free() releases it.
+ * Kernel threads and the init task carry no ring, so callers see NULL
+ * and must treat that as "not frozen".
  */
 struct airy_ipc_ring_freeze_state *airy_ipc_ring_for_task(struct task_struct *task)
 {
@@ -116,10 +116,5 @@ struct airy_ipc_ring_freeze_state *airy_ipc_ring_for_task(struct task_struct *ta
 
 	sec = task->security + airy_blob_sizes.lbs_task;
 
-	/*
-	 * M0: sec->ipc_ring is NULL until the per-agent ring pool is
-	 * wired (OS-IRON-004).  Returning NULL lets die_notifier skip
-	 * the freeze step gracefully.
-	 */
 	return (struct airy_ipc_ring_freeze_state *)sec->ipc_ring;
 }

@@ -79,17 +79,20 @@ static int airy_cmd_gate(u32 cmd_op, enum airy_plane *plane)
  * Check whether the agent's IPC ring is frozen.  A frozen ring means
  * the agent has been administratively suspended; all IPC must be
  * rejected immediately.
+ *
+ * A task without a ring (kernel thread, init task) is not frozen:
+ * there is no agent IPC channel to suspend.
  */
-static int phase1_ring_frozen(struct airy_task_sec *sec)
+static int phase1_frozen(struct task_struct *task, __u32 agent_id)
 {
-	/* Ring is frozen if frozen_reason != 0 */
-	if (READ_ONCE(sec->frozen_reason) != 0) {
-		pr_debug_ratelimited("airy_cap_check: phase1 agent=%u ring FROZEN reason=0x%x\n",
-			sec->agent_id, READ_ONCE(sec->frozen_reason));
-		return -AIRY_EIPC_FROZEN;
-	}
+	int ret;
 
-	return 0;
+	ret = airy_ipc_fastpath_check(airy_ipc_ring_for_task(task));
+	if (ret)
+		pr_debug_ratelimited("airy_cap_check: phase1 agent=%u ring FROZEN\n",
+				     agent_id);
+
+	return ret;
 }
 
 /* ─── Phase 2: CAP_REQUEST Bootstrap Path ──────────────────────────────── */
@@ -223,6 +226,21 @@ static int phase5_slowpath_enforce(__u32 agent_id, __u64 badge,
 	return 0;
 }
 
+/* ─── Enforcement Failure to Fault Code ────────────────────────────────── */
+/*
+ * Map an enforcement failure to the fault code the Supervisor records.
+ * Only a forged badge is a CAP_FORGED violation; an epoch, permission
+ * or missing-slot rejection is ABNORMAL_CAP.  A frozen ring never
+ * reaches the fault path, so -AIRY_EIPC_FROZEN has no mapping here.
+ */
+static __u32 airy_fault_code(int err)
+{
+	if (err == -AIRY_ECAP_FORGED)
+		return AIRY_FAULT_CAP_FORGED;
+
+	return AIRY_FAULT_ABNORMAL_CAP;
+}
+
 /* ─── airy_uring_cmd_check ─────────────────────────────────────────────── */
 /*
  * Slowpath capability check for io_uring_cmd IPC messages.
@@ -275,11 +293,13 @@ int airy_uring_cmd_check(struct io_uring_cmd *ioucmd)
 	/*
 	 * Phase 1: C-S0 — ring frozen check.  A frozen ring blocks every
 	 * command, bootstrap included: suspension must not be escapable
-	 * by re-requesting capabilities.
+	 * by re-requesting capabilities.  This is a plain error, not a
+	 * fault: the ring is already frozen, so it must not count as a
+	 * new violation or re-enter the die_notifier chain.
 	 */
-	ret = phase1_ring_frozen(sec);
-	if (ret < 0)
-		goto fault;
+	ret = phase1_frozen(task, agent_id);
+	if (ret)
+		return ret;
 
 	badge = get_unaligned_le64(&ioucmd->pdu[0]);
 
@@ -323,7 +343,7 @@ int airy_uring_cmd_check(struct io_uring_cmd *ioucmd)
 fault:
 	pr_warn("airy_cap_check: agent=%u SECURITY FAULT ret=%d — triggering die_notifier\n",
 		agent_id, ret);
-	airy_security_fault(agent_id, AIRY_FAULT_CAP_FORGED);
+	airy_security_fault(agent_id, airy_fault_code(ret));
 	return ret;
 }
 
@@ -331,9 +351,9 @@ fault:
 /*
  * Report an unrecoverable security fault for an agent.
  *
- * Increments the per-agent fault counter and logs the event.
- * In a full implementation, this triggers the die_notifier chain
- * to freeze or terminate the offending agent.
+ * Increments the per-agent fault counter, freezes the agent's IPC ring
+ * so the frozen state is what phase 1 reads on the next command, and
+ * notifies the die_notifier chain for out-of-band Supervisor action.
  *
  * agent_id vs current (P2 fix): the fault is reported for @agent_id,
  * but the per-task fault_count/frozen_reason fields live in the
@@ -366,7 +386,15 @@ void airy_security_fault(__u32 agent_id, __u32 fault_code)
 				new = old + 1;
 			} while (cmpxchg(&sec->fault_count, old, new) != old);
 
-			/* Freeze the agent ring */
+			/*
+			 * Freeze the ring, the enforcement source of truth
+			 * read by phase 1.  frozen_reason mirrors the code
+			 * for the Supervisor.  Both stores are relaxed
+			 * single-word writes, so this is safe from the IPC
+			 * and die contexts that call this function.
+			 */
+			airy_ipc_freeze_ring(airy_ipc_ring_for_task(task),
+					     fault_code);
 			WRITE_ONCE(sec->frozen_reason, fault_code);
 		}
 	}

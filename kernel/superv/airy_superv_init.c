@@ -25,24 +25,26 @@ static int __init airy_superv_init(void)
 	pr_info("airy_superv: initialising Micro-Supervisor subsystem\n");
 
 	/* 1. Register supplemental LSM hooks (task_fix_setuid, mmap_addr,
-	 *    mprotect, capset, capable) into the existing "airy" LSM. */
+	 *    mprotect, capset, capable) into the existing "airy" LSM.
+	 */
 	ret = airy_superv_register_hooks();
 	if (ret) {
 		pr_err("airy_superv: hook registration failed: %d\n", ret);
 		return ret;
 	}
 
-	/* 2. The eventfd context and the IPC ring freeze state are attached
-	 *    lazily, not from init:
-	 *    - airy_eventfd_register() installs the eventfd context once the
-	 *      Macro-Supervisor binds its fault listener; there is no
-	 *      userspace entry point for it yet, so until then the context
-	 *      stays NULL and faults are recorded in the airy_fev_* ring.
-	 *    - the IPC ring freeze path acts on a task's ring once that ring
-	 *      is created and attached to the task's security blob.
+	/* 2. The eventfd context is attached lazily: airy_eventfd_register()
+	 *    installs it once the Macro-Supervisor binds its fault listener;
+	 *    there is no userspace entry point for it yet, so until then the
+	 *    context stays NULL and faults are recorded in the airy_fev_* ring.
+	 *
+	 *    The per-task IPC ring freeze state needs no setup here: the
+	 *    "airy" LSM allocates it in airy_task_alloc() at fork time and
+	 *    releases it in airy_task_free().
 	 *
 	 *    die_notifier is registered by the "airy" LSM during
-	 *    security_initcall, not here. */
+	 *    security_initcall, not here.
+	 */
 
 	pr_info("airy_superv: Micro-Supervisor initialised\n");
 	return 0;
