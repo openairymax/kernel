@@ -326,6 +326,97 @@ sub enclosing {
 	return \@enc;
 }
 
+# 拼接代码行为单个字符串，并返回每行起始偏移（偏移到行号映射）。
+sub join_code {
+	my ($codes) = @_;
+	my @starts;
+	my $off = 0;
+	for my $line (@$codes) {
+		push @starts, $off;
+		$off += length($line) + 1;
+	}
+	return (join("\n", @$codes), \@starts);
+}
+
+# 二分查找偏移所属的行（0 基）。
+sub line_at {
+	my ($starts, $off) = @_;
+	my ($lo, $hi) = (0, $#$starts);
+	while ($lo < $hi) {
+		my $mid = int(($lo + $hi + 1) / 2);
+		if ($starts->[$mid] <= $off) { $lo = $mid; }
+		else { $hi = $mid - 1; }
+	}
+	return $lo;
+}
+
+# 返回与 $open 处左括号匹配的右括号偏移；不平衡时返回 undef。
+sub match_paren {
+	my ($text, $open) = @_;
+	my $depth = 0;
+	for (my $i = $open; $i < length $text; $i++) {
+		my $c = substr($text, $i, 1);
+		if ($c eq '(') { $depth++; next; }
+		return $i if $c eq ')' && --$depth == 0;
+	}
+	return undef;
+}
+
+# 提取包含调用的完整表达式语句（不含结尾分号）。
+sub stmt_span {
+	my ($text, $at, $close) = @_;
+	my ($start, $depth) = ($at, 0);
+	for (my $i = $at - 1; $i >= 0; $i--) {
+		my $c = substr($text, $i, 1);
+		if ($c eq ')' || $c eq ']') { $depth++; next; }
+		if ($c eq '(' || $c eq '[') { $depth-- if $depth > 0; next; }
+		next if $depth > 0;
+		if ($c eq ';' || $c eq '{' || $c eq '}') { $start = $i + 1; last; }
+	}
+	my $end = $close;
+	$depth = 0;
+	for (my $i = $close + 1; $i < length $text; $i++) {
+		my $c = substr($text, $i, 1);
+		if ($c eq '(' || $c eq '[') { $depth++; next; }
+		if ($c eq ')' || $c eq ']') { $depth-- if $depth > 0; next; }
+		if ($depth == 0 && ($c eq ';' || $c eq '{' || $c eq '}')) {
+			$end = $i;
+			last;
+		}
+	}
+	my $stmt = substr($text, $start, $end - $start);
+	$stmt =~ s/\s+/ /g;
+	$stmt =~ s/^\s+//;
+	$stmt =~ s/\s+$//;
+	return $stmt;
+}
+
+# 判断语句是否把调用结果直接丢弃（含 (void) 显式丢弃）。
+sub is_bare {
+	my ($stmt, $name) = @_;
+	return $stmt =~ /^(?:\(\s*void\s*\)\s*)?\Q$name\E\s*\(.*\)$/s;
+}
+
+# 扫描指定函数的调用点：返回 [{ line, bare }]，行号为 1 基。
+sub call_sites {
+	my ($codes, $name) = @_;
+	my ($text, $starts) = join_code($codes);
+	my $re = qr/\b\Q$name\E\s*\(/;
+	my @sites;
+	while ($text =~ /$re/g) {
+		my $at = $-[0];
+		my $close = match_paren($text, $+[0] - 1);
+		last unless defined $close;
+		my $stmt = stmt_span($text, $at, $close);
+		push @sites, {
+			line => line_at($starts, $at) + 1,
+			bare => is_bare($stmt, $name),
+		};
+		pos($text) = $close + 1;
+	}
+	return \@sites;
+}
+
 sub is_c_source {
 	my ($file) = @_;
 	return $file =~ /\.(?:c|h)$/;
@@ -338,6 +429,11 @@ sub check_file {
 	my $enc   = enclosing($codes);
 	my $c_src = is_c_source($file);
 	my $rel   = rel_path($file);
+	my %ipc_bare;
+	if ($c_src) {
+		$ipc_bare{$_->{line}} = 1
+			for grep { $_->{bare} } @{call_sites($codes, 'airy_ipc_send')};
+	}
 
 	# 011：文件头规范（仅源文件）
 	if ($c_src) {
@@ -420,7 +516,7 @@ sub check_file {
 		}
 
 		# 004：airy_ipc_send 返回值必须被检查
-		if ($c_src && $s =~ /^\s*(?:\(\s*void\s*\)\s*)?airy_ipc_send\s*\(.*\)\s*;\s*$/) {
+		if ($ipc_bare{$lin}) {
 			push_vio(\@vio, $file, $lin, 'AIRY-CHECKPATCH-004',
 				'airy_ipc_send() return value must be checked');
 			next;
