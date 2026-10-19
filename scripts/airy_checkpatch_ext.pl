@@ -63,9 +63,9 @@ my @RULES = (
 	{ id => 'AIRY-CHECKPATCH-008', sev => 'error',
 	  brief => 'dma_alloc_coherent() forbidden in airy_ipc/airy_mem' },
 	{ id => 'AIRY-CHECKPATCH-009', sev => 'error',
-	  brief => 'CONFIG_BPF_LSM=y forbidden in AirymaxOS paths' },
+	  brief => 'CONFIG_BPF_LSM must stay disabled in AirymaxOS paths' },
 	{ id => 'AIRY-CHECKPATCH-010', sev => 'error',
-	  brief => 'CONFIG_SCHED_EXT=y forbidden in AirymaxOS paths' },
+	  brief => 'CONFIG_SCHED_EXT must stay disabled in AirymaxOS paths' },
 	{ id => 'AIRY-CHECKPATCH-011', sev => 'error',
 	  brief => 'SPDX first line + leading comment block <= ' .
 		   HEADER_MAX . ' lines' },
@@ -477,15 +477,15 @@ sub check_file {
 			next;
 		}
 
-		# 009/010：配置项黑名单
-		if ($s !~ /^\s*#/ && $s =~ /\bCONFIG_BPF_LSM\b\s*=\s*y\b/) {
+		# 009/010：配置项黑名单（=y 与 =m 均视为启用）
+		if ($s !~ /^\s*#/ && $s =~ /\bCONFIG_BPF_LSM\s*=\s*[ym]\b/) {
 			push_vio(\@vio, $file, $lin, 'AIRY-CHECKPATCH-009',
-				'CONFIG_BPF_LSM=y forbidden — pure-C LSM enforced');
+				'CONFIG_BPF_LSM=y/m forbidden — pure-C LSM enforced');
 			next;
 		}
-		if ($s !~ /^\s*#/ && $s =~ /\bCONFIG_SCHED_EXT\b\s*=\s*y\b/) {
+		if ($s !~ /^\s*#/ && $s =~ /\bCONFIG_SCHED_EXT\s*=\s*[ym]\b/) {
 			push_vio(\@vio, $file, $lin, 'AIRY-CHECKPATCH-010',
-				'CONFIG_SCHED_EXT=y forbidden — sched_tac enforced');
+				'CONFIG_SCHED_EXT=y/m forbidden — sched_tac enforced');
 			next;
 		}
 
