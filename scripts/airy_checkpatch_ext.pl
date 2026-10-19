@@ -17,7 +17,7 @@
 use strict;
 use warnings;
 
-use File::Basename qw(basename dirname);
+use File::Basename qw(dirname);
 use File::Find ();
 use Cwd qw(abs_path);
 use Getopt::Long qw(GetOptions);
@@ -110,8 +110,10 @@ $0 — AirymaxOS 专属 checkpatch 扩展规则引擎
 
 选项:
   -h, --help        显示本帮助后退出
-  -q, --quiet       仅输出违规项与汇总，不输出进度信息
+  -q, --quiet       仅输出违规项，省略汇总行
       --list-rules  以 TSV 输出规则注册表（id、严重级、摘要）后退出
+
+错误信息始终写入标准错误，不受 --quiet 影响。
 
 规则:
 $rules
@@ -129,6 +131,15 @@ my $script = abs_path($0) // $0;
 my $repo_root = dirname(dirname($script));
 
 my @targets = @ARGV ? @ARGV : map { "$repo_root/$_" } @DEFAULT_PATHS;
+
+if (@ARGV) {
+	my @missing = grep { !-e $_ } @targets;
+	if (@missing) {
+		print STDERR "$0: $_: no such file or directory\n" for @missing;
+		exit EX_USAGE;
+	}
+}
+
 @targets = map { abs_path($_) // $_ } @targets;
 
 # Airy 配置片段（defconfig）也纳入配置项检查。
@@ -139,16 +150,20 @@ foreach my $cfg (glob("$repo_root/arch/*/configs/airy*_defconfig")) {
 my @files = collect_files(@targets);
 
 if (!@files) {
-	print STDERR "$0: no input files found\n" unless $opt_quiet;
+	print STDERR "$0: no input files found\n";
 	exit EX_USAGE;
 }
 
 # --- 扫描 ------------------------------------------------------
 my @violations;
+my @unreadable;
 foreach my $file (sort @files) {
 	next if -B $file;
 	my $lines = read_lines($file);
-	next unless $lines;
+	if (!$lines) {
+		push @unreadable, $file;
+		next;
+	}
 	push @violations, check_file($file, $lines);
 }
 
@@ -162,7 +177,12 @@ foreach my $v (@violations) {
 }
 
 printf "airy_checkpatch_ext: %d files checked, %d errors, %d warnings\n",
-	scalar(@files), $errors, $warnings;
+	scalar(@files), $errors, $warnings unless $opt_quiet;
+
+if (@unreadable) {
+	print STDERR "$0: " . rel_path($_) . ": cannot read\n" for @unreadable;
+	exit EX_USAGE;
+}
 
 exit($errors ? EX_ERROR : EX_OK);
 
