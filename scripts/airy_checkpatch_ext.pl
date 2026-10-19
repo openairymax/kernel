@@ -28,8 +28,8 @@ use constant {
 	EX_USAGE => 2,
 };
 
-# 默认扫描目录：AirymaxOS 在 kernel 树内的全部落点（相对仓库根）。
-my @DEFAULT_DIRS = (
+# 默认扫描落点：AirymaxOS 在 kernel 树内的全部目录与独立文件（相对仓库根）。
+my @DEFAULT_PATHS = (
 	'security/airy',
 	'kernel/superv',
 	'kernel/syscalls',
@@ -38,6 +38,8 @@ my @DEFAULT_DIRS = (
 	'kernel/ipc',
 	'include/airymax',
 	'include/uapi/linux/airymax',
+	'init/airy_core.c',
+	'include/trace/events/airy.h',
 );
 
 # 文件头前导注释区上限（OS-STD-STY-007：SPDX 首行 + ≤20 行模块描述）。
@@ -104,7 +106,7 @@ $0 — AirymaxOS 专属 checkpatch 扩展规则引擎
   $0 [选项] [路径 ...]
 
 路径可以是文件或目录；省略时扫描 AirymaxOS 在 kernel 树内的默认落点:
-  @{[ join("\n  ", @DEFAULT_DIRS) ]}
+  @{[ join("\n  ", @DEFAULT_PATHS) ]}
 
 选项:
   -h, --help        显示本帮助后退出
@@ -126,7 +128,8 @@ USAGE
 my $script = abs_path($0) // $0;
 my $repo_root = dirname(dirname($script));
 
-my @targets = @ARGV ? @ARGV : map { "$repo_root/$_" } @DEFAULT_DIRS;
+my @targets = @ARGV ? @ARGV : map { "$repo_root/$_" } @DEFAULT_PATHS;
+@targets = map { abs_path($_) // $_ } @targets;
 
 # Airy 配置片段（defconfig）也纳入配置项检查。
 foreach my $cfg (glob("$repo_root/arch/*/configs/airy*_defconfig")) {
@@ -192,6 +195,11 @@ sub collect_files {
 					no_chdir => 1,
 					wanted   => sub {
 						my $f = $File::Find::name;
+						if (-d $f) {
+							$File::Find::prune = 1
+								if $f =~ m{/(?:\.git|\.kunit|__pycache__)$};
+							return;
+						}
 						return unless -f $f;
 						return if $seen{$f}++;
 						push @out, $f;
