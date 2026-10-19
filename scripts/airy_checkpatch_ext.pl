@@ -394,7 +394,7 @@ sub stmt_span {
 # 判断语句是否把调用结果直接丢弃（含 (void) 显式丢弃）。
 sub is_bare {
 	my ($stmt, $name) = @_;
-	return $stmt =~ /^(?:\(\s*void\s*\)\s*)?\Q$name\E\s*\(.*\)$/s;
+	return $stmt =~ /^(?:\(\s*void\s*\)\s*)?\Q$name\E\s*\(.*\)$/s ? 1 : 0;
 }
 
 # 扫描指定函数的调用点：返回 [{ line, bare }]，行号为 1 基。
@@ -430,9 +430,12 @@ sub check_file {
 	my $c_src = is_c_source($file);
 	my $rel   = rel_path($file);
 	my %ipc_bare;
+	my %cap_bare;
 	if ($c_src) {
 		$ipc_bare{$_->{line}} = 1
 			for grep { $_->{bare} } @{call_sites($codes, 'airy_ipc_send')};
+		$cap_bare{$_->{line}} = 1
+			for grep { $_->{bare} } @{call_sites($codes, 'airy_cap_check')};
 	}
 
 	# 011：文件头规范（仅源文件）
@@ -523,7 +526,7 @@ sub check_file {
 		}
 
 		# 005：airy_cap_check 必须显式处理 -EPERM
-		if ($c_src && $s =~ /\bairy_cap_check\s*\(/) {
+		if ($cap_bare{$lin}) {
 			push_vio(\@vio, $file, $lin, 'AIRY-CHECKPATCH-005',
 				'airy_cap_check() call must handle -EPERM explicitly');
 			next;
