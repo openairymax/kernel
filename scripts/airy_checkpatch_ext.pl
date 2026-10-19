@@ -9,8 +9,8 @@
 # IPC 入口、LSM 注册、DMA 使用、配置项黑白名单，以及文件头规范。
 #
 # 规则依据：
-#   docs/AirymaxOS/80-testing/05-static-analysis.md §7.2（001~010）
-#   docs/AirymaxOS/50-engineering-standards/01-coding-standards.md §8.5.3（011）
+#   docs-linux/80-testing/05-static-analysis.md §7.2（001~011）
+#   docs-linux/50-engineering-standards/01-coding-standards.md §8.5.3（011）
 #
 # 用法与退出码见 --help。
 
@@ -43,20 +43,35 @@ my @DEFAULT_DIRS = (
 # 文件头前导注释区上限（OS-STD-STY-007：SPDX 首行 + ≤20 行模块描述）。
 use constant HEADER_MAX => 20;
 
-# 规则严重性：error 阻断，warning 不阻断。
-my %SEVERITY = (
-	'AIRY-CHECKPATCH-001' => 'error',
-	'AIRY-CHECKPATCH-002' => 'error',
-	'AIRY-CHECKPATCH-003' => 'error',
-	'AIRY-CHECKPATCH-004' => 'error',
-	'AIRY-CHECKPATCH-005' => 'warning',
-	'AIRY-CHECKPATCH-006' => 'error',
-	'AIRY-CHECKPATCH-007' => 'error',
-	'AIRY-CHECKPATCH-008' => 'error',
-	'AIRY-CHECKPATCH-009' => 'error',
-	'AIRY-CHECKPATCH-010' => 'error',
-	'AIRY-CHECKPATCH-011' => 'error',
+# 规则注册表：规则标识、严重级与摘要的唯一声明处。帮助文本与
+# --list-rules 输出均由本表派生，避免多处手工维护造成漂移。
+my @RULES = (
+	{ id => 'AIRY-CHECKPATCH-001', sev => 'error',
+	  brief => 'must use pr_*() instead of printk()' },
+	{ id => 'AIRY-CHECKPATCH-002', sev => 'error',
+	  brief => 'AirymaxOS functions must use airy_/stc_ prefix' },
+	{ id => 'AIRY-CHECKPATCH-003', sev => 'error',
+	  brief => 'airy_agent_state access must use READ_ONCE/WRITE_ONCE' },
+	{ id => 'AIRY-CHECKPATCH-004', sev => 'error',
+	  brief => 'airy_ipc_send() return value must be checked' },
+	{ id => 'AIRY-CHECKPATCH-005', sev => 'warning',
+	  brief => 'airy_cap_check() return value must be handled' },
+	{ id => 'AIRY-CHECKPATCH-006', sev => 'error',
+	  brief => 'no direct printk() inside airy_* functions' },
+	{ id => 'AIRY-CHECKPATCH-007', sev => 'error',
+	  brief => 'LSM registration must use security_hook_list' },
+	{ id => 'AIRY-CHECKPATCH-008', sev => 'error',
+	  brief => 'dma_alloc_coherent() forbidden in airy_ipc/airy_mem' },
+	{ id => 'AIRY-CHECKPATCH-009', sev => 'error',
+	  brief => 'CONFIG_BPF_LSM=y forbidden in AirymaxOS paths' },
+	{ id => 'AIRY-CHECKPATCH-010', sev => 'error',
+	  brief => 'CONFIG_SCHED_EXT=y forbidden in AirymaxOS paths' },
+	{ id => 'AIRY-CHECKPATCH-011', sev => 'error',
+	  brief => 'SPDX first line + leading comment block <= ' .
+		   HEADER_MAX . ' lines' },
 );
+
+my %SEVERITY = map { $_->{id} => $_->{sev} } @RULES;
 
 # C 语言关键字：用于排除把控制语句误判为函数定义。
 my %C_KEYWORDS = map { $_ => 1 } qw(
@@ -65,13 +80,23 @@ my %C_KEYWORDS = map { $_ => 1 } qw(
 	volatile register auto signed unsigned void int char short long float double
 );
 
-my ($opt_help, $opt_quiet);
+my ($opt_help, $opt_quiet, $opt_list);
 GetOptions(
-	'help|h'  => \$opt_help,
-	'quiet|q' => \$opt_quiet,
+	'help|h'     => \$opt_help,
+	'quiet|q'    => \$opt_quiet,
+	'list-rules' => \$opt_list,
 ) or usage(EX_USAGE);
 
+if ($opt_list) {
+	printf "%s\t%s\t%s\n", $_->{id}, $_->{sev}, $_->{brief} for @RULES;
+	exit EX_OK;
+}
+
 if ($opt_help) {
+	my $rules = join "\n", map {
+		sprintf '  %s %-8s %s', substr($_->{id}, -3), $_->{sev}, $_->{brief}
+	} @RULES;
+
 	print <<"USAGE";
 $0 — AirymaxOS 专属 checkpatch 扩展规则引擎
 
@@ -82,21 +107,12 @@ $0 — AirymaxOS 专属 checkpatch 扩展规则引擎
   @{[ join("\n  ", @DEFAULT_DIRS) ]}
 
 选项:
-  -h, --help    显示本帮助后退出
-  -q, --quiet   仅输出违规项与汇总，不输出进度信息
+  -h, --help        显示本帮助后退出
+  -q, --quiet       仅输出违规项与汇总，不输出进度信息
+      --list-rules  以 TSV 输出规则注册表（id、严重级、摘要）后退出
 
 规则:
-  001 error    必须使用 pr_*() 而非 printk()
-  002 error    AirymaxOS 函数必须以 airy_/stc_ 前缀命名
-  003 error    airy_agent_state 访问必须使用 READ_ONCE/WRITE_ONCE
-  004 error    airy_ipc_send() 调用必须检查返回值
-  005 warning  airy_cap_check() 调用必须显式处理 -EPERM
-  006 error    禁止在 airy_* 函数中直接调用 printk()
-  007 error    AirymaxOS LSM 注册必须使用 security_hook_list
-  008 error    禁止在 airy_ipc/airy_mem 路径中调用 dma_alloc_coherent()
-  009 error    禁止在 AirymaxOS 路径中启用 CONFIG_BPF_LSM=y
-  010 error    禁止在 AirymaxOS 路径中启用 CONFIG_SCHED_EXT=y
-  011 error    文件头规范：SPDX 首行 + 前导注释区 ≤ @{[ HEADER_MAX ]} 行
+$rules
 
 退出码:
   0  无 error 级违规
@@ -247,7 +263,7 @@ sub strip_file {
 }
 
 # 判断一行是否为「非 static 函数定义」，是则返回函数名。
-sub def_name_in_line {
+sub func_name {
 	my ($s, $prev) = @_;
 	return undef unless defined $s && length $s;
 	return undef if $s =~ /^\s/;
@@ -273,7 +289,7 @@ sub def_name_in_line {
 }
 
 # 计算每行所处的函数名（用于区分规则 001 与 006）。
-sub compute_enclosing {
+sub enclosing {
 	my ($codes) = @_;
 	my @enc  = ('') x scalar(@$codes);
 	my $depth = 0;
@@ -282,7 +298,7 @@ sub compute_enclosing {
 	for my $i (0 .. $#$codes) {
 		my $s = $codes->[$i];
 		if ($depth == 0) {
-			my $nm = def_name_in_line($s, undef);
+			my $nm = func_name($s, undef);
 			$cur = $nm if defined $nm;
 		}
 		$enc[$i] = $cur;
@@ -305,7 +321,7 @@ sub check_file {
 	my ($file, $raw) = @_;
 	my @vio;
 	my $codes = strip_file($raw);
-	my $enc   = compute_enclosing($codes);
+	my $enc   = enclosing($codes);
 	my $c_src = is_c_source($file);
 	my $rel   = rel_path($file);
 
@@ -333,7 +349,7 @@ sub check_file {
 		# 002：非 static 函数定义命名前缀
 		if ($c_src) {
 			my $prev = $i > 0 ? $codes->[$i - 1] : undef;
-			my $name = def_name_in_line($s, $prev);
+			my $name = func_name($s, $prev);
 			if (defined $name && $name !~ /^(?:airy_|stc_)/) {
 				push_vio(\@vio, $file, $lin, 'AIRY-CHECKPATCH-002',
 					"function '$name' must use the airy_/stc_ prefix");
