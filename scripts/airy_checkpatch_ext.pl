@@ -260,6 +260,7 @@ sub def_name_in_line {
 	my $prefix = substr($s, 0, $idx);
 	my ($name) = $prefix =~ /([A-Za-z_][A-Za-z0-9_]*)\s*$/;
 	return undef unless defined $name;
+	return undef if $name eq 'main';
 	return undef if $name =~ /[A-Z]/;
 	return undef if $C_KEYWORDS{$name};
 	my $before = substr($prefix, 0, length($prefix) - length($name));
