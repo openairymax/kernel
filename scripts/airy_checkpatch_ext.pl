@@ -262,14 +262,20 @@ sub strip_file {
 	return \@out;
 }
 
-# 判断一行是否为「非 static 函数定义」，是则返回函数名。
+# 判断一行是否为函数定义，是则返回函数名。$any 为真时接受 static
+# 定义与前导空白（用于推导函数范围）；规则 002 只关注外部可见函数。
 sub func_name {
-	my ($s, $prev) = @_;
+	my ($s, $prev, $any) = @_;
 	return undef unless defined $s && length $s;
-	return undef if $s =~ /^\s/;
+	return undef if $s =~ /^\s/ && !$any;
 	return undef if $s =~ /^\s*[{};]/;
 	return undef if $s =~ /^\s*#/;
-	return undef if $s =~ /^\s*(?:static|extern|typedef)\b/;
+	if ($s =~ /^\s*(?:static|extern|typedef)\b/) {
+		return undef unless $any;
+		return undef if $s =~ /^\s*(?:extern|typedef)\b/;
+		$s =~ s/^\s*static\s+//;
+		$s =~ s/^\s*(?:inline|__always_inline|noinline|__init|__exit|__cold)\s+//g;
+	}
 	return undef unless $s =~ /\([^;]*\)\s*\{?\s*$/;
 	my $idx = index($s, '(');
 	return undef if $idx <= 0;
@@ -288,26 +294,34 @@ sub func_name {
 	return $name;
 }
 
-# 计算每行所处的函数名（用于区分规则 001 与 006）。
-sub enclosing {
+# 推导函数体范围：[{ name, start, end }]，行号为 0 基。
+sub func_ranges {
 	my ($codes) = @_;
-	my @enc  = ('') x scalar(@$codes);
-	my $depth = 0;
-	my $prev_depth = 0;
-	my $cur = '';
+	my @ranges;
+	my ($depth, $open, $entered) = (0, undef, 0);
 	for my $i (0 .. $#$codes) {
 		my $s = $codes->[$i];
 		if ($depth == 0) {
-			my $nm = func_name($s, undef);
-			$cur = $nm if defined $nm;
+			my $prev = $i > 0 ? $codes->[$i - 1] : undef;
+			my $name = func_name($s, $prev, 1);
+			$open = { name => $name, start => $i } if defined $name;
 		}
-		$enc[$i] = $cur;
-		my $o = ($s =~ tr/{//);
-		my $c = ($s =~ tr/}//);
-		$depth += $o - $c;
-		$depth = 0 if $depth < 0;
-		$cur = '' if $depth == 0 && $prev_depth > 0;
-		$prev_depth = $depth;
+		$depth += ($s =~ tr/{//) - ($s =~ tr/}//);
+		$entered = 1 if $depth > 0;
+		next unless $entered && $depth <= 0;
+		push @ranges, { %$open, end => $i } if defined $open;
+		($open, $entered, $depth) = (undef, 0, 0);
+	}
+	push @ranges, { %$open, end => $#$codes } if defined $open;
+	return \@ranges;
+}
+
+# 计算每行所处的函数名（用于区分规则 001 与 006）。
+sub enclosing {
+	my ($codes) = @_;
+	my @enc = ('') x scalar(@$codes);
+	for my $r (@{func_ranges($codes)}) {
+		$enc[$_] = $r->{name} for $r->{start} .. $r->{end};
 	}
 	return \@enc;
 }
