@@ -18,6 +18,9 @@ CONFIG_AIRY_CAP_TABLE_SIZE=1024
 # CONFIG_BPF_LSM is not set
 CONFIG_LSM="landlock,lockdown,yama,loadpin,safesetid,airy,selinux,smack,tomoyo,apparmor"
 CONFIG_IO_URING=y
+# 用户命名空间：systemd 单元的 PrivateUsers=/RestrictNamespaces= 与桌面沙箱
+# 依赖此项，缺失时 upower 等单元以 217/USER 失败（openEuler 基线同为 y）。
+CONFIG_USER_NS=y
 CONFIG_SCHED_DEADLINE=y
 # CONFIG_SCHED_CLASS_EXT is not set
 CONFIG_LRU_GEN=y
