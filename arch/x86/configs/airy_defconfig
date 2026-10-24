@@ -40,3 +40,7 @@ CONFIG_BPF_JIT=y
 CONFIG_FTRACE=y
 CONFIG_KPROBES=y
 CONFIG_BPF_EVENTS=y
+# 引导期存储与网络（OP-P0-01）：NVMe 内建进 vmlinuz，使根分区挂载不依赖
+# initramfs 是否收进 nvme 模块；I226-V（B50 双网口）由 igc 驱动。
+CONFIG_BLK_DEV_NVME=y
+CONFIG_IGC=m
