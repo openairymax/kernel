@@ -6,8 +6,8 @@
  *
  * Provides airy_superv_register_hooks() to register Micro-Supervisor
  * specific LSM hooks that supplement the five core hooks defined in
- * airy_lsm.c.  Called by kernel/superv/airy_superv_init.c during
- * late_initcall.
+ * airy_lsm.c.  Called from airy_init() in airy_lsm.c, immediately
+ * after the core hook table is registered.
  *
  * Design rationale (see docs/AirymaxOS/20-modules/09-kernel-agent-supervisor.md):
  *   - airy_lsm.c  → DEFINE_LSM(airy) main module (5 core hooks)
@@ -15,6 +15,14 @@
  *
  * All hooks here are registered via security_add_hooks() into the
  * existing "airy" LSM blob space (no new LSM module is defined).
+ *
+ * Call site matters: security_add_hooks() also appends the module name to
+ * the lsm= registry, and lsm_append() only de-duplicates against the *last*
+ * recorded name (match_last_lsm()).  Registering from a late_initcall long
+ * after "airy" stopped being the last entry therefore appended a second
+ * "airy" to /sys/kernel/security/lsm.  Registering from airy_init() keeps
+ * the two security_add_hooks() calls adjacent, so the name is recorded
+ * exactly once.
  */
 
 #include <linux/lsm_hooks.h>
@@ -113,7 +121,8 @@ static struct security_hook_list airy_superv_hooks[] __ro_after_init = {
 /**
  * airy_superv_register_hooks - Register Micro-Supervisor supplemental hooks.
  *
- * Called by kernel/superv/airy_superv_init.c during late_initcall.
+ * Called by airy_init() in airy_lsm.c, directly after the core hook table,
+ * so that the "airy" name is appended to the LSM registry only once.
  * Hooks are added to the existing "airy" LSM module (no new DEFINE_LSM).
  *
  * Return: 0 on success, negative error on failure.

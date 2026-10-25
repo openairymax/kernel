@@ -271,6 +271,17 @@ static int __init airy_init(void)
 
 	security_add_hooks(airy_hooks, ARRAY_SIZE(airy_hooks), "airy");
 
+	/*
+	 * The Micro-Supervisor supplements this module with five more hooks
+	 * (airy_superv_lsm.c).  They must be registered here, adjacent to the
+	 * call above: security_add_hooks() also records the module name, and
+	 * the registry only de-duplicates against the last entry, so a later
+	 * late_initcall registration would list "airy" twice.
+	 */
+	rc = airy_superv_register_hooks();
+	if (rc)
+		return rc;
+
 	/* Register die notifier at INT_MAX priority (airy_die_notify.c) */
 	airy_die_notify_init();
 

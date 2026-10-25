@@ -4,13 +4,13 @@
  *
  * airy_superv_init.c — Micro-Supervisor initialization entry point.
  *
- * Provides late_initcall() to bring up the Micro-Supervisor: registers
- * its supplemental LSM hooks via airy_superv_register_hooks(), then
- * subscribes to the security fault chain the "airy" LSM publishes,
- * opens the [IND] protocol gate and finally starts the macro_d
- * liveness guard. The kernel die_notifier itself is registered by the
- * "airy" LSM, so no redundant registration is needed here;
- * late_initcall runs after LSM init.
+ * Provides late_initcall() to bring up the Micro-Supervisor: subscribes
+ * to the security fault chain the "airy" LSM publishes, opens the [IND]
+ * protocol gate and finally starts the macro_d liveness guard. Its
+ * supplemental LSM hooks are registered earlier, by airy_init() in
+ * security/airy/airy_lsm.c (see the comment there for why). The kernel
+ * die_notifier itself is registered by the "airy" LSM, so no redundant
+ * registration is needed here; late_initcall runs after LSM init.
  *
  * Design rationale: docs/AirymaxOS/20-modules/09-kernel-agent-supervisor.md
  */
@@ -28,14 +28,15 @@ static int __init airy_superv_init(void)
 
 	pr_info("airy_superv: initialising Micro-Supervisor subsystem\n");
 
-	/* 1. Register supplemental LSM hooks (task_fix_setuid, mmap_addr,
-	 *    mprotect, capset, capable) into the existing "airy" LSM.
+	/*
+	 * 1. The supplemental LSM hooks (task_fix_setuid, mmap_addr,
+	 *    mprotect, capset, capable) are registered by airy_init() in
+	 *    security/airy/airy_lsm.c, next to the core hook table.  They
+	 *    cannot be registered from here: security_add_hooks() also appends
+	 *    the module name to /sys/kernel/security/lsm, and by the time a
+	 *    late_initcall runs "airy" is no longer the last entry, so the
+	 *    name would be listed twice.
 	 */
-	ret = airy_superv_register_hooks();
-	if (ret) {
-		pr_err("airy_superv: hook registration failed: %d\n", ret);
-		return ret;
-	}
 
 	/* 2. Subscribe to the security fault chain published by the
 	 *    "airy" LSM at security_initcall.  This is done before the
