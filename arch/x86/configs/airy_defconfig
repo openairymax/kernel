@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # Airymax x86_64 defconfig fragment
-# Applied on top of the x86_64 base defconfig:
-#   make ARCH=x86_64 defconfig
+# 基线来自 airymaxos-kernel.spec 的 %{kbase}（x86_64 为 openeuler_defconfig），
+# 本文件只写增量：
+#   make ARCH=x86_64 openeuler_defconfig
 #   scripts/kconfig/merge_config.sh -m .config arch/x86/configs/airy_defconfig
 #   make ARCH=x86_64 olddefconfig
 # SECURITY_AIRY depends on SECURITY && IO_URING; both are set below.
@@ -44,3 +45,15 @@ CONFIG_BPF_EVENTS=y
 # initramfs 是否收进 nvme 模块；I226-V（B50 双网口）由 igc 驱动。
 CONFIG_BLK_DEV_NVME=y
 CONFIG_IGC=m
+# 无 GPU 驱动时的显示通路（真机缺陷 D-06/D-08）。openeuler_defconfig 把
+# EFI 帧缓冲留给 fbdev（CONFIG_FB_EFI=y），且 SYSFB_SIMPLEFB 与
+# DRM_SIMPLEDRM 均未开，于是 i915 绑定不到设备时既没有 /dev/dri 也没有
+# 任何 DRM 输出，Xorg 只能退到 efifb 的单一模式。
+# 打开这两项后固件帧缓冲被登记为 simple-framebuffer，simpledrm 提供
+# /dev/dri/card0：Xorg 走 modesetting，合成经 llvmpipe 完成。模式列表仍然
+# 只有固件给出的那一条，本次改动不解决分辨率枚举（ADR-016 已接受）。
+# simpledrm 必须内建：6.6 的 simpledrm.c 只声明 of 匹配表，没有
+# MODULE_ALIAS("platform:simple-framebuffer")，做成模块时 udev 拿不到
+# modalias 去自动加载，等于装了不用。
+CONFIG_SYSFB_SIMPLEFB=y
+CONFIG_DRM_SIMPLEDRM=y
