@@ -55,5 +55,13 @@ CONFIG_IGC=m
 # simpledrm 必须内建：6.6 的 simpledrm.c 只声明 of 匹配表，没有
 # MODULE_ALIAS("platform:simple-framebuffer")，做成模块时 udev 拿不到
 # modalias 去自动加载，等于装了不用。
+#
+# DRM 也必须内建：DRM_SIMPLEDRM 是 tristate 且 depends on DRM，而
+# openeuler_defconfig 里是 CONFIG_DRM=m，kconfig 会把片段的 =y 静默压回
+# =m；merge_config 只报 redefined 不报错，直到打包阶段的 %check 才拦下。
+# 这一组配置一旦只生效一半（SYSFB_SIMPLEFB=y 但 simpledrm 没内建），
+# sysfb 会去注册 simple-framebuffer 而不再创建 efi-framebuffer，efifb
+# 也不绑定，开机连 fbcon 都没有，比不配这组更糟。
+CONFIG_DRM=y
 CONFIG_SYSFB_SIMPLEFB=y
 CONFIG_DRM_SIMPLEDRM=y
