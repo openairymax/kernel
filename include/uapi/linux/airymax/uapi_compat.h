@@ -139,8 +139,19 @@
 #elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
 	#define AIRY_COMPILE_ASSERT(cond, msg) _Static_assert(cond, msg)
 #else
+	/* C90 兜底：负长度数组触发编译错误。typedef 名必须逐次唯一，否则同一
+	 * 头里两处断言会在同一个编译单元里重定义同名 typedef，clang 的
+	 * -Wtypedef-redefinition 会把 UAPI 头自检（-std=c90 -Wall）判红。
+	 * __COUNTER__ 保证跨头唯一，缺失时退回 __LINE__。 */
+	#define AIRY_JOIN_(a, b) a##b
+	#define AIRY_JOIN(a, b) AIRY_JOIN_(a, b)
+	#ifdef __COUNTER__
+		#define AIRY_ASSERT_ID __COUNTER__
+	#else
+		#define AIRY_ASSERT_ID __LINE__
+	#endif
 	#define AIRY_COMPILE_ASSERT(cond, msg) \
-		typedef char airy_ca_[(cond) ? 1 : -1]
+		typedef char AIRY_JOIN(airy_ca_, AIRY_ASSERT_ID)[(cond) ? 1 : -1]
 #endif
 
 /* ─── [DSL] Degraded Survival Layer Fallback Block ──────────────────────
