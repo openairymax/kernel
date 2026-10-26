@@ -123,9 +123,9 @@ static void airy_task_chk(struct kunit *test)
 static void airy_mem_chk(struct kunit *test)
 {
 	/*
-	 * airy_mem_tier_of() classifies a gfp hint by the low nibble, and
-	 * the rovol dispatcher rejects opcodes at AIRY_ROVOL_OP_MAX. Both
-	 * number spaces are user-visible ABI and must stay as contracted.
+	 * A gfp hint classifies by the low nibble, and the rovol
+	 * dispatcher rejects opcodes at AIRY_ROVOL_OP_MAX. Both number
+	 * spaces are user-visible ABI and must stay as contracted.
 	 */
 	KUNIT_EXPECT_EQ(test, 0, (int)AIRY_MEM_HOT);
 	KUNIT_EXPECT_EQ(test, 3, (int)AIRY_MEM_PMEM);

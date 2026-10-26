@@ -2,4 +2,4 @@
 
 obj-y += airy_ck_mem.o
 
-airy_ck_mem-y := airy_mem_alloc.o airy_mem_tier.o
+airy_ck_mem-y := airy_mem_alloc.o

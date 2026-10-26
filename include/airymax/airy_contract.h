@@ -241,10 +241,10 @@ static_assert(AIRY_SCHED_POLICY_BESTEFFORT == 4,
 	      "sched policy space must end at 4");
 
 /* ─── 内存分层、GFP 掩码与 rovol 操作码 ──────────
- * airy_mem_tier_of() 只取 gfp 低 4 位判定层级；四个 GFP 标志必须
- * 恰好铺满该半字节并与 L1-L4 一一对应。页面分类共用同一半字节，
- * 铺满后新增类别才不会与既有类别碰撞。rovol 操作码 0x01..0x0A
- * 是 syscall 549 的合法域，0 与 >=MAX 在分发前拒绝。
+ * GFP 提示只取低 4 位判定层级；四个 GFP 标志必须恰好铺满该半字节
+ * 并与 L1-L4 一一对应。页面分类共用同一半字节，铺满后新增类别才
+ * 不会与既有类别碰撞。rovol 操作码 0x01..0x0A 是 syscall 549 的
+ * 合法域，0 与 >=MAX 在分发前拒绝。
  */
 static_assert(AIRY_MEM_HOT == 0, "memory tier HOT must stay L1");
 static_assert(AIRY_MEM_WARM == 1, "memory tier WARM must stay L2");
