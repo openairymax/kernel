@@ -6,7 +6,7 @@
  *
  * Two disjoint code-spaces: Error (negative int32_t, recoverable,
  * POSIX-compatible — AIRY_E* are positive magnitudes, callers return
- * -AIRY_E*) and Fault (positive __u32, unrecoverable). 本头为 [SC]
+ * -AIRY_E*) and Fault (positive u32, unrecoverable). 本头为 [SC]
  * 契约头，禁止与 agentrt 通用错误码在同一编译单元混用。
  *
  * Design rationale: docs/AirymaxOS/30-interfaces/08-sc-error-contract.md

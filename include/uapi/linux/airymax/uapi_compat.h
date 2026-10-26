@@ -8,7 +8,7 @@
  * that must compile identically in kernel-space, Linux user-space, and
  * non-Linux platforms (macOS, Windows agentrt).
  *
- *   #ifdef __KERNEL__      -> #include <linux/types.h>   (provides __u32 etc.)
+ *   #ifdef __KERNEL__      -> #include <linux/types.h>   (fixed-width types)
  *   #elif defined(__linux__) -> #include <linux/types.h>  (same UAPI types)
  *   #else                  -> typedef from <stdint.h>    (macOS/Windows)
  */
@@ -17,7 +17,7 @@
 #define _UAPI_AIRYMAX_UAPI_COMPAT_H
 
 #ifdef __KERNEL__
-	/* Kernel-space: <linux/types.h> supplies the __u32/__u64/... types and
+	/* Kernel-space: <linux/types.h> supplies the fixed-width types and
 	 * <linux/stddef.h> supplies offsetof() for the layout assertions that
 	 * the [SC] contract headers carry. Kbuild searches include/ before
 	 * include/uapi/, so <linux/stddef.h> resolves to the kernel-internal
@@ -28,9 +28,10 @@
 	#define _AIRY_UAPI_COMPAT_TYPES_SET 1
 #elif defined(__linux__)
 	/* Linux user-space: <linux/types.h> is the authoritative source of
-	 * __u32/__u64/... types. Include it directly rather than redefining
-	 * with <stdint.h> types, which may differ in type identity (e.g. on
-	 * 64-bit, uint64_t = unsigned long vs __u64 = unsigned long long). */
+	 * the fixed-width UAPI types. Include it directly rather than
+	 * redefining with <stdint.h> types, which may differ in type identity
+	 * (e.g. on 64-bit, uint64_t = unsigned long vs __u64 = unsigned long
+	 * long). */
 	#include <linux/types.h>
 	#include <stddef.h>   /* offsetof, used by layout _Static_asserts in [SC] headers */
 	#define _AIRY_UAPI_COMPAT_TYPES_SET 1
