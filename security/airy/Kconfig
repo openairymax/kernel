@@ -107,7 +107,7 @@ config AIRY_LOCKDOWN_DEFAULT_LEVEL
 
 config AIRY_KUNIT
 	bool "Airy KUnit regression tests" if !KUNIT_ALL_TESTS
-	depends on KUNIT
+	depends on KUNIT=y
 	depends on SECURITY_AIRY
 	default KUNIT_ALL_TESTS
 	help
