@@ -11,7 +11,7 @@
 #  */
 AIRYMAXOS_LTS     = 0
 AIRYMAXOS_MAJOR   = 0
-AIRYMAXOS_MINOR   = 3
+AIRYMAXOS_MINOR   = 4
 AIRYMAXOS_RELEASE = ""
 
 # 注入的 C 宏（由 filechk_version.h 生成到 include/generated/uapi/linux/version.h）
