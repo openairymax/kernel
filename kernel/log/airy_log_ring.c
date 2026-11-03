@@ -169,7 +169,7 @@ void airy_log_commit(struct airy_log_ring *ring, struct airy_log_record *rec)
 
 	/* Non-blocking eventfd notification to Logger Daemon. */
 	if (ring->efd)
-		eventfd_signal(ring->efd, 1);
+		eventfd_signal(ring->efd);
 }
 
 /* ─── Fastpath: reserve + fill + commit (~50–100 ns) ───────────────────

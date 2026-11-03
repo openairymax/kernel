@@ -5,12 +5,14 @@
  * airy_eventfd.c — EventFD Fault Notification (Airy Pure-C LSM).
  *
  * Notifies the Macro-Supervisor of faults raised in the Micro-Supervisor
- * through a non-blocking eventfd: eventfd_signal() only bumps a counter and
- * never sleeps, so it is safe from the die-notifier and NMI paths.
+ * through a non-blocking eventfd: eventfd_signal() only bumps a counter by
+ * one and never sleeps, so it is safe from the die-notifier and NMI paths.
  *
- * That counter carries at most a packed (fault_code, agent_id) pair, so
- * each signal also records the full fault detail in the bounded airy_fev_*
- * ring declared in airy_cap.h.
+ * The counter is a wakeup count, not a data channel: eventfd adds a fixed
+ * increment per signal, so two faults arriving before a read would leave
+ * the reader an undecodable sum. The full fault detail therefore lives in
+ * the bounded airy_fev_* ring declared in airy_cap.h, which the reader
+ * drains after each wakeup.
  *
  * Design rationale: docs/AirymaxOS/20-modules/09-kernel-agent-supervisor.md
  */
@@ -215,9 +217,8 @@ void airy_eventfd_unregister(void)
  * @agent_id:   The agent that triggered the fault.
  * @timestamp:  Monotonic timestamp of the fault in nanoseconds.
  *
- * Records the fault detail in the airy_fev_* ring, then packs
- * @fault_code and @agent_id into the __u64 eventfd counter value and
- * signals it via the registered eventfd context. The signal is
+ * Records the fault detail in the airy_fev_* ring, then wakes the
+ * Macro-Supervisor through the registered eventfd. The wakeup is
  * non-blocking — if the eventfd counter would overflow, the signal is
  * silently dropped by eventfd_signal().
  *
@@ -249,7 +250,6 @@ void airy_eventfd_signal_fault(__u32 fault_code, __u32 agent_id,
 	};
 	unsigned long flags;
 	struct eventfd_ctx *ctx;
-	__u64 event_val;
 	int ret;
 
 	/*
@@ -265,18 +265,12 @@ void airy_eventfd_signal_fault(__u32 fault_code, __u32 agent_id,
 				    "detail lost\n");
 
 	/*
-	 * Pack the fault event into the __u64 eventfd counter value:
-	 *   lower 32 bits = fault_code
-	 *   upper 32 bits = agent_id
-	 * The full event (including @timestamp) is recoverable by the
-	 * Macro-Supervisor from the airy_fev_* ring; @timestamp is
-	 * therefore not packed into the counter.
+	 * The count is only a wakeup: the reader learns which fault fired,
+	 * and for which agent, from the ring entry posted above.
 	 */
-	event_val = ((__u64)agent_id << 32) | (__u64)fault_code;
-
 	spin_lock_irqsave(&fault_eventfd_lock, flags);
 	ctx = fault_eventfd_ctx;
 	if (ctx)
-		eventfd_signal(ctx, event_val);
+		eventfd_signal(ctx);
 	spin_unlock_irqrestore(&fault_eventfd_lock, flags);
 }
