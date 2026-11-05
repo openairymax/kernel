@@ -32,6 +32,14 @@ CONFIG_DEBUG_INFO_BTF=y
 CONFIG_BPF=y
 CONFIG_BPF_SYSCALL=y
 CONFIG_BPF_JIT=y
+# 非特权 BPF 默认关闭：本产品不向非特权用户开放 BPF 程序加载，它本身就是
+# 可利用的攻击面，也是 x86 上 eIBRS 生效时内核在 0.06 s 打印的那条
+# "Spectre V2 : WARNING: Unprivileged eBPF is enabled" 的唯一来源——
+# arch/x86/kernel/cpu/bugs.c 的 spectre_v2_select_mitigation() 以
+# unprivileged_ebpf_enabled() 为条件，而该值来自 sysctl 初值。这一行早于
+# 任何用户态 sysctl.d 生效，默认值只能由编译期决定：=y 时初值为 2（永久
+# 关闭），管理方仍可下调到 0。四架构同一口径，不把加固只落在 x86。
+CONFIG_BPF_UNPRIV_DEFAULT_OFF=y
 # BPF_EVENTS 位于 kernel/trace/Kconfig 的 `if FTRACE` 区块内，依赖
 # (KPROBE_EVENTS || UPROBE_EVENTS) && PERF_EVENTS；显式开启 FTRACE 与
 # KPROBES 保证该链路在各架构 base defconfig 上均成立（OS-KER-106）。
