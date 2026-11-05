@@ -61,3 +61,12 @@ CONFIG_NUMA_BALANCING=y
 # never reaches a real-time priority. Measured on hardware: chrt -r fails
 # in a cgroup with rt_runtime_us=0 and succeeds at 190000.
 # CONFIG_RT_GROUP_SCHED is not set
+
+# IMA/EVM built-in key paths: openeuler_defconfig enables
+# CONFIG_IMA_LOAD_X509 and CONFIG_EVM_LOAD_X509 pointing at
+# /etc/keys/x509_ima.der and /etc/keys/x509_evm.der. No package ships
+# those files, so kernel init prints one "integrity: Unable to open file"
+# per path on every boot. Keep the loaders off until the trust chain
+# provides real key material.
+# CONFIG_IMA_LOAD_X509 is not set
+# CONFIG_EVM_LOAD_X509 is not set
