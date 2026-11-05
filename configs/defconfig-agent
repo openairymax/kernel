@@ -52,3 +52,12 @@ CONFIG_NUMA_BALANCING=y
 
 # LSM: keep BPF_LSM off (airy_lsm provides hook surface, not BPF-based)
 # CONFIG_BPF_LSM is not set
+
+# Real-time bandwidth: keep the vanilla global RT budget. With
+# CONFIG_RT_GROUP_SCHED=y systemd gives every slice a share of the root
+# runtime but leaves leaf unit cgroups at cpu.rt_runtime_us=0, so a thread
+# inside a unit asking for SCHED_RR gets EPERM even for root. rtkit then
+# prints "Failed to make ourselves RT" on every boot and desktop audio
+# never reaches a real-time priority. Measured on hardware: chrt -r fails
+# in a cgroup with rt_runtime_us=0 and succeeds at 190000.
+# CONFIG_RT_GROUP_SCHED is not set
