@@ -9,6 +9,7 @@
 #include <linux/module.h>
 #include <linux/pci.h>
 #include <linux/acpi.h>
+#include <linux/suspend.h>
 
 #include "fw/acpi.h"
 
@@ -1537,12 +1538,35 @@ static void iwl_pci_remove(struct pci_dev *pdev)
 
 #ifdef CONFIG_PM_SLEEP
 
+/*
+ * Platforms whose ACPI _D3cold descriptor holds no power resource for the
+ * WLAN endpoint: the link is cut on s2idle entry but never powered back, so
+ * config space reads back 0xffffffff on resume.  Keep such devices on D3hot.
+ */
+static const struct pci_device_id iwl_d3cold_deny[] = {
+	{ PCI_VDEVICE(INTEL, 0x272b) },
+	{ }
+};
+
+static void iwl_d3cold_guard(struct pci_dev *pdev)
+{
+	if (pm_suspend_target_state != PM_SUSPEND_TO_IDLE)
+		return;
+
+	if (!pci_match_id(iwl_d3cold_deny, pdev))
+		return;
+
+	pci_d3cold_disable(pdev);
+}
+
 static int iwl_pci_suspend(struct device *device)
 {
 	/* Before you put code here, think about WoWLAN. You cannot check here
 	 * whether WoWLAN is enabled or not, and your code will run even if
 	 * WoWLAN is enabled - don't kill the NIC, someone may need it in Sx.
 	 */
+
+	iwl_d3cold_guard(to_pci_dev(device));
 
 	return 0;
 }
