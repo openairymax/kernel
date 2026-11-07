@@ -70,3 +70,14 @@ CONFIG_NUMA_BALANCING=y
 # provides real key material.
 # CONFIG_IMA_LOAD_X509 is not set
 # CONFIG_EVM_LOAD_X509 is not set
+
+# Input: the I2C-HID chain is how current laptops expose their touchpad.
+# openeuler_defconfig keeps the PCI glue of the Designware controller off
+# while core and platform are already modular, so the LPSS controllers of
+# Arrow Lake-H (8086:7750/7751/7778/777a/777b) never bind, i2c_hid_acpi
+# has no adapter to attach to, and the device is absent from the input
+# layer. Measured on a LENOVO 83JK with the 6.6.161-alk image built from
+# this recipe: /sys/bus/i2c/devices holds one DMI adapter only and
+# /proc/bus/input/devices has no touchpad entry, so libinput cannot see it
+# either.
+CONFIG_I2C_DESIGNWARE_PCI=m
