@@ -17,7 +17,7 @@
 
 static int __init airy_core_init(void)
 {
-	pr_info("Airymax ALK-%u.%u.%u — Agent Lifecycle Kernel booting\n",
+	pr_info("Airymax ALK-%u.%u.%u - Agent Lifecycle Kernel booting\n",
 		AIRY_BUILD_VERSION_MAJOR,
 		AIRY_BUILD_VERSION_MINOR,
 		AIRY_BUILD_VERSION_PATCH);
