@@ -738,6 +738,23 @@
 #define INTEL_ATS_M_IDS(info) \
 	INTEL_ATS_M150_IDS(info), \
 	INTEL_ATS_M75_IDS(info)
+/* ARL */
+#define INTEL_ARL_H_IDS(info) \
+	INTEL_VGA_DEVICE(0x7D51, info), \
+	INTEL_VGA_DEVICE(0x7DD1, info)
+
+#define INTEL_ARL_U_IDS(info) \
+	INTEL_VGA_DEVICE(0x7D41, info)
+
+#define INTEL_ARL_S_IDS(info) \
+	INTEL_VGA_DEVICE(0x7D67, info), \
+	INTEL_VGA_DEVICE(0xB640, info)
+
+#define INTEL_ARL_IDS(info) \
+	INTEL_ARL_H_IDS(info), \
+	INTEL_ARL_U_IDS(info), \
+	INTEL_ARL_S_IDS(info)
+
 /* MTL */
 #define INTEL_MTL_M_IDS(info) \
 	INTEL_VGA_DEVICE(0x7D40, info), \
@@ -748,7 +765,9 @@
 	INTEL_VGA_DEVICE(0x7D55, info), \
 	INTEL_VGA_DEVICE(0x7DD5, info)
 
+/* ARL shares the Meteor Lake device info, as upstream does. */
 #define INTEL_MTL_IDS(info) \
+	INTEL_ARL_IDS(info), \
 	INTEL_MTL_M_IDS(info), \
 	INTEL_MTL_P_IDS(info)
 
