@@ -117,21 +117,30 @@ static int i915_component_master_match(struct device *dev, int subcomponent,
 	return 0;
 }
 
-/* check whether Intel graphics is present and reachable */
-static int i915_gfx_present(struct pci_dev *hdac_pci)
+/*
+ * Find the Intel display device reachable from the HDA controller, or NULL.
+ * The returned reference must be dropped with pci_dev_put().
+ */
+static struct pci_dev *i915_gfx_dev(struct pci_dev *hdac_pci)
 {
 	struct pci_dev *display_dev = NULL;
 
 	for_each_pci_dev(display_dev) {
 		if (display_dev->vendor == PCI_VENDOR_ID_INTEL &&
 		    (display_dev->class >> 16) == PCI_BASE_CLASS_DISPLAY &&
-		    connectivity_check(display_dev, hdac_pci)) {
-			pci_dev_put(display_dev);
-			return true;
-		}
+		    connectivity_check(display_dev, hdac_pci))
+			return display_dev;
 	}
 
-	return false;
+	return NULL;
+}
+
+/* has i915 actually taken the display device? */
+static bool i915_took_dev(struct pci_dev *gpu)
+{
+	struct device_driver *drv = gpu->dev.driver;
+
+	return drv && !strcmp(drv->name, "i915");
 }
 
 /**
@@ -149,32 +158,47 @@ static int i915_gfx_present(struct pci_dev *hdac_pci)
 int snd_hdac_i915_init(struct hdac_bus *bus)
 {
 	struct drm_audio_component *acomp;
+	struct pci_dev *gpu;
 	int err;
 
-	if (!i915_gfx_present(to_pci_dev(bus->dev)))
+	gpu = i915_gfx_dev(to_pci_dev(bus->dev));
+	if (!gpu)
 		return -ENODEV;
 
 	err = snd_hdac_acomp_init(bus, NULL,
 				  i915_component_master_match,
 				  sizeof(struct i915_audio_component) - sizeof(*acomp));
 	if (err < 0)
-		return err;
+		goto out_put;
 	acomp = bus->audio_component;
-	if (!acomp)
-		return -ENODEV;
+	if (!acomp) {
+		err = -ENODEV;
+		goto out_put;
+	}
 	if (!acomp->ops) {
-		if (!IS_ENABLED(CONFIG_MODULES) ||
-		    !request_module("i915")) {
-			/* 60s timeout */
+		err = IS_ENABLED(CONFIG_MODULES) ? request_module("i915") : 0;
+		/*
+		 * An Intel display device being present does not mean i915
+		 * supports it: with a GPU newer than this kernel the module
+		 * loads, matches nothing and registers no component master,
+		 * so waiting here burns the full timeout on the boot path
+		 * while the HDA controller probe is blocked.  Wait only when
+		 * i915 has actually taken the device.
+		 */
+		if (!err && i915_took_dev(gpu))
 			wait_for_completion_killable_timeout(&acomp->master_bind_complete,
 							     msecs_to_jiffies(60 * 1000));
-		}
 	}
+	pci_dev_put(gpu);
 	if (!acomp->ops) {
 		dev_info(bus->dev, "couldn't bind with audio component\n");
 		snd_hdac_acomp_exit(bus);
 		return -ENODEV;
 	}
 	return 0;
+
+out_put:
+	pci_dev_put(gpu);
+	return err;
 }
 EXPORT_SYMBOL_GPL(snd_hdac_i915_init);
