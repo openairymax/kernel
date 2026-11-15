@@ -765,7 +765,10 @@
 	INTEL_VGA_DEVICE(0x7D55, info), \
 	INTEL_VGA_DEVICE(0x7DD5, info)
 
-/* ARL shares the Meteor Lake device info, as upstream does. */
+/*
+ * ARL 与 MTL 共用设备信息。本基线（6.6）尚未正式支持 MTL 世代，两者都保留
+ * require_force_probe：默认不绑定，需要显式 i915.force_probe=<id> 才启用。
+ */
 #define INTEL_MTL_IDS(info) \
 	INTEL_ARL_IDS(info), \
 	INTEL_MTL_M_IDS(info), \
