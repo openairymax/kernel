@@ -15,12 +15,15 @@
  * data and bootstrap planes are answered -AIRY_ENOTSUP rather than
  * served here; 549 validates its MemoryRoVol op contract through
  * airy_rovol_serve(), 550 its sched_tac op contract through
- * airy_sched_serve(), and 551 records the notified phase.
+ * airy_sched_serve(), and 551 records the notified phase. Each
+ * authenticated 548 request reports one airy_ipc_send, which is the
+ * control-plane counterpart of the ring's accept point.
  */
 
 #include <linux/syscalls.h>
 #include <linux/uaccess.h>
 #include <linux/sched.h>
+#include <linux/ktime.h>
 #include <linux/lsm_hooks.h>
 
 #include <linux/airymax/ipc.h>
@@ -30,6 +33,7 @@
 #include <linux/airymax/error.h>
 
 #include <airymax/airy_agent.h>
+#include <airymax/airy_ipc_trace.h>
 #include <airymax/airy_lockdown.h>
 
 #include "../../security/airy/airy_cap.h"
@@ -229,6 +233,8 @@ __must_check int airy_invoke_dispatch(airy_cap_t cap,
 				      const struct airy_ipc_msg_hdr *msg)
 {
 	__u32 agent_id;
+	ktime_t start;
+	bool trace;
 	int ret;
 
 	if (unlikely(!msg))
@@ -245,6 +251,9 @@ __must_check int airy_invoke_dispatch(airy_cap_t cap,
 	if (unlikely(ret))
 		return ret;
 
+	trace = airy_send_on();
+	start = trace ? ktime_get() : 0;
+
 	switch (msg->opcode) {
 	case AIRY_IPC_OP_FREEZE:
 		/*
@@ -252,10 +261,12 @@ __must_check int airy_invoke_dispatch(airy_cap_t cap,
 		 * of the FREEZE opcode. Ring freezing itself runs on the
 		 * io_uring data plane and does not enter this path.
 		 */
-		return airy_badge_revoke(msg);
+		ret = airy_badge_revoke(msg);
+		break;
 	case AIRY_IPC_OP_CAP_RESPONSE:
 		/* sec_d COMPILE_BADGE — install into the target slot */
-		return airy_badge_install(msg);
+		ret = airy_badge_install(msg);
+		break;
 	default:
 		/*
 		 * SEND/SEND_BATCH/RECV/CANCEL carry the IPC stream on the
@@ -267,8 +278,23 @@ __must_check int airy_invoke_dispatch(airy_cap_t cap,
 		 * sec_d-only syscall, so the request is refused
 		 * explicitly rather than awaited.
 		 */
-		return -AIRY_ENOTSUP;
+		ret = -AIRY_ENOTSUP;
+		break;
 	}
+
+	/*
+	 * The point where the control plane accepted a header is the
+	 * counterpart of the ring's accept point, so it reports through the
+	 * same send-side event. Only authenticated callers get here, which
+	 * is what lets the trace attribute the hop to a confirmed identity;
+	 * whether the handler then served or refused the opcode is not part
+	 * of the frozen payload and stays out of the event.
+	 */
+	if (trace)
+		airy_send_emit(msg, agent_id, 0,
+			       ktime_to_ns(ktime_sub(ktime_get(), start)));
+
+	return ret;
 }
 
 /*
