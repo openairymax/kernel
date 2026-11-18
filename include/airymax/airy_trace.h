@@ -24,7 +24,6 @@
 
 /* Independent ftrace instance that holds the agent trace stream. */
 #define AIRY_TRACE_INST_NAME	"agent_trace"
-#define AIRY_TRACE_BUF_KB	16384
 
 /* State transition reason codes, 08-agent-tracing.md §7.2. */
 enum airy_trace_reason {
@@ -74,18 +73,12 @@ _Static_assert(AIRY_AGENT_STATE_MAX == 8,
  * apart from the global stream (01-ftrace-framework.md §7.3); the
  * directory is materialised under instances/ once the tracing
  * filesystem comes up, and its buffer size is then set from
- * userspace (08-agent-tracing.md §3.3). Non-static so both the LSM
- * init path and KUnit drive the same instance.
+ * userspace (08-agent-tracing.md §3.3).  Callers must run it before
+ * tracer_init_tracefs(), otherwise events/airy is never populated.
  *
- * Return: 0 on success; -Exxx when the instance cannot be created.
+ * Return: 0 on success or when the instance already exists; -ENOMEM
+ *         when it cannot be created.
  */
 __must_check int airy_trace_init(void);
-
-/**
- * airy_trace_exit - release the agent_trace ftrace instance
- *
- * Undoes airy_trace_init(). Safe to call when no instance exists.
- */
-void airy_trace_exit(void);
 
 #endif /* _AIRY_TRACE_H */
