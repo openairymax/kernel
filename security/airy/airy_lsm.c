@@ -286,14 +286,14 @@ static int __init airy_init(void)
 	airy_die_notify_init();
 
 	/*
-	 * Agent behaviour tracing is a mandatory observability baseline
-	 * (OS-OBS-081), so a failed instance is reported as a failed LSM
-	 * init rather than silently dropped.
+	 * Agent behaviour tracing is the observability baseline (OS-OBS-081),
+	 * but it shares no state with the hooks registered above.  Losing the
+	 * instance must not take enforcement down with it, so the failure is
+	 * reported once, at error level, and boot continues.
 	 */
 #if IS_ENABLED(CONFIG_AIRY_AGENT_TRACING)
-	rc = airy_trace_init();
-	if (rc)
-		return rc;
+	if (airy_trace_init())
+		pr_err("airy: continuing without the agent trace instance\n");
 #endif
 
 	/*
