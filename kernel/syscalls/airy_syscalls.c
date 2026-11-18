@@ -1,23 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * AirymaxOS ALK syscall entry points: airy_sys_call (548) and the
- * rovol / sched / cognition control syscalls 549-551.
- *
  * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
- * The numbers sit above the x32 historical range (512-547); the registry
- * is the SSoT in 140-application-development/07-syscall-registry.md.
+ * AirymaxOS ALK syscall entry points: airy_sys_call (548) and the
+ * rovol / sched / cognition control syscalls 549-551.  The numbers sit
+ * above the x32 historical range (512-547); the registry is the SSoT
+ * in 140-application-development/07-syscall-registry.md.
  *
- * airy_sys_call (548) is the sec_d-only capability management entry
- * (30-interfaces/01-syscalls.md §1.4). It dispatches on msg->opcode and
- * serves both halves of the badge lifecycle: install (airy_badge_install)
- * and cascading revocation (airy_badge_revoke). Valid opcodes of the
- * data and bootstrap planes are answered -AIRY_ENOTSUP rather than
- * served here; 549 validates its MemoryRoVol op contract through
- * airy_rovol_serve(), 550 its sched_tac op contract through
- * airy_sched_serve(), and 551 records the notified phase. Each
- * authenticated 548 request reports one airy_ipc_send, which is the
- * control-plane counterpart of the ring's accept point.
+ * 548 is the sec_d-only capability management entry.  It serves the
+ * badge lifecycle (install / cascading revoke) and answers the opcodes
+ * of other planes -AIRY_ENOTSUP; 549-551 validate their op contracts.
+ * Each authenticated 548 request reports one airy_ipc_send.
  */
 
 #include <linux/syscalls.h>

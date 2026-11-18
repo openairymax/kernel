@@ -5,28 +5,17 @@
  * airy_trace.c — Agent trace instance lifecycle.
  *
  * Owns the single CREATE_TRACE_POINTS translation unit for
- * include/trace/events/airy.h, so every trace_airy_*() emit helper
- * resolves to the tracepoint objects defined here, and creates the
- * independent agent_trace ftrace instance that holds the agent stream
- * apart from the global buffer.
+ * include/trace/events/airy.h and creates the agent_trace ftrace
+ * instance.  The instance must exist before tracer_init_tracefs()
+ * materialises instances/: trace_array_get_by_name() binds every
+ * registered event while trace_instance_dir is still NULL, and
+ * trace_array_create_dir() later projects that binding into events/airy.
  *
- * The instance must exist before the fs_initcall tracer_init_tracefs()
- * materialises instances/: while trace_instance_dir is still NULL,
- * trace_array_get_by_name() (the public creator — it calls the static
- * trace_array_create_systems(), and returns an array that is already on
- * ftrace_trace_arrays) binds every registered airy event through
- * __trace_early_add_events().  That binding is what
- * trace_array_create_dir() later projects into events/airy, because
- * __add_event_to_tracers() only walks arrays that exist when an event is
- * registered.  Creating the instance after tracing_init_dentry() instead
- * would leave an instance without an events directory.
+ * The reference is never dropped: removing the instance through tracefs
+ * would make the observability baseline a moving target.
  *
- * The reference taken here is never dropped: it pins the instance for the
- * lifetime of the kernel so a removal through tracefs cannot turn the
- * observability baseline into a moving target.
- *
- * Design rationale: docs/AirymaxOS/90-observability/08-agent-tracing.md
- * §1.1 (OS-KER-171); 01-ftrace-framework.md §7.3 (OS-KER-055).
+ * SSoT: 90-observability/08-agent-tracing.md §1.1 (OS-KER-171);
+ *       01-ftrace-framework.md §7.3 (OS-KER-055).
  */
 
 #include <linux/errno.h>

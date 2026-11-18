@@ -4,21 +4,14 @@
  *
  * airy_policy.c — the Airy policy decision table runtime.
  *
- * Registers compiled tables, maps each table's field names onto the
- * hook field vector, evaluates the first matching row and merges the
- * per-table verdicts pessimistically. The runtime owns no policy: it
- * never inspects a table name or a field value of its own.
+ * Registers compiled tables, maps field names onto the hook field
+ * vector, evaluates the first matching row and merges verdicts
+ * pessimistically.  Two registration paths share one registry: the
+ * boot path registers const tables compiled from .adl sources, and
+ * the securityfs write path adds `rule <hook> <field>=<value>
+ * <allow|deny>` predicates at runtime.
  *
- * Two registration paths share one registry. The boot path registers
- * const tables compiled from .adl sources and is the only one that runs
- * before policy evaluation starts; the securityfs write path adds the
- * same structures at runtime from `rule <hook> <field>=<value>
- * <allow|deny>` lines so an operator can install one predicate without
- * rebuilding a table image.
- *
- * SSoT: 110-security/10-policy-compiler.md §5 (field contract), §6
- *       (verdict merge), §7 (registration), §8 (observability), §9
- *       (concurrency).
+ * SSoT: 110-security/10-policy-compiler.md §5-§9.
  */
 
 #include <linux/atomic.h>
