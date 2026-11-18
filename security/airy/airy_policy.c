@@ -9,6 +9,13 @@
  * per-table verdicts pessimistically. The runtime owns no policy: it
  * never inspects a table name or a field value of its own.
  *
+ * Two registration paths share one registry. The boot path registers
+ * const tables compiled from .adl sources and is the only one that runs
+ * before policy evaluation starts; the securityfs write path adds the
+ * same structures at runtime from `rule <hook> <field>=<value>
+ * <allow|deny>` lines so an operator can install one predicate without
+ * rebuilding a table image.
+ *
  * SSoT: 110-security/10-policy-compiler.md §5 (field contract), §6
  *       (verdict merge), §7 (registration), §8 (observability), §9
  *       (concurrency).
@@ -22,6 +29,7 @@
 #include <linux/mutex.h>
 #include <linux/security.h>
 #include <linux/seq_file.h>
+#include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/types.h>
 
@@ -411,9 +419,232 @@ static int pol_open(struct inode *inode, struct file *file)
 	return single_open(file, pol_show, NULL);
 }
 
+/*
+ * Runtime rule intake
+ *
+ * One line installs one table with a single row and a single predicate:
+ *
+ *	rule <hook> <field>=<value> <allow|deny>
+ *
+ * Every line is parsed and validated before any table is registered, so a
+ * multi-line write installs all of its rules or none. The table and its
+ * row, predicate, name and field name live in one allocation; the
+ * registry keeps the pointer and evaluation is lock-free, so a registered
+ * table is never freed and is immutable for the life of the kernel.
+ *
+ * Names carry a monotonic suffix, so a batch can never collide with a
+ * compiled table name or with a previous write.
+ */
+#define POL_CLI_LINES	8
+#define POL_CLI_NAME	24
+#define POL_CLI_FIELD	24
+
+struct airy_pol_cli {
+	struct airy_policy_table table;
+	struct airy_policy_row row;
+	struct airy_policy_cond cond;
+	const char *field_names[1];
+	char name[POL_CLI_NAME];
+	char field[POL_CLI_FIELD];
+};
+
+/* Serialises intake: capacity and name allocation are decided under it. */
+static DEFINE_MUTEX(airy_pol_write_lock);
+static atomic_t airy_pol_seq = ATOMIC_INIT(0);
+
+static char *pol_tok(char **cursor)
+{
+	char *p = *cursor;
+	char *tok;
+
+	while (*p == ' ' || *p == '\t')
+		p++;
+	if (!*p)
+		return NULL;
+	tok = p;
+	while (*p && *p != ' ' && *p != '\t')
+		p++;
+	if (*p)
+		*p++ = '\0';
+	*cursor = p;
+
+	return tok;
+}
+
+static int pol_verdict(const char *word, u8 *verdict)
+{
+	if (!strcmp(word, "allow")) {
+		*verdict = AIRY_VERDICT_ALLOW;
+		return 0;
+	}
+	if (!strcmp(word, "deny")) {
+		*verdict = AIRY_VERDICT_DENY;
+		return 0;
+	}
+
+	return -EINVAL;
+}
+
+static int pol_cli_parse(char *line, struct airy_pol_cli *cli)
+{
+	char *cursor = line;
+	char *word, *eq;
+	u8 hook, slot;
+	u64 value;
+	int rc;
+
+	word = pol_tok(&cursor);
+	if (!word || strcmp(word, "rule"))
+		return -EINVAL;
+
+	word = pol_tok(&cursor);
+	if (!word)
+		return -EINVAL;
+	rc = pol_hook_of(word, &hook);
+	if (rc)
+		return rc;
+
+	word = pol_tok(&cursor);
+	if (!word)
+		return -EINVAL;
+	eq = strchr(word, '=');
+	if (!eq || eq == word || !eq[1])
+		return -EINVAL;
+	*eq = '\0';
+	rc = pol_field_of(hook, word, &slot);
+	if (rc)
+		return rc;
+	rc = kstrtoull(eq + 1, 0, &value);
+	if (rc)
+		return -EINVAL;
+	rc = strscpy(cli->field, word, sizeof(cli->field));
+	if (rc < 0)
+		return -EINVAL;
+
+	word = pol_tok(&cursor);
+	if (!word || pol_tok(&cursor))
+		return -EINVAL;
+
+	cli->cond.field = 0;
+	cli->cond.op = AIRY_CMP_EQ;
+	cli->cond.value = value;
+	cli->row.conds = &cli->cond;
+	cli->row.cond_count = 1;
+	cli->row.fault = 0;
+	rc = pol_verdict(word, &cli->row.verdict);
+	if (rc)
+		return rc;
+
+	cli->table.name = cli->name;
+	cli->table.hook = airy_pol_hooks[hook];
+	cli->table.rows = &cli->row;
+	cli->table.row_count = 1;
+	cli->table.field_count = 1;
+	cli->table.field_names = cli->field_names;
+	cli->table.default_verdict = AIRY_VERDICT_ALLOW;
+	cli->field_names[0] = cli->field;
+
+	return 0;
+}
+
+static int pol_cli_check(const struct airy_pol_cli *cli)
+{
+	u8 hook, map[AIRY_POLICY_MAX_FIELDS];
+	int rc;
+
+	rc = pol_meta_ok(&cli->table);
+	if (rc)
+		return rc;
+	rc = pol_hook_of(cli->table.hook, &hook);
+	if (rc)
+		return rc;
+
+	return pol_map(hook, &cli->table, map);
+}
+
+static ssize_t pol_write(struct file *file, const char __user *ubuf,
+			 size_t len, loff_t *ppos)
+{
+	struct airy_pol_cli *batch[POL_CLI_LINES];
+	struct airy_pol_cli *cli;
+	unsigned int i, n = 0, committed = 0;
+	unsigned int count;
+	char *buf, *line, *cursor;
+	ssize_t ret = len;
+	int rc;
+
+	if (!len)
+		return 0;
+	if (len > PAGE_SIZE)
+		return -EINVAL;
+
+	buf = memdup_user_nul(ubuf, len);
+	if (IS_ERR(buf))
+		return PTR_ERR(buf);
+
+	mutex_lock(&airy_pol_write_lock);
+
+	cursor = buf;
+	while ((line = strsep(&cursor, "\n")) != NULL) {
+		line = strim(line);
+		if (!*line)
+			continue;
+		if (n == POL_CLI_LINES) {
+			ret = -E2BIG;
+			goto out;
+		}
+		batch[n] = kzalloc(sizeof(*batch[n]), GFP_KERNEL);
+		if (!batch[n]) {
+			ret = -ENOMEM;
+			goto out;
+		}
+		cli = batch[n++];
+		snprintf(cli->name, sizeof(cli->name), "wire-%u",
+			 atomic_inc_return(&airy_pol_seq));
+		rc = pol_cli_parse(line, cli);
+		if (!rc)
+			rc = pol_cli_check(cli);
+		if (rc) {
+			ret = rc;
+			goto out;
+		}
+	}
+
+	if (!n) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	/* Pair with the release store in airy_policy_register(). */
+	count = smp_load_acquire(&airy_pol_count);
+	if (count + n > AIRY_POLICY_MAX_TABLES) {
+		ret = -ENOSPC;
+		goto out;
+	}
+
+	for (i = 0; i < n; i++) {
+		rc = airy_policy_register(&batch[i]->table);
+		if (unlikely(rc)) {
+			ret = rc;
+			committed = i;
+			goto out;
+		}
+	}
+	committed = n;
+
+out:
+	mutex_unlock(&airy_pol_write_lock);
+	while (n > committed)
+		kfree(batch[--n]);
+	kfree(buf);
+
+	return ret;
+}
+
 static const struct file_operations airy_pol_ops = {
 	.open		= pol_open,
 	.read		= seq_read,
+	.write		= pol_write,
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };
@@ -428,7 +659,7 @@ static int __init airy_pol_fs(void)
 	if (IS_ERR(dir))
 		return PTR_ERR(dir);
 
-	file = securityfs_create_file("policy", 0400, dir, NULL,
+	file = securityfs_create_file("policy", 0600, dir, NULL,
 				      &airy_pol_ops);
 	if (IS_ERR(file))
 		return PTR_ERR(file);
