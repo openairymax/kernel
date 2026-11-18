@@ -22,6 +22,8 @@
 
 #include <linux/airymax/ipc.h>
 
+#include <airymax/airy_ipc_trace.h>
+
 struct vm_area_struct;
 struct page;
 
@@ -200,16 +202,9 @@ int airy_ipc_fast_send_kfifo(struct airy_ipc_kfifo *kf,
 
 /* ─── Trace emission (airy_ipc_trace.c) ─────────────────────────────── */
 /*
- * The *_on() predicates let the hot paths skip timestamping unless a
- * consumer has enabled the matching event; emission is a no-op
- * otherwise.
+ * Declared in <airymax/airy_ipc_trace.h> because the 548 control plane
+ * reports through the same emitter pair.
  */
-bool airy_send_on(void);
-bool airy_recv_on(void);
-void airy_send_emit(const struct airy_ipc_msg_hdr *hdr, u32 src_agent,
-		    u8 fastpath, u64 latency_ns);
-void airy_recv_emit(const struct airy_ipc_msg_hdr *hdr, u32 dst_agent,
-		    u64 latency_ns);
 
 /* ─── Fastpath C-S12 integrity digest ───────────────────────────────── */
 /**
