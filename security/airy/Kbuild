@@ -7,6 +7,7 @@ obj-$(CONFIG_SECURITY_AIRY) += airy.o
 
 airy-y := airy_fs.o \
 	  airy_policy.o \
+	  airy_wx_table.o \
 	  airy_cap_array.o \
 	  airy_cap_derive.o \
 	  airy_cap_check.o \
