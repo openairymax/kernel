@@ -22,6 +22,9 @@
 #include <linux/airymax/sched.h>
 #include <linux/airymax/lsm_types.h>
 
+#include <airymax/airy_agent.h>
+#include <airymax/airy_policy.h>
+
 #include "airy_cap.h"
 
 /* ─── Hook: task_fix_setuid — enforce capability boundary on cred switch ─ */
@@ -50,19 +53,40 @@ static int airy_superv_mmap_addr(unsigned long addr)
 	return 0;
 }
 
-/* ─── Hook: file_mprotect — enforce W^X for capability-gated pages ─────── */
+/* ─── Hook: file_mprotect — gate the write-then-execute transition ─────── */
 static int airy_superv_file_mprotect(struct vm_area_struct *vma,
 				     unsigned long reqprot, unsigned long prot)
 {
-	/*
-	 * Enforce W^X invariant: a page must never be simultaneously
-	 * writable and executable, as this enables code injection from
-	 * a compromised agent.
-	 */
-	if ((prot & (PROT_WRITE | PROT_EXEC)) == (PROT_WRITE | PROT_EXEC))
-		return -EACCES;
+	u64 fields[AIRY_POLICY_MAX_FIELDS] = { };
+	unsigned long old = 0;
 
-	return 0;
+	/*
+	 * Only a mapping that is writable before or after the call and
+	 * becomes executable is a W^X event.  Anything else keeps the
+	 * historical semantics: read-only execution, PROT_NONE, and the
+	 * ordinary file mapping path must not pay for a policy lookup.
+	 *
+	 * The transition test comes first on purpose.  The exception table
+	 * defaults to deny, so consulting it on every mprotect() would refuse
+	 * mapping changes that never touch executable permission.
+	 */
+	if (!(prot & PROT_EXEC) ||
+	    (!(prot & PROT_WRITE) && !(vma->vm_flags & VM_WRITE)))
+		return 0;
+
+	if (vma->vm_flags & VM_READ)
+		old |= PROT_READ;
+	if (vma->vm_flags & VM_WRITE)
+		old |= PROT_WRITE;
+	if (vma->vm_flags & VM_EXEC)
+		old |= PROT_EXEC;
+
+	fields[0] = prot;
+	fields[1] = old;
+	fields[2] = airy_agent_id(current);
+
+	return airy_policy_check(AIRY_POLICY_HOOK_FILE_MPROTECT, fields,
+				 NULL);
 }
 
 /* ─── Hook: capset — gate CAP_SETPCAP propagation across agents ────────── */
