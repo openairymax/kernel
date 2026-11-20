@@ -136,6 +136,27 @@ static const struct airy_policy_table pol_bad_hook = {
 	.default_verdict = AIRY_VERDICT_ALLOW,
 };
 
+static const char *const pol_wx_flds[] = { "req_prot", "old_prot" };
+
+static const struct airy_policy_cond pol_cond_wx[] = {
+	{ .field = 0, .op = AIRY_CMP_EQ, .value = 0x5 },
+	{ .field = 1, .op = AIRY_CMP_EQ, .value = 0x2 },
+};
+
+static const struct airy_policy_row pol_row_wx[] = {
+	POL_ROW(pol_cond_wx, AIRY_VERDICT_ALLOW, 0),
+};
+
+static const struct airy_policy_table pol_wx = {
+	.name = "t-wx",
+	.hook = "file_mprotect",
+	.rows = pol_row_wx,
+	.row_count = ARRAY_SIZE(pol_row_wx),
+	.field_count = ARRAY_SIZE(pol_wx_flds),
+	.field_names = pol_wx_flds,
+	.default_verdict = AIRY_VERDICT_DENY,
+};
+
 static const char *const pol_full_names[AIRY_POLICY_MAX_TABLES + 1] = {
 	"full-0",  "full-1",  "full-2",  "full-3",
 	"full-4",  "full-5",  "full-6",  "full-7",
@@ -429,6 +450,25 @@ static void policy_reset(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 0, cnt.evals);
 }
 
+static void policy_wx(struct kunit *test)
+{
+	u64 hit[AIRY_POLICY_MAX_FIELDS] = { 0x5, 0x2, 7 };
+	u64 miss[AIRY_POLICY_MAX_FIELDS] = { 0x5, 0x1, 7 };
+
+	airy_policy_reset();
+	KUNIT_ASSERT_EQ(test, 0, airy_policy_register(&pol_wx));
+
+	KUNIT_EXPECT_EQ(test, 0,
+			airy_policy_check(AIRY_POLICY_HOOK_FILE_MPROTECT,
+					  hit, NULL));
+	KUNIT_EXPECT_EQ(test, -EACCES,
+			airy_policy_check(AIRY_POLICY_HOOK_FILE_MPROTECT,
+					  miss, NULL));
+	KUNIT_EXPECT_EQ(test, 0,
+			airy_policy_check(AIRY_POLICY_HOOK_FILE_OPEN,
+					  miss, NULL));
+}
+
 static struct kunit_case airy_policy_cases[] = {
 	KUNIT_CASE(policy_cmp),
 	KUNIT_CASE(policy_match),
@@ -446,6 +486,7 @@ static struct kunit_case airy_policy_cases[] = {
 	KUNIT_CASE(policy_dup),
 	KUNIT_CASE(policy_full),
 	KUNIT_CASE(policy_reset),
+	KUNIT_CASE(policy_wx),
 	{}
 };
 
