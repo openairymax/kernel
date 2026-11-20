@@ -74,16 +74,22 @@ airy_pol_fields[AIRY_POLICY_HOOK_MAX][AIRY_POLICY_MAX_FIELDS] = {
 	[AIRY_POLICY_HOOK_INODE_FREE] = {
 		{ "inode_type", 0 },
 	},
+	[AIRY_POLICY_HOOK_FILE_MPROTECT] = {
+		{ "req_prot", 0 },
+		{ "old_prot", 1 },
+		{ "agent_id", 2 },
+	},
 };
 
 static const char *const airy_pol_hooks[AIRY_POLICY_HOOK_MAX] = {
-	[AIRY_POLICY_HOOK_URING_CMD]	= "uring_cmd",
-	[AIRY_POLICY_HOOK_TASK_ALLOC]	= "task_alloc",
-	[AIRY_POLICY_HOOK_TASK_FREE]	= "task_free",
-	[AIRY_POLICY_HOOK_TASK_KILL]	= "task_kill",
-	[AIRY_POLICY_HOOK_FILE_OPEN]	= "file_open",
-	[AIRY_POLICY_HOOK_INODE_ALLOC]	= "inode_alloc_security",
-	[AIRY_POLICY_HOOK_INODE_FREE]	= "inode_free_security",
+	[AIRY_POLICY_HOOK_URING_CMD]		= "uring_cmd",
+	[AIRY_POLICY_HOOK_TASK_ALLOC]		= "task_alloc",
+	[AIRY_POLICY_HOOK_TASK_FREE]		= "task_free",
+	[AIRY_POLICY_HOOK_TASK_KILL]		= "task_kill",
+	[AIRY_POLICY_HOOK_FILE_OPEN]		= "file_open",
+	[AIRY_POLICY_HOOK_INODE_ALLOC]		= "inode_alloc_security",
+	[AIRY_POLICY_HOOK_INODE_FREE]		= "inode_free_security",
+	[AIRY_POLICY_HOOK_FILE_MPROTECT]	= "file_mprotect",
 };
 
 /* Runtime counters kept apart from the immutable table. */
