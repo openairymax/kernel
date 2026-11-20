@@ -282,6 +282,19 @@ static int __init airy_init(void)
 	if (rc)
 		return rc;
 
+	/*
+	 * The W^X exception table is compiled in from the distro lockfile.
+	 * Publishing it must succeed before the hook can run: the table is
+	 * the only source of allowed write-then-execute transitions, so a
+	 * failed registration would leave the hook with nothing to consult.
+	 */
+	rc = airy_policy_register(&airy_wx_table);
+	if (rc) {
+		pr_err("airy: cannot publish the W^X exception table: %d\n",
+		       rc);
+		return rc;
+	}
+
 	/* Register die notifier at INT_MAX priority (airy_die_notify.c) */
 	airy_die_notify_init();
 

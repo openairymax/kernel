@@ -150,6 +150,13 @@ __must_check int airy_policy_register(const struct airy_policy_table *table);
 int airy_policy_check(enum airy_policy_hook hook, const u64 *fields,
 		      u16 *fault);
 
+/*
+ * W^X exception table.  Generated from distro/lockfile/wx-exceptions.toml
+ * by ci/tools/wx-table-gen.py; empty source still yields one deny row so
+ * the registration invariants hold.
+ */
+extern const struct airy_policy_table airy_wx_table;
+
 #if IS_ENABLED(CONFIG_AIRY_KUNIT)
 /**
  * struct airy_pol_cnt - counter snapshot of one registered table
