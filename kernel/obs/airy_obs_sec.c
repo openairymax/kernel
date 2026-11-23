@@ -12,6 +12,7 @@
 #include <linux/atomic.h>
 #include <linux/kernel.h>
 #include <linux/kobject.h>
+#include <linux/seq_buf.h>
 #include <linux/sysfs.h>
 
 #include <linux/airymax/lsm_types.h>
@@ -67,6 +68,32 @@ static ssize_t lsm_show(struct kobject *kobj, struct kobj_attribute *attr,
 			  airy_lsm_enabled(),
 			  (unsigned int)AIRY_LSM_HOOK_IMPLEMENTED,
 			  airy_superv_hook_count());
+}
+
+/**
+ * airy_obs_cap_fmt - Format one capability slot as a single text line.
+ * @buf: Destination buffer.
+ * @len: Capacity of @buf in bytes.
+ * @id: Agent id owning the slot.
+ * @slot: Slot snapshot, already copied out of the bucket lock.
+ *
+ * The random tag is deliberately omitted: it is the anti-forgery secret
+ * that makes a badge valid, so no observation surface may echo it.
+ */
+void airy_obs_cap_fmt(char *buf, size_t len, u32 id,
+		      const struct airy_cap_slot *slot)
+{
+	struct seq_buf sb;
+
+	if (!len)
+		return;
+
+	seq_buf_init(&sb, buf, (unsigned int)len);
+	seq_buf_printf(&sb,
+		       "agent %u: perms=0x%04x epoch=%u flags=0x%08x gen=%u parent=%u\n",
+		       id, slot->perms, slot->epoch, slot->flags,
+		       slot->generation, slot->parent_agent);
+	seq_buf_str(&sb);
 }
 
 static const struct airy_obs_attr sec_attrs[] = {

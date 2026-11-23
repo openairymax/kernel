@@ -13,4 +13,10 @@ airy_obs-y := airy_obs_core.o airy_obs_sec.o airy_obs_superv.o \
 # to follow the same condition as the code it reads.
 airy_obs-$(CONFIG_AIRY_COREKERN) += airy_obs_sched.o airy_obs_ipc.o
 airy_obs-$(CONFIG_AIRY_LOG) += airy_obs_log.o
+
+# The debug surface complements /sys/airy with raw detail that has no stable
+# ABI: capability slot contents, the full last verdict and the log ring
+# bytes.  It is optional, so the object follows CONFIG_DEBUG_FS.
+airy_obs-$(CONFIG_DEBUG_FS) += airy_obs_debugfs.o
+
 airy_obs-$(CONFIG_AIRY_KUNIT) += airy_obs_test.o

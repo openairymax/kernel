@@ -127,6 +127,43 @@ static void obs_daemons_table(struct kunit *test)
 	KUNIT_EXPECT_STREQ(test, "0\n", out);
 }
 
+static void obs_cap_fmt(struct kunit *test)
+{
+	struct airy_cap_slot slot = { };
+	char line[160];
+
+	slot.badge = 0x0001000000000001ULL;
+	slot.randtag = 0xdeadbeef;
+	slot.perms = 0x00ff;
+	slot.epoch = 7;
+	slot.flags = AIRY_CAP_FL_REVOKED;
+	slot.generation = 3;
+	slot.parent_agent = 42;
+
+	airy_obs_cap_fmt(line, sizeof(line), 9, &slot);
+
+	KUNIT_EXPECT_NOT_NULL(test, strstr(line, "agent 9:"));
+	KUNIT_EXPECT_NOT_NULL(test, strstr(line, "perms=0x00ff"));
+	KUNIT_EXPECT_NOT_NULL(test, strstr(line, "epoch=7"));
+	KUNIT_EXPECT_NOT_NULL(test, strstr(line, "flags=0x00000001"));
+	KUNIT_EXPECT_NOT_NULL(test, strstr(line, "gen=3"));
+	KUNIT_EXPECT_NOT_NULL(test, strstr(line, "parent=42"));
+	/* The anti-forgery tag must never reach a readable surface. */
+	KUNIT_EXPECT_NULL(test, strstr(line, "deadbeef"));
+	KUNIT_EXPECT_EQ(test, '\n', line[strlen(line) - 1]);
+}
+
+static void obs_cap_fmt_short(struct kunit *test)
+{
+	struct airy_cap_slot slot = { };
+	char line[8];
+
+	airy_obs_cap_fmt(line, sizeof(line), 1, &slot);
+
+	/* Truncation must still leave a terminated string in the buffer. */
+	KUNIT_EXPECT_LT(test, strlen(line), sizeof(line));
+}
+
 static void obs_dir_guard(struct kunit *test)
 {
 	KUNIT_EXPECT_NULL(test, airy_obs_dir(NULL, "airy"));
@@ -146,6 +183,8 @@ static struct kunit_case airy_obs_cases[] = {
 	KUNIT_CASE(obs_sec_table),
 	KUNIT_CASE(obs_superv_table),
 	KUNIT_CASE(obs_daemons_table),
+	KUNIT_CASE(obs_cap_fmt),
+	KUNIT_CASE(obs_cap_fmt_short),
 	KUNIT_CASE(obs_dir_guard),
 	KUNIT_CASE(obs_fev_guard),
 	{}

@@ -37,7 +37,7 @@ static const char *const obs_adjud_name[] = {
 	[AIRY_ADJUD_RESUME]	= "RESUME",
 };
 
-static const char *obs_op_str(u32 op)
+const char *airy_sv_obs_op_name(u32 op)
 {
 	if (op >= ARRAY_SIZE(obs_op_name) || !obs_op_name[op])
 		return "unknown";
@@ -45,7 +45,7 @@ static const char *obs_op_str(u32 op)
 	return obs_op_name[op];
 }
 
-static const char *obs_adjud_str(u32 adjud)
+const char *airy_sv_obs_adjud_name(u32 adjud)
 {
 	if (adjud >= ARRAY_SIZE(obs_adjud_name) || !obs_adjud_name[adjud])
 		return "unknown";
@@ -90,7 +90,7 @@ static ssize_t last_action_show(struct kobject *kobj,
 
 	return sysfs_emit(buf, "timestamp_ns: %llu\nagent_id: %u\naction: %s\n",
 			  obs.last_ns, obs.last_agent,
-			  obs_op_str(obs.last_op));
+			  airy_sv_obs_op_name(obs.last_op));
 }
 
 static ssize_t adjudications_show(struct kobject *kobj,
@@ -114,7 +114,7 @@ static ssize_t last_adjudication_show(struct kobject *kobj,
 	/* Verdict zero is a valid value (WARN), so only the last operation
 	 * identifies whether the field carries one at all. */
 	action = obs.last_op == AIRY_SV_OBS_ADJUD ?
-		 obs_adjud_str(obs.last_adjud) : "none";
+		 airy_sv_obs_adjud_name(obs.last_adjud) : "none";
 
 	return sysfs_emit(buf, "timestamp_ns: %llu\nagent_id: %u\naction: %s\n",
 			  obs.last_ns, obs.last_agent, action);

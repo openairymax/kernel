@@ -36,10 +36,23 @@ struct airy_obs_attr {
 		.attr = __ATTR(_name, 0444, _name##_show, NULL),	\
 	}
 
+struct airy_cap_slot;
+
+/* 由 airy_obs_core.c 在整棵树发布成功后置位，调试面据此决定是否挂载。 */
+extern bool airy_obs_ready;
+
 struct kobject *airy_obs_dir(struct kobject *parent, const char *name);
 int airy_obs_register(struct kobject *root, const char *dir,
 		      const struct airy_obs_attr *attrs, unsigned int nr);
 int __init airy_obs_proc_init(void);
+
+/* 能力槽行格式化：debugfs 与 KUnit 共用，永不输出防伪随机标签。 */
+void airy_obs_cap_fmt(char *buf, size_t len, u32 id,
+		      const struct airy_cap_slot *slot);
+
+/* 监督命令与裁决名由 sysfs 与 debugfs 共用，避免两份映射。 */
+const char *airy_sv_obs_op_name(u32 op);
+const char *airy_sv_obs_adjud_name(u32 adjud);
 
 int airy_obs_sec_init(struct kobject *root);
 int airy_obs_superv_init(struct kobject *root);

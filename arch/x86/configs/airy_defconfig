@@ -49,6 +49,11 @@ CONFIG_BPF_UNPRIV_DEFAULT_OFF=y
 CONFIG_FTRACE=y
 CONFIG_KPROBES=y
 CONFIG_BPF_EVENTS=y
+# 调试与追踪基线（OS-KER-141）：FTRACE 会隐式选择 TRACING/EVENT_TRACING，
+# 但观测契约要求在片段中显式固定，避免基线 defconfig 漂移时静默丢失。
+CONFIG_DEBUG_FS=y
+CONFIG_TRACING=y
+CONFIG_EVENT_TRACING=y
 # 引导期存储与网络（OP-P0-01）：NVMe 内建进 vmlinuz，使根分区挂载不依赖
 # initramfs 是否收进 nvme 模块；I226-V（B50 双网口）由 igc 驱动。
 CONFIG_BLK_DEV_NVME=y

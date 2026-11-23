@@ -28,6 +28,8 @@
 
 static struct kset *airy_obs_kset;
 
+bool airy_obs_ready;
+
 /**
  * airy_obs_dir - Create a child directory under an observation node.
  * @parent: Parent kobject; must not be NULL.
@@ -147,6 +149,8 @@ static int __init airy_obs_init(void)
 	if (rc)
 		goto err;
 #endif
+
+	airy_obs_ready = true;
 
 	return 0;
 
