@@ -162,6 +162,7 @@ int airy_sv_adjud(struct airy_sv_ctx *ctx, __u32 agent_id, __u32 adjud,
 		return -AIRY_EIPC_CONTEXT;
 
 	sv_report(agent_id, adjud, reason);
+	airy_sv_obs_event(AIRY_SV_OBS_ADJUD, agent_id, adjud);
 
 	return 0;
 }

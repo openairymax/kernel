@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Airymax observation surface (/sys/airy, /proc/airy)
+#
+
+obj-$(CONFIG_AIRY_OBS) += airy_obs.o
+
+airy_obs-y := airy_obs_core.o airy_obs_sec.o airy_obs_superv.o \
+	      airy_obs_daemons.o airy_obs_proc.o
+
+# The scheduling, IPC and log nodes read counters owned by subsystems that
+# only exist in a full build.  KUnit does not enable them, so the table has
+# to follow the same condition as the code it reads.
+airy_obs-$(CONFIG_AIRY_COREKERN) += airy_obs_sched.o airy_obs_ipc.o
+airy_obs-$(CONFIG_AIRY_LOG) += airy_obs_log.o
+airy_obs-$(CONFIG_AIRY_KUNIT) += airy_obs_test.o

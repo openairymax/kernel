@@ -383,4 +383,85 @@ bool airy_fault_ok(__u32 code);
  */
 int __init airy_fault_init(void);
 
+/**
+ * enum airy_sv_obs_op - supervision operations tracked for observability
+ * @AIRY_SV_OBS_NONE: no command has run since boot
+ * @AIRY_SV_OBS_FREEZE: successful freeze of one agent's rings
+ * @AIRY_SV_OBS_THAW: successful thaw of one agent's rings
+ * @AIRY_SV_OBS_ADJUD: successful verdict applied to one agent
+ * @AIRY_SV_OBS_FRZ_ALL: successful system-wide containment
+ */
+enum airy_sv_obs_op {
+	AIRY_SV_OBS_NONE	= 0,
+	AIRY_SV_OBS_FREEZE	= 1,
+	AIRY_SV_OBS_THAW	= 2,
+	AIRY_SV_OBS_ADJUD	= 3,
+	AIRY_SV_OBS_FRZ_ALL	= 4,
+};
+
+/**
+ * struct airy_sv_obs - supervision counters and the most recent command
+ * @freeze_nr: successful per-agent freezes
+ * @thaw_nr: successful thaws
+ * @adjud_nr: successful adjudications
+ * @frz_all_nr: successful system-wide containments
+ * @last_op: one of &enum airy_sv_obs_op
+ * @last_agent: agent of the most recent successful command
+ * @last_adjud: verdict of the most recent adjudication, else zero
+ * @last_ns: CLOCK_MONOTONIC timestamp of the most recent command
+ *
+ * The counters are monotonic since boot; @last_* describe one command
+ * and are published together under a lock so a reader never pairs the
+ * agent of one command with the verdict of another.
+ */
+struct airy_sv_obs {
+	u64 freeze_nr;
+	u64 thaw_nr;
+	u64 adjud_nr;
+	u64 frz_all_nr;
+	u32 last_op;
+	u32 last_agent;
+	u32 last_adjud;
+	u64 last_ns;
+};
+
+/**
+ * airy_sv_obs_event() - record one successful supervision command
+ * @op: one of &enum airy_sv_obs_op
+ * @agent: target agent; zero for system-wide containment
+ * @verdict: adjudication verdict, zero for non-adjudication commands
+ */
+void airy_sv_obs_event(u32 op, u32 agent, u32 verdict);
+
+/**
+ * airy_sv_obs_snap() - take a consistent snapshot of the counters
+ * @out: destination; must not be NULL
+ */
+void airy_sv_obs_snap(struct airy_sv_obs *out);
+
+/**
+ * struct airy_svdev_info - state of the macro_d control device
+ * @active: non-zero while a supervisor holds the device open
+ * @pid: thread-group id of that supervisor, zero when inactive
+ * @since_ns: CLOCK_MONOTONIC time the current open began, zero if never
+ */
+struct airy_svdev_info {
+	u32 active;
+	u32 pid;
+	u64 since_ns;
+};
+
+/**
+ * airy_svdev_snapshot() - read the control device binding
+ * @out: destination; must not be NULL
+ */
+void airy_svdev_snapshot(struct airy_svdev_info *out);
+
+/**
+ * airy_wdog_snapshot() - read the watchdog bookkeeping
+ * @last_ns: receives the last heartbeat time; may be NULL
+ * @latched: receives whether a missed heartbeat is latched; may be NULL
+ */
+void airy_wdog_snapshot(u64 *last_ns, bool *latched);
+
 #endif /* _AIRY_SUPERV_H */

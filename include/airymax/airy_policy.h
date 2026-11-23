@@ -157,7 +157,6 @@ int airy_policy_check(enum airy_policy_hook hook, const u64 *fields,
  */
 extern const struct airy_policy_table airy_wx_table;
 
-#if IS_ENABLED(CONFIG_AIRY_KUNIT)
 /**
  * struct airy_pol_cnt - counter snapshot of one registered table
  *
@@ -175,21 +174,22 @@ struct airy_pol_cnt {
 };
 
 /**
+ * airy_pol_stat - snapshot one table's counters
+ * @slot: registration slot, 0 .. AIRY_POLICY_MAX_TABLES - 1
+ * @out: receives the snapshot, untouched when @slot is out of range
+ *
+ * Read-only view used by the securityfs policy node and by the
+ * /sys/airy/sec statistics aggregate.
+ */
+void airy_pol_stat(u8 slot, struct airy_pol_cnt *out);
+
+#if IS_ENABLED(CONFIG_AIRY_KUNIT)
+/**
  * airy_policy_reset - drop every registration and zero all counters
  *
  * Test-only: a KUnit suite has to start each case from an empty registry.
  */
 void airy_policy_reset(void);
-
-/**
- * airy_pol_stat - snapshot one table's counters
- * @slot: registration slot, 0 .. AIRY_POLICY_MAX_TABLES - 1
- * @out: receives the snapshot, untouched when @slot is out of range
- *
- * Test-only companion of airy_policy_reset(); production builds expose
- * the same numbers through /sys/kernel/security/airy/policy.
- */
-void airy_pol_stat(u8 slot, struct airy_pol_cnt *out);
 #endif
 
 #else /* !CONFIG_SECURITY_AIRY */

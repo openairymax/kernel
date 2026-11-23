@@ -123,12 +123,21 @@ int airy_sv_frz(__u32 agent_id, __u32 reason)
 	if (ret)
 		return ret;
 
-	return sv_ring_run(agent_id, false, SV_RING_FREEZE, reason);
+	ret = sv_ring_run(agent_id, false, SV_RING_FREEZE, reason);
+	if (!ret)
+		airy_sv_obs_event(AIRY_SV_OBS_FREEZE, agent_id, 0);
+
+	return ret;
 }
 
 int airy_sv_frz_all(__u32 reason)
 {
-	return sv_ring_run(0, true, SV_RING_FREEZE, reason);
+	int ret = sv_ring_run(0, true, SV_RING_FREEZE, reason);
+
+	if (!ret)
+		airy_sv_obs_event(AIRY_SV_OBS_FRZ_ALL, 0, 0);
+
+	return ret;
 }
 
 int airy_sv_freeze(struct airy_sv_ctx *ctx, __u32 agent_id, __u32 reason)
@@ -183,6 +192,8 @@ int airy_sv_thaw(struct airy_sv_ctx *ctx, __u32 agent_id)
 	}
 
 	mutex_unlock(&sv_ring_lock);
+
+	airy_sv_obs_event(AIRY_SV_OBS_THAW, agent_id, 0);
 
 	return 0;
 }

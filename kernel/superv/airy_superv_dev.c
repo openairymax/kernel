@@ -27,7 +27,10 @@
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
+#include <linux/ktime.h>
 #include <linux/module.h>
+#include <linux/sched.h>
+#include <linux/spinlock.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
 
@@ -35,6 +38,7 @@
 #include <linux/airymax/superv.h>
 
 #include "../../security/airy/airy_cap.h"
+#include "airy_superv.h"
 
 #define AIRY_SUPERV_DEV_NAME	"airy_superv"
 
@@ -43,20 +47,55 @@ static struct cdev superv_cdev;
 static struct class *superv_class;
 static atomic_t superv_open = ATOMIC_INIT(0);
 
+/* 绑定方信息：只在成功 open 后填写，供 /sys/airy/daemons 读取。 */
+static DEFINE_SPINLOCK(superv_bind_lock);
+static u32 superv_bind_pid;
+static u64 superv_bind_ns;
+
 static int superv_open_dev(struct inode *inode, struct file *file)
 {
+	unsigned long flags;
+
 	if (!capable(CAP_SYS_PTRACE))
 		return -EPERM;
 	if (atomic_cmpxchg(&superv_open, 0, 1))
 		return -EBUSY;
+
+	spin_lock_irqsave(&superv_bind_lock, flags);
+	superv_bind_pid = (u32)task_tgid_nr(current);
+	superv_bind_ns  = ktime_get_mono_fast_ns();
+	spin_unlock_irqrestore(&superv_bind_lock, flags);
+
 	return 0;
 }
 
 static int superv_release_dev(struct inode *inode, struct file *file)
 {
+	unsigned long flags;
+
 	airy_eventfd_unregister();
+
+	spin_lock_irqsave(&superv_bind_lock, flags);
+	superv_bind_pid = 0;
+	superv_bind_ns  = 0;
+	spin_unlock_irqrestore(&superv_bind_lock, flags);
+
 	atomic_set(&superv_open, 0);
 	return 0;
+}
+
+void airy_svdev_snapshot(struct airy_svdev_info *out)
+{
+	unsigned long flags;
+
+	if (!out)
+		return;
+
+	spin_lock_irqsave(&superv_bind_lock, flags);
+	out->active   = (u32)atomic_read(&superv_open);
+	out->pid      = superv_bind_pid;
+	out->since_ns = superv_bind_ns;
+	spin_unlock_irqrestore(&superv_bind_lock, flags);
 }
 
 static ssize_t superv_read(struct file *file, char __user *buf, size_t len,

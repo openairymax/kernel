@@ -44,6 +44,17 @@ int stc_stats_read(void)
 	return atomic_read(&stc_dispatch_count);
 }
 
+/* ─── Read one policy's dispatch count ───────────────────────────────── */
+int stc_stats_policy(enum airy_sched_policy policy)
+{
+	unsigned int idx = (unsigned int)policy;
+
+	if (idx >= ARRAY_SIZE(stc_policy_count))
+		return 0;
+
+	return atomic_read(&stc_policy_count[idx]);
+}
+
 /* ─── debugfs: /sys/kernel/debug/airy_stc/stats ──────────────────────── */
 static int stc_stats_show(struct seq_file *m, void *v)
 {

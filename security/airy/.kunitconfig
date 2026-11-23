@@ -15,6 +15,7 @@ CONFIG_KUNIT=y
 
 CONFIG_SECURITY=y
 CONFIG_SECURITY_AIRY=y
+CONFIG_AIRY_OBS=y
 CONFIG_AIRY_KUNIT=y
 
 # Airy IPC rides on io_uring; the fastpath and IPC-ring tests need it.

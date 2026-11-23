@@ -45,6 +45,11 @@ static int airy_enabled __ro_after_init = 1;
 module_param(airy_enabled, int, 0444);
 MODULE_PARM_DESC(airy_enabled, "Enable Airy Pure-C LSM (default: 1)");
 
+int airy_lsm_enabled(void)
+{
+	return airy_enabled;
+}
+
 /* ─── LSM blob sizes ──────────────────────────────────────────────────── */
 struct lsm_blob_sizes airy_blob_sizes __ro_after_init = {
 	.lbs_task  = sizeof(struct airy_task_sec),

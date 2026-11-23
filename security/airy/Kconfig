@@ -123,6 +123,25 @@ config AIRY_LOCKDOWN_DEFAULT_LEVEL
 	  surfaces; 3 closes every known facility.  Say 0 unless the
 	  deployment requires a sealed boot.
 
+config AIRY_OBS
+	bool "Airymax observation surface (/sys/airy, /proc/airy)"
+	depends on SECURITY_AIRY
+	default y
+	help
+	  Publish the agent runtime's live kernel counters and state at
+	  /sys/airy and /proc/airy (OS-OBS-041, OS-KER-132, OS-KER-133).
+	  Every node reads a counter or state that the owning subsystem
+	  keeps for its own use; the surface never synthesises values, so a
+	  node is present exactly when a real data source exists.
+
+	  The tree is published once kernfs is available, before any user
+	  space runs; a failure withdraws the runtime's presence marker
+	  rather than advertising a runtime whose observation plane is
+	  missing.
+
+	  Say Y unless building a size-constrained image that has been
+	  shown to not need runtime inspection.
+
 config AIRY_KUNIT
 	bool "Airy KUnit regression tests" if !KUNIT_ALL_TESTS
 	depends on KUNIT=y

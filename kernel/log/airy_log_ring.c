@@ -64,6 +64,8 @@ int airy_log_ring_init(struct airy_log_ring *ring, size_t size)
 	ring->kaddr = page_address(ring->pages);
 	ring->efd   = NULL;
 	spin_lock_init(&ring->efd_lock);
+	atomic64_set(&ring->overrun, 0);
+	atomic64_set(&ring->writes, 0);
 
 	/* Records start after the header; capacity must be a power of 2. */
 	usable = ring->size - sizeof(struct airy_log_ring_header);
@@ -133,6 +135,8 @@ struct airy_log_record *airy_log_reserve(struct airy_log_ring *ring, __u64 *pos,
 		idx = head % hdr->capacity;
 	} while (cmpxchg(&hdr->head, head, head + 1) != head);
 
+	if (dropped)
+		atomic64_inc(&ring->overrun);
 	if (overrun)
 		*overrun = dropped;
 	if (pos)
@@ -184,6 +188,8 @@ void airy_log_commit(struct airy_log_ring *ring, __u64 pos)
 		if (cmpxchg(&hdr->committed_head, done, done + 1) != done)
 			continue;
 	}
+
+	atomic64_inc(&ring->writes);
 
 	/* Non-blocking eventfd notification to Logger Daemon. */
 	if (ring->efd)

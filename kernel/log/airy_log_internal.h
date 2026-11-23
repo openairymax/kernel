@@ -43,6 +43,8 @@ struct airy_log_ring {
 	unsigned int	   order;	/* alloc_pages() 阶数		*/
 	struct eventfd_ctx *efd;	/* 通知 Logger Daemon 的 eventfd */
 	spinlock_t	   efd_lock;	/* 串行化 eventfd 注册		*/
+	atomic64_t	   overrun;	/* 因环满被覆盖的槽位数		*/
+	atomic64_t	   writes;	/* 已提交的记录总数			*/
 };
 
 static_assert(offsetof(struct airy_log_record, reserved) % sizeof(__u64) == 0,

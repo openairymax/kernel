@@ -127,6 +127,11 @@ static struct security_hook_list airy_superv_hooks[] __ro_after_init = {
 	LSM_HOOK_INIT(capable,         airy_superv_capable),
 };
 
+unsigned int airy_superv_hook_count(void)
+{
+	return ARRAY_SIZE(airy_superv_hooks);
+}
+
 /**
  * airy_superv_register_hooks - Register Micro-Supervisor supplemental hooks.
  *

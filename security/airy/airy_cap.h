@@ -260,6 +260,8 @@ struct airy_fault_rec {
 
 int airy_fev_post(const struct airy_fault_event *ev);
 int airy_fev_fetch(struct airy_fault_event *ev);
+unsigned int airy_fev_pending(void);
+int airy_fev_peek(unsigned int idx, struct airy_fault_event *ev);
 void airy_fev_reset(void);
 unsigned int airy_fev_lost(void);
 
@@ -296,5 +298,7 @@ void airy_security_fault(__u32 agent_id, __u32 fault_code);
 
 /* ─── Micro-Supervisor Supplemental Hook Registration ─────────────────── */
 int __init airy_superv_register_hooks(void);
+unsigned int airy_superv_hook_count(void);
+int airy_lsm_enabled(void);
 
 #endif /* _SECURITY_AIRY_CAP_H */

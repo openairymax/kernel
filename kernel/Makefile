@@ -134,6 +134,7 @@ obj-$(CONFIG_SYSCTL_KUNIT_TEST) += sysctl-test.o
 
 # Airymax kernel subsystems
 obj-$(CONFIG_SECURITY_AIRY)	+= superv/
+obj-$(CONFIG_AIRY_OBS)		+= obs/
 obj-$(CONFIG_AIRY_SYSCALL)	+= syscalls/
 obj-$(CONFIG_AIRY_COREKERN)	+= corekern/
 obj-$(CONFIG_AIRY_LOG)		+= log/

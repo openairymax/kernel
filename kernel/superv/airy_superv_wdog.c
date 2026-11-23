@@ -126,6 +126,14 @@ void airy_wdog_reset(void)
 	cancel_work_sync(&wdog_work);
 }
 
+void airy_wdog_snapshot(u64 *last_ns, bool *latched)
+{
+	if (last_ns)
+		*last_ns = atomic64_read(&wdog_last);
+	if (latched)
+		*latched = atomic_read(&wdog_latch) != 0;
+}
+
 void __init airy_wdog_init(void)
 {
 	INIT_WORK(&wdog_work, wdog_take);

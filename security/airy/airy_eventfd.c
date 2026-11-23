@@ -106,6 +106,52 @@ int airy_fev_fetch(struct airy_fault_event *ev)
 }
 
 /**
+ * airy_fev_pending - Number of fault details waiting to be fetched.
+ *
+ * Return: The pending-detail count, bounded by AIRY_FEV_RING_NR.
+ */
+unsigned int airy_fev_pending(void)
+{
+	__u32 head = smp_load_acquire(&fev_head);
+	__u32 tail = smp_load_acquire(&fev_tail);
+
+	return (unsigned int)(head - tail);
+}
+
+/**
+ * airy_fev_peek - Copy one pending detail without draining it.
+ * @idx: Offset from the oldest pending detail; 0 is the oldest.
+ * @ev: Destination for the copy; must not be NULL.
+ *
+ * The observation path reads the ring without consuming it, so the
+ * Macro-Supervisor keeps owning the drain cursor.  The copy runs under
+ * the ring lock, which is safe from process context.
+ *
+ * Return: 0 on success, -AIRY_EINVAL if @ev is NULL, -AIRY_ENOENT when
+ *         no detail exists at @idx.
+ */
+int airy_fev_peek(unsigned int idx, struct airy_fault_event *ev)
+{
+	unsigned long flags;
+	__u32 head, tail;
+	int rc = -AIRY_ENOENT;
+
+	if (!ev)
+		return -AIRY_EINVAL;
+
+	raw_spin_lock_irqsave(&fev_lock, flags);
+	head = fev_head;
+	tail = smp_load_acquire(&fev_tail);
+	if (idx < (__u32)(head - tail)) {
+		*ev = fev_ring[(tail + idx) & AIRY_FEV_RING_MASK];
+		rc = 0;
+	}
+	raw_spin_unlock_irqrestore(&fev_lock, flags);
+
+	return rc;
+}
+
+/**
  * airy_fev_reset - Empty the ring and clear the lost counter.
  *
  * Only valid while no producer or consumer is active, i.e. from init and

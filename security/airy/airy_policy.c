@@ -668,16 +668,6 @@ static int __init airy_pol_fs(void)
 
 late_initcall(airy_pol_fs);
 
-#if IS_ENABLED(CONFIG_AIRY_KUNIT)
-void airy_policy_reset(void)
-{
-	mutex_lock(&airy_pol_lock);
-	/* Withdraw the slots before their storage is zeroed for the next case. */
-	smp_store_release(&airy_pol_count, 0);
-	memset(airy_pol_slots, 0, sizeof(airy_pol_slots));
-	mutex_unlock(&airy_pol_lock);
-}
-
 void airy_pol_stat(u8 slot, struct airy_pol_cnt *out)
 {
 	if (!out || slot >= AIRY_POLICY_MAX_TABLES)
@@ -689,5 +679,15 @@ void airy_pol_stat(u8 slot, struct airy_pol_cnt *out)
 	out->audit = atomic64_read(&airy_pol_slots[slot].acc.audit);
 	out->complain = atomic64_read(&airy_pol_slots[slot].acc.complain);
 	out->fault = atomic64_read(&airy_pol_slots[slot].acc.fault);
+}
+
+#if IS_ENABLED(CONFIG_AIRY_KUNIT)
+void airy_policy_reset(void)
+{
+	mutex_lock(&airy_pol_lock);
+	/* Withdraw the slots before their storage is zeroed for the next case. */
+	smp_store_release(&airy_pol_count, 0);
+	memset(airy_pol_slots, 0, sizeof(airy_pol_slots));
+	mutex_unlock(&airy_pol_lock);
 }
 #endif

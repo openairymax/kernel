@@ -1,0 +1,159 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2025-2026 SPHARX Ltd.
+ *
+ * airy_obs_test.c — /sys/airy 属性表契约测试。
+ *
+ * 属性表本身就是观测面的单一真相：注册路径遍历它，测试也遍历它。
+ * 每个用例校验模式固定为 0444、show 回调存在、回调在空 kobject 下
+ * 仍能产出以换行结尾的非空内容——KUnit 没有 kernfs 节点，这条约束
+ * 同时保证了回调不依赖参数。内容校验只断言键名，不比对具体数值，
+ * 因为计数器随引导过程变化。
+ */
+
+#include <kunit/test.h>
+#include <linux/errno.h>
+#include <linux/kernel.h>
+#include <linux/mm.h>
+#include <linux/string.h>
+#include <linux/types.h>
+
+#include <linux/airymax/error.h>
+#include <linux/airymax/superv.h>
+
+#include "../../security/airy/airy_cap.h"
+#include "airy_obs.h"
+
+/*
+ * sysfs_emit() 要求缓冲区页对齐（offset_in_page 检查），而 KUnit 直接
+ * 调用 show 回调、没有 kernfs 提供的页面。这里显式对齐，使真实回调
+ * 的写入路径与运行时完全一致。
+ */
+static char obs_buf[PAGE_SIZE] __aligned(PAGE_SIZE);
+
+static void obs_table(struct kunit *test, const struct airy_obs_attr *attrs,
+		      unsigned int nr)
+{
+	unsigned int i;
+
+	KUNIT_ASSERT_NOT_NULL(test, attrs);
+	KUNIT_ASSERT_GT(test, nr, 0);
+
+	for (i = 0; i < nr; i++) {
+		ssize_t rc;
+
+		KUNIT_ASSERT_NOT_NULL(test, attrs[i].attr.attr.name);
+		KUNIT_EXPECT_EQ(test, 0444, attrs[i].attr.attr.mode);
+		KUNIT_ASSERT_NOT_NULL(test, attrs[i].attr.show);
+
+		memset(obs_buf, 0, sizeof(obs_buf));
+		rc = attrs[i].attr.show(NULL, &attrs[i].attr, obs_buf);
+		KUNIT_ASSERT_GT(test, rc, 0);
+		KUNIT_EXPECT_EQ(test, '\n', obs_buf[rc - 1]);
+		KUNIT_EXPECT_EQ(test, '\0', obs_buf[rc]);
+	}
+}
+
+static const char *obs_show(const struct airy_obs_attr *attrs, unsigned int nr,
+			    const char *name)
+{
+	unsigned int i;
+
+	for (i = 0; i < nr; i++) {
+		if (!strcmp(attrs[i].attr.attr.name, name)) {
+			memset(obs_buf, 0, sizeof(obs_buf));
+			if (attrs[i].attr.show(NULL, &attrs[i].attr, obs_buf) < 0)
+				return NULL;
+			return obs_buf;
+		}
+	}
+
+	return NULL;
+}
+
+static void obs_sec_table(struct kunit *test)
+{
+	const struct airy_obs_attr *attrs;
+	const char *out;
+	unsigned int nr;
+
+	attrs = airy_obs_sec_attrs(&nr);
+	obs_table(test, attrs, nr);
+
+	out = obs_show(attrs, nr, "stats");
+	KUNIT_ASSERT_NOT_NULL(test, out);
+	KUNIT_EXPECT_NOT_NULL(test, strstr(out, "evaluations:"));
+	KUNIT_EXPECT_NOT_NULL(test, strstr(out, "agents:"));
+	KUNIT_EXPECT_NOT_NULL(test, strstr(out, "faults_lost:"));
+
+	out = obs_show(attrs, nr, "lsm");
+	KUNIT_ASSERT_NOT_NULL(test, out);
+	KUNIT_EXPECT_NOT_NULL(test, strstr(out, "hooks:"));
+}
+
+static void obs_superv_table(struct kunit *test)
+{
+	const struct airy_obs_attr *attrs;
+	const char *out;
+	unsigned int nr;
+
+	attrs = airy_obs_superv_attrs(&nr);
+	obs_table(test, attrs, nr);
+
+	out = obs_show(attrs, nr, "stats");
+	KUNIT_ASSERT_NOT_NULL(test, out);
+	KUNIT_EXPECT_NOT_NULL(test, strstr(out, "micro_enforcements:"));
+	KUNIT_EXPECT_NOT_NULL(test, strstr(out, "macro_adjudications:"));
+}
+
+static void obs_daemons_table(struct kunit *test)
+{
+	const struct airy_obs_attr *attrs;
+	const char *out;
+	unsigned int nr;
+
+	attrs = airy_obs_daemons_attrs(&nr);
+	obs_table(test, attrs, nr);
+
+	out = obs_show(attrs, nr, "state");
+	KUNIT_ASSERT_NOT_NULL(test, out);
+	KUNIT_EXPECT_TRUE(test, !strcmp(out, "STOPPED\n") ||
+				!strcmp(out, "RUNNING\n") ||
+				!strcmp(out, "FAULTED\n"));
+
+	/* With no supervisor bound, the pid must read back as zero. */
+	out = obs_show(attrs, nr, "pid");
+	KUNIT_ASSERT_NOT_NULL(test, out);
+	KUNIT_EXPECT_STREQ(test, "0\n", out);
+}
+
+static void obs_dir_guard(struct kunit *test)
+{
+	KUNIT_EXPECT_NULL(test, airy_obs_dir(NULL, "airy"));
+}
+
+static void obs_fev_guard(struct kunit *test)
+{
+	struct airy_fault_event ev;
+
+	KUNIT_EXPECT_EQ(test, -AIRY_EINVAL, airy_fev_peek(0, NULL));
+
+	if (!airy_fev_pending())
+		KUNIT_EXPECT_EQ(test, -AIRY_ENOENT, airy_fev_peek(0, &ev));
+}
+
+static struct kunit_case airy_obs_cases[] = {
+	KUNIT_CASE(obs_sec_table),
+	KUNIT_CASE(obs_superv_table),
+	KUNIT_CASE(obs_daemons_table),
+	KUNIT_CASE(obs_dir_guard),
+	KUNIT_CASE(obs_fev_guard),
+	{}
+};
+
+static struct kunit_suite airy_obs_suite = {
+	.name = "airy_obs",
+	.test_cases = airy_obs_cases,
+};
+
+kunit_test_suites(&airy_obs_suite);

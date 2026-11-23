@@ -34,6 +34,7 @@ enum airy_sched_policy {
 const char *stc_policy_name(enum airy_sched_policy policy);
 void stc_stats_record_dispatch(enum airy_sched_policy policy);
 int stc_stats_read(void);
+int stc_stats_policy(enum airy_sched_policy policy);
 int stc_dispatch_enqueue(struct task_struct *tsk,
 			 enum airy_sched_policy policy);
 
