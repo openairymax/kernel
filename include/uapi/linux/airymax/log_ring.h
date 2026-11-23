@@ -15,7 +15,7 @@
 #ifndef _UAPI_LINUX_AIRYMAX_LOG_RING_H
 #define _UAPI_LINUX_AIRYMAX_LOG_RING_H
 
-#include <linux/types.h>
+#include <linux/airymax/uapi_compat.h>
 #include <linux/ioctl.h>
 
 #include <linux/airymax/log_types.h>
