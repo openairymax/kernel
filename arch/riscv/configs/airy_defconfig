@@ -35,6 +35,8 @@ CONFIG_DEBUG_INFO_BTF=y
 CONFIG_BPF=y
 CONFIG_BPF_SYSCALL=y
 CONFIG_BPF_JIT=y
+# JIT 常开：可编程探针以本机码执行，避免解释执行带来的采样偏差。
+CONFIG_BPF_JIT_ALWAYS_ON=y
 # 非特权 BPF 默认关闭：本产品不向非特权用户开放 BPF 程序加载，它本身就是
 # 可利用的攻击面，也是 x86 上 eIBRS 生效时内核在 0.06 s 打印的那条
 # "Spectre V2 : WARNING: Unprivileged eBPF is enabled" 的唯一来源——
