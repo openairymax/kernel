@@ -18,7 +18,8 @@ airy_superv-y := airy_superv_init.o \
                  airy_superv_adjud.o \
                  airy_superv_fault.o \
                  airy_superv_exec.o \
-                 airy_superv_wdog.o
+                 airy_superv_wdog.o \
+                 airy_superv_dev.o
 
 # KUnit regression for the [IND] supervisor protocol contract: the
 # IDLE->RUNNING gate that keeps commands out of a half-built ring, the

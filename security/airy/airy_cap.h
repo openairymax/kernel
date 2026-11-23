@@ -22,6 +22,7 @@
 #include <linux/airymax/lsm_types.h>
 #include <linux/airymax/error.h>
 #include <linux/airymax/ipc.h>
+#include <linux/airymax/superv.h>
 
 #include <airymax/airy_agent.h>
 
@@ -236,13 +237,11 @@ struct airy_ipc_ring_freeze_state {
  */
 #define AIRY_FEV_RING_ID_NONE	0U
 
-struct airy_fault_event {
-	__u32 ring_id;
-	__u32 fault_code;
-	__u64 timestamp_ns;
-	__u32 agent_id;
-	__u32 pad;
-};
+/*
+ * struct airy_fault_event 的唯一定义在 UAPI 头中：它同时是
+ * /dev/airy_superv 读出的线格式，两层共用一份布局，避免内核内部结构
+ * 与用户态结构各自漂移。
+ */
 
 /*
  * struct airy_fault_rec is the payload carried on airy_die_chain.

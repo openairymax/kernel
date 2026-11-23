@@ -19,6 +19,7 @@
 #define _UAPI_LINUX_AIRYMAX_SUPERV_H
 
 #include <linux/airymax/uapi_compat.h>
+#include <linux/ioctl.h>
 
 /* ─── Supervisor Opcodes ([IND] layer) ──────────────────────────────── */
 #define AIRY_IPC_OP_ADJUDICATE	0x0020	/* macro_d verdict on a fault */
@@ -68,5 +69,32 @@ struct airy_superv_cmd {
 
 _Static_assert(sizeof(struct airy_superv_cmd) == AIRY_SUPERV_CMD_SIZE,
 	       "airy_superv_cmd must be exactly 16 bytes");
+
+/* ─── Fault Channel Device ──────────────────────────────────────────── */
+/*
+ * /dev/airy_superv 是 Micro-Supervisor 交给 Macro-Supervisor 的故障通道。
+ * 单消费者：同一时刻只允许一个进程打开；BIND_EFD 把 eventfd 交给内核用于
+ * 唤醒，故障明细由 read 逐条排空（24B/条，空则 EAGAIN），丢失计数由 LOST
+ * 读取。eventfd 只承载"有新故障"的计数，明细不随之丢失。
+ */
+#define AIRY_SUPERV_ABI		1
+#define AIRY_SUPERV_DEV_PATH	"/dev/airy_superv"
+
+struct airy_fault_event {
+	__u32 ring_id;
+	__u32 fault_code;
+	__u64 timestamp_ns;
+	__u32 agent_id;
+	__u32 pad;
+};
+
+#define AIRY_FAULT_EVENT_SIZE	24
+
+_Static_assert(sizeof(struct airy_fault_event) == AIRY_FAULT_EVENT_SIZE,
+	       "airy_fault_event must be exactly 24 bytes");
+
+#define AIRY_SUPERV_IOC_BIND_EFD	_IOW('A', 0x60, __s32)
+#define AIRY_SUPERV_IOC_UNBIND		_IO('A', 0x61)
+#define AIRY_SUPERV_IOC_LOST		_IOR('A', 0x62, __u32)
 
 #endif /* _UAPI_LINUX_AIRYMAX_SUPERV_H */

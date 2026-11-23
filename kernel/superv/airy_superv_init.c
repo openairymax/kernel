@@ -65,10 +65,11 @@ static int __init airy_superv_init(void)
 	 */
 	airy_wdog_init();
 
-	/* 5. The eventfd context is attached lazily: airy_eventfd_register()
-	 *    installs it once the Macro-Supervisor binds its fault listener;
-	 *    there is no userspace entry point for it yet, so until then the
-	 *    context stays NULL and faults are recorded in the airy_fev_* ring.
+	/* 5. The eventfd context is attached lazily: macro_d binds its fault
+	 *    listener through /dev/airy_superv (AIRY_SUPERV_IOC_BIND_EFD), so
+	 *    until it does the context stays NULL and faults are recorded in
+	 *    the airy_fev_* ring only.  The device is registered by
+	 *    airy_superv_dev.c and drains that same ring on read().
 	 *
 	 *    The per-task IPC ring freeze state needs no setup here: the
 	 *    "airy" LSM allocates it in airy_task_alloc() at fork time and
