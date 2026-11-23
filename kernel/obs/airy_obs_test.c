@@ -20,6 +20,7 @@
 
 #include <linux/airymax/error.h>
 #include <linux/airymax/superv.h>
+#include <linux/airymax/user_events.h>
 
 #include "../../security/airy/airy_cap.h"
 #include "airy_obs.h"
@@ -179,10 +180,174 @@ static void obs_fev_guard(struct kunit *test)
 		KUNIT_EXPECT_EQ(test, -AIRY_ENOENT, airy_fev_peek(0, &ev));
 }
 
+static void obs_uevent_table(struct kunit *test)
+{
+	const struct airy_obs_attr *attrs;
+	const struct airy_uevent_def *defs;
+	const char *out;
+	unsigned int nr, n, i;
+
+	attrs = airy_obs_uevent_attrs(&nr);
+	obs_table(test, attrs, nr);
+
+	/* 名字必须落在同一个 tracefs 命名空间，否则运维按前缀找不到事件。 */
+	defs = airy_uevent_defs(&n);
+	KUNIT_ASSERT_NOT_NULL(test, defs);
+	KUNIT_ASSERT_EQ(test, 5U, n);
+	for (i = 0; i < n; i++)
+		KUNIT_EXPECT_EQ(test, 0, strncmp(defs[i].name,
+						 AIRY_UEVENT_PREFIX,
+						 strlen(AIRY_UEVENT_PREFIX)));
+
+	out = obs_show(attrs, nr, "abi");
+	KUNIT_ASSERT_NOT_NULL(test, out);
+	KUNIT_EXPECT_NOT_NULL(test, strstr(out, "events: 5"));
+
+	out = obs_show(attrs, nr, "catalog");
+	KUNIT_ASSERT_NOT_NULL(test, out);
+	for (i = 0; i < n; i++)
+		KUNIT_EXPECT_NOT_NULL(test, strstr(out, defs[i].name));
+}
+
+/* 一个格式串字段的期望布局，由结构体本身算出，避免手写数字。 */
+struct uev_field {
+	const char *name;
+	unsigned int size;
+	unsigned int off;
+};
+
+#define UE_FIELD(s, f)	{ #f, sizeof(((struct s *)0)->f), offsetof(struct s, f) }
+
+static const struct uev_field cog_start_fields[] = {
+	UE_FIELD(airy_user_cognition_start, agent_id),
+	UE_FIELD(airy_user_cognition_start, input_tokens),
+	UE_FIELD(airy_user_cognition_start, timestamp_ns),
+};
+
+static const struct uev_field cog_end_fields[] = {
+	UE_FIELD(airy_user_cognition_end, agent_id),
+	UE_FIELD(airy_user_cognition_end, output_tokens),
+	UE_FIELD(airy_user_cognition_end, latency_ns),
+};
+
+static const struct uev_field mem_access_fields[] = {
+	UE_FIELD(airy_user_memory_access, agent_id),
+	UE_FIELD(airy_user_memory_access, level),
+	UE_FIELD(airy_user_memory_access, hit),
+	UE_FIELD(airy_user_memory_access, latency_ns),
+	UE_FIELD(airy_user_memory_access, addr),
+};
+
+static const struct uev_field tool_call_fields[] = {
+	UE_FIELD(airy_user_tool_call, agent_id),
+	UE_FIELD(airy_user_tool_call, tool_id),
+	UE_FIELD(airy_user_tool_call, latency_ns),
+	UE_FIELD(airy_user_tool_call, result),
+	UE_FIELD(airy_user_tool_call, output_tokens),
+};
+
+static const struct uev_field superv_fields[] = {
+	UE_FIELD(airy_user_superv_enforce, agent_id),
+	UE_FIELD(airy_user_superv_enforce, action),
+	UE_FIELD(airy_user_superv_enforce, reason),
+};
+
+static unsigned int uev_size(const char *type, unsigned int len)
+{
+	if (len == 2 && !strncmp(type, "u8", 2))
+		return 1;
+	if (len == 3 && !strncmp(type, "u32", 3))
+		return 4;
+	if (len == 3 && !strncmp(type, "u64", 3))
+		return 8;
+
+	return 0;
+}
+
+/*
+ * 逐 token 解析格式串，按自然对齐推字段偏移，与结构体布局比对。
+ * user_events 接受任何格式串，字段错位只在读 trace 时才暴露，因此
+ * 这层校验必须由内核侧测试承担。
+ */
+static void uev_layout(struct kunit *test, const char *fmt,
+		       const struct uev_field *exp, unsigned int nr)
+{
+	const char *p = fmt;
+	unsigned int i = 0;
+	unsigned int off = 0;
+
+	KUNIT_ASSERT_NOT_NULL(test, fmt);
+	while (*p) {
+		const char *type = p;
+		const char *name;
+		unsigned int sz;
+
+		while (*p && *p != ' ')
+			p++;
+		sz = uev_size(type, p - type);
+		KUNIT_ASSERT_GT(test, sz, 0U);
+
+		while (*p == ' ')
+			p++;
+		name = p;
+		while (*p && *p != ' ')
+			p++;
+
+		KUNIT_ASSERT_LT(test, i, nr);
+		off = (off + sz - 1) & ~(sz - 1);
+		KUNIT_EXPECT_EQ(test, sz, exp[i].size);
+		KUNIT_EXPECT_EQ(test, off, exp[i].off);
+		KUNIT_EXPECT_EQ(test, (unsigned int)(p - name),
+				strlen(exp[i].name));
+		KUNIT_EXPECT_EQ(test, 0,
+				strncmp(name, exp[i].name, p - name));
+
+		off += sz;
+		i++;
+		while (*p == ' ')
+			p++;
+	}
+	KUNIT_EXPECT_EQ(test, nr, i);
+}
+
+static const char *uev_format(const struct airy_uevent_def *defs,
+			      unsigned int nr, const char *name)
+{
+	unsigned int i;
+
+	for (i = 0; i < nr; i++)
+		if (!strcmp(defs[i].name, name))
+			return defs[i].format;
+
+	return NULL;
+}
+
+static void obs_uevent_layout(struct kunit *test)
+{
+	const struct airy_uevent_def *defs;
+	unsigned int n;
+
+	defs = airy_uevent_defs(&n);
+	KUNIT_ASSERT_NOT_NULL(test, defs);
+
+	uev_layout(test, uev_format(defs, n, AIRY_UEVENT_COGN_START),
+		   cog_start_fields, ARRAY_SIZE(cog_start_fields));
+	uev_layout(test, uev_format(defs, n, AIRY_UEVENT_COGN_END),
+		   cog_end_fields, ARRAY_SIZE(cog_end_fields));
+	uev_layout(test, uev_format(defs, n, AIRY_UEVENT_MEM_ACCESS),
+		   mem_access_fields, ARRAY_SIZE(mem_access_fields));
+	uev_layout(test, uev_format(defs, n, AIRY_UEVENT_TOOL_CALL),
+		   tool_call_fields, ARRAY_SIZE(tool_call_fields));
+	uev_layout(test, uev_format(defs, n, AIRY_UEVENT_SUPERV_ENFORCE),
+		   superv_fields, ARRAY_SIZE(superv_fields));
+}
+
 static struct kunit_case airy_obs_cases[] = {
 	KUNIT_CASE(obs_sec_table),
 	KUNIT_CASE(obs_superv_table),
 	KUNIT_CASE(obs_daemons_table),
+	KUNIT_CASE(obs_uevent_table),
+	KUNIT_CASE(obs_uevent_layout),
 	KUNIT_CASE(obs_cap_fmt),
 	KUNIT_CASE(obs_cap_fmt_short),
 	KUNIT_CASE(obs_dir_guard),

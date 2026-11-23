@@ -128,6 +128,10 @@ static int __init airy_obs_init(void)
 	if (rc)
 		goto err;
 
+	rc = airy_obs_uevent_init(root);
+	if (rc)
+		goto err;
+
 #if IS_ENABLED(CONFIG_AIRY_COREKERN)
 	rc = airy_obs_sched_init(root);
 	if (rc)

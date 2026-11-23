@@ -38,6 +38,16 @@ struct airy_obs_attr {
 
 struct airy_cap_slot;
 
+/**
+ * struct airy_uevent_def - 一条 user_events 事件契约
+ * @name: 注册到 tracefs 的事件名，等于 UAPI 的 AIRY_UEVENT_* 宏
+ * @format: 注册格式串，字段顺序与 UAPI 结构体一致
+ */
+struct airy_uevent_def {
+	const char *name;
+	const char *format;
+};
+
 /* 由 airy_obs_core.c 在整棵树发布成功后置位，调试面据此决定是否挂载。 */
 extern bool airy_obs_ready;
 
@@ -57,6 +67,7 @@ const char *airy_sv_obs_adjud_name(u32 adjud);
 int airy_obs_sec_init(struct kobject *root);
 int airy_obs_superv_init(struct kobject *root);
 int airy_obs_daemons_init(struct kobject *root);
+int airy_obs_uevent_init(struct kobject *root);
 
 #if IS_ENABLED(CONFIG_AIRY_COREKERN)
 int airy_obs_sched_init(struct kobject *root);
@@ -70,6 +81,8 @@ int airy_obs_log_init(struct kobject *root);
 const struct airy_obs_attr *airy_obs_sec_attrs(unsigned int *nr);
 const struct airy_obs_attr *airy_obs_superv_attrs(unsigned int *nr);
 const struct airy_obs_attr *airy_obs_daemons_attrs(unsigned int *nr);
+const struct airy_obs_attr *airy_obs_uevent_attrs(unsigned int *nr);
+const struct airy_uevent_def *airy_uevent_defs(unsigned int *nr);
 #if IS_ENABLED(CONFIG_AIRY_COREKERN)
 const struct airy_obs_attr *airy_obs_sched_attrs(unsigned int *nr);
 const struct airy_obs_attr *airy_obs_ipc_attrs(unsigned int *nr);
