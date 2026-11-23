@@ -190,23 +190,50 @@ static void reserve_commit_publishes_without_event_test(struct kunit *test)
 	struct airy_log_ring_header *hdr = ring->kaddr;
 	struct airy_log_record *rec;
 	struct ring_cap *cap = ring_capture(test);
+	u64 pos = 0;
 	bool overrun = true;
 
-	rec = airy_log_reserve(ring, &overrun);
+	rec = airy_log_reserve(ring, &pos, &overrun);
 	KUNIT_ASSERT_NOT_NULL(test, rec);
 	KUNIT_EXPECT_FALSE(test, overrun);
 	KUNIT_EXPECT_EQ(test, (u64)1, hdr->head);
+	KUNIT_EXPECT_EQ(test, (u64)0, pos);
 
 	rec->magic = AIRY_LOG_MAGIC;
-	airy_log_commit(ring, rec);
+	airy_log_commit(ring, pos);
 	KUNIT_EXPECT_EQ(test, (u64)1, hdr->committed_head);
 	KUNIT_EXPECT_EQ(test, 0u, cap->nr);
+}
+
+static void late_slot_publish_keeps_prefix_test(struct kunit *test)
+{
+	struct airy_log_ring *ring = test->priv;
+	struct airy_log_ring_header *hdr = ring->kaddr;
+	struct airy_log_record *first, *second;
+	bool overrun = false;
+	u64 pos1, pos2;
+
+	first = airy_log_reserve(ring, &pos1, &overrun);
+	KUNIT_ASSERT_NOT_NULL(test, first);
+	second = airy_log_reserve(ring, &pos2, &overrun);
+	KUNIT_ASSERT_NOT_NULL(test, second);
+	first->magic = AIRY_LOG_MAGIC;
+	second->magic = AIRY_LOG_MAGIC;
+
+	/* 后预留的槽位先发布：committed_head 必须停在缺口处。 */
+	airy_log_commit(ring, pos2);
+	KUNIT_EXPECT_EQ(test, (u64)0, hdr->committed_head);
+
+	/* 缺口补齐后一次性越过两条已发布记录。 */
+	airy_log_commit(ring, pos1);
+	KUNIT_EXPECT_EQ(test, (u64)2, hdr->committed_head);
 }
 
 static void entry_guards_test(struct kunit *test)
 {
 	struct airy_log_ring uninit;
 	struct airy_log_ring_header *hdr;
+	u64 pos;
 	bool overrun;
 
 	memset(&uninit, 0, sizeof(uninit));
@@ -219,10 +246,10 @@ static void entry_guards_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, -EINVAL,
 			airy_log_write(test->priv, AIRY_LOG_INFO,
 				       AIRY_LOG_FAC_KERN, NULL, 1));
-	KUNIT_EXPECT_NULL(test, airy_log_reserve(NULL, &overrun));
-	KUNIT_EXPECT_NULL(test, airy_log_reserve(&uninit, &overrun));
+	KUNIT_EXPECT_NULL(test, airy_log_reserve(NULL, &pos, &overrun));
+	KUNIT_EXPECT_NULL(test, airy_log_reserve(&uninit, &pos, &overrun));
 
-	airy_log_commit(NULL, NULL);
+	airy_log_commit(NULL, 0);
 	airy_log_ring_freeze(NULL);
 	airy_log_ring_destroy(NULL);
 
@@ -248,6 +275,7 @@ static struct kunit_case airy_log_ring_cases[] = {
 	KUNIT_CASE(payload_is_clipped_to_slot_test),
 	KUNIT_CASE(frozen_ring_rejects_without_emitting_test),
 	KUNIT_CASE(reserve_commit_publishes_without_event_test),
+	KUNIT_CASE(late_slot_publish_keeps_prefix_test),
 	KUNIT_CASE(entry_guards_test),
 	KUNIT_CASE(destroy_releases_backing_store_test),
 	{}

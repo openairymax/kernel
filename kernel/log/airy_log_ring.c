@@ -6,8 +6,10 @@
  *
  * Backed by alloc_pages(GFP_KERNEL) so the ring can be mmap()-ed into
  * agent address spaces for zero-copy streaming. Producers reserve a
- * slot via cmpxchg on head, fill the record, then publish it by
- * smp_store_release() of committed_head; consumers use smp_load_acquire().
+ * slot via cmpxchg on head, fill the record, publish the slot through
+ * its release-ordered sequence word, then advance committed_head over
+ * the contiguous published prefix. Consumers read committed_head with
+ * acquire semantics and never write shared state.
  * The shared header and the ring state live in airy_log_internal.h so
  * that the KUnit suite observes the same contract as the producers.
  *
@@ -90,19 +92,20 @@ int airy_log_ring_init(struct airy_log_ring *ring, size_t size)
  * Atomically claims the next slot by incrementing head via cmpxchg.
  * head is the reserve position — it advances BEFORE the record body
  * is written, so consumers must not read it directly; they observe
- * committed_head instead (published in airy_log_commit()).  If the
- * ring is full the oldest record is overwritten by advancing tail
- * (tail conceptually tracks committed_head from the consumer side).
+ * committed_head instead.  When the ring is full the earliest slot is
+ * dropped by moving tail forward to head - capacity + 1.  tail is
+ * owned by producers only: consumers keep a private cursor, so no
+ * write race exists between the two sides.
  * Returns a pointer to the record for the caller to fill, or NULL
- * when the ring is frozen.  @overrun reports whether the reservation
- * displaced the oldest record because the ring was full.
+ * when the ring is frozen.  @pos receives the reservation position
+ * required by airy_log_commit(); @overrun reports a dropped slot.
  */
-struct airy_log_record *airy_log_reserve(struct airy_log_ring *ring,
+struct airy_log_record *airy_log_reserve(struct airy_log_ring *ring, __u64 *pos,
 					 bool *overrun)
 {
 	struct airy_log_ring_header *hdr;
 	bool dropped = false;
-	__u64 head, tail;
+	__u64 head, tail, want;
 	__u32 idx;
 
 	if (!ring || !ring->kaddr)
@@ -120,10 +123,11 @@ struct airy_log_record *airy_log_reserve(struct airy_log_ring *ring,
 		head = smp_load_acquire(&hdr->head);
 		tail = smp_load_acquire(&hdr->tail);
 
-		/* Ring full: overwrite the oldest record (advance tail). */
-		if (head - tail >= hdr->capacity) {
-			smp_store_release(&hdr->tail, tail + 1);
-			dropped = true;
+		dropped = head - tail >= hdr->capacity;
+		if (dropped) {
+			want = head - hdr->capacity + 1;
+			if (want > tail)
+				cmpxchg(&hdr->tail, tail, want);
 		}
 
 		idx = head % hdr->capacity;
@@ -131,6 +135,8 @@ struct airy_log_record *airy_log_reserve(struct airy_log_ring *ring,
 
 	if (overrun)
 		*overrun = dropped;
+	if (pos)
+		*pos = head;
 
 	/* Record data starts AFTER the header. */
 	return (struct airy_log_record *)
@@ -138,34 +144,46 @@ struct airy_log_record *airy_log_reserve(struct airy_log_ring *ring,
 }
 
 /* ─── Commit a reserved slot (producer side) ───────────────────────────
- * Publishes the 128-byte record by advancing committed_head to the
- * current reserve position (head).  head was already incremented
- * atomically in airy_log_reserve(); the release store here acts as the
- * publish barrier so that the record body (written between reserve and
- * commit) is visible to consumers before committed_head advances.
- * Consumers MUST read committed_head (smp_load_acquire), never head:
- * head advances at reserve time, before the record body is filled.
+ * Publishes the 128-byte record by writing its reservation position into
+ * the slot sequence word with release semantics, then advances
+ * committed_head across the contiguous published prefix.  A producer
+ * that finishes early can publish slots behind a slower one; the scan
+ * simply stops at the first unpublished slot, so consumers never observe
+ * a hole or a half-written record.  cmpxchg makes the advance safe when
+ * several producers publish concurrently.
+ * Consumers MUST read committed_head (smp_load_acquire), never head.
  * Notifies the Logger Daemon via non-blocking eventfd_signal().
  */
-void airy_log_commit(struct airy_log_ring *ring, struct airy_log_record *rec)
+void airy_log_commit(struct airy_log_ring *ring, __u64 pos)
 {
 	struct airy_log_ring_header *hdr;
-	__u64 pos;
+	struct airy_log_record *rec;
+	__u64 done;
 
-	if (!ring || !ring->kaddr || !rec)
+	if (!ring || !ring->kaddr)
 		return;
 
 	hdr = ring->kaddr;
+	rec = (struct airy_log_record *)
+		(ring->kaddr + sizeof(*hdr) +
+		 (pos % hdr->capacity) * hdr->record_size);
 
-	/*
-	 * Snapshot the reserve position and publish it as committed.
-	 * smp_store_release() ensures the 128-byte record write (done by
-	 * the caller between airy_log_reserve() and here) is visible
-	 * before committed_head advances, pairing with the consumer's
-	 * smp_load_acquire() on committed_head.
+	/* Publish this slot: body writes become visible before the marker.
+	 * The marker stores pos + 1 so that a freshly zeroed slot (0) is
+	 * never mistaken for a published record at position 0.
 	 */
-	pos = READ_ONCE(hdr->head);
-	smp_store_release(&hdr->committed_head, pos);
+	airy_log_slot_pub(rec, pos + 1);
+
+	for (;;) {
+		done = smp_load_acquire(&hdr->committed_head);
+		rec = (struct airy_log_record *)
+			(ring->kaddr + sizeof(*hdr) +
+			 (done % hdr->capacity) * hdr->record_size);
+		if (airy_log_slot_seq(rec) != done + 1)
+			break;
+		if (cmpxchg(&hdr->committed_head, done, done + 1) != done)
+			continue;
+	}
 
 	/* Non-blocking eventfd notification to Logger Daemon. */
 	if (ring->efd)
@@ -185,13 +203,14 @@ int airy_log_write(struct airy_log_ring *ring,
 	struct airy_log_record *rec;
 	struct timespec64 ts;
 	bool overrun;
+	__u64 pos;
 	__u32 len;
 
 	if (!ring || !payload)
 		return -EINVAL;
 
 	/* 1. reserve 128 B slot (~10 ns) */
-	rec = airy_log_reserve(ring, &overrun);
+	rec = airy_log_reserve(ring, &pos, &overrun);
 	if (unlikely(!rec))
 		return -AIRY_ELOG_FULL;
 
@@ -208,7 +227,7 @@ int airy_log_write(struct airy_log_ring *ring,
 	memcpy(rec->payload, payload, rec->payload_len);
 
 	/* 3. commit + eventfd notify (~10 ns) */
-	airy_log_commit(ring, rec);
+	airy_log_commit(ring, pos);
 #if IS_ENABLED(CONFIG_AIRY_AGENT_TRACING)
 	trace_airy_ring_buffer_write(level, len, overrun);
 #endif
@@ -229,6 +248,11 @@ int airy_log_ring_mmap(struct file *f, struct vm_area_struct *vma)
 
 	ring = f->private_data;
 	if (!ring || !ring->pages)
+		return -EINVAL;
+
+	if (vma->vm_pgoff)
+		return -EINVAL;
+	if (vma->vm_end - vma->vm_start > ring->size)
 		return -EINVAL;
 
 	vm_flags_set(vma, VM_SHARED | VM_DONTEXPAND | VM_DONTDUMP);

@@ -55,6 +55,24 @@ config AIRY_LOG
 	  Airymax unified logging and printk ring buffer. Selected
 	  automatically by SECURITY_AIRY.
 
+config AIRY_LOG_RING_BYTES
+	int "Airymax log ring capacity in bytes"
+	depends on AIRY_LOG
+	range 65536 4194304
+	default 1048576
+	help
+	  Size of the shared log ring exported through /dev/airy_log.
+	  The ring is backed by physically contiguous pages so that the
+	  Logger Daemon can mmap it zero-copy. One MiB holds 8192
+	  records of 128 bytes; each doubling adds roughly 32 KiB of
+	  memory overhead beyond the payload itself. The upper bound is
+	  one MAX_ORDER allocation block (4 MiB on x86_64), beyond which
+	  alloc_pages() cannot satisfy the request.
+
+	  Keep the default unless boot-time log volume is known to be
+	  larger: the ring drops the oldest records when full rather
+	  than blocking producers.
+
 config AIRY_AGENT_TRACING
 	bool "Airymax agent behaviour tracing (kernel/corekern/airy)"
 	depends on SECURITY_AIRY
