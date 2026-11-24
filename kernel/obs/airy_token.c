@@ -16,13 +16,11 @@
  * 四类计数互不重叠，total 是其和，比例一律 ppm。
  */
 
-#include <linux/capability.h>
 #include <linux/errno.h>
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/ktime.h>
-#include <linux/limits.h>
 #include <linux/lockdep.h>
 #include <linux/math64.h>
 #include <linux/miscdevice.h>
@@ -38,9 +36,6 @@
 #include <linux/airymax/security_types.h>
 #include <linux/airymax/token.h>
 
-#include <airymax/airy_agent.h>
-
-#include "../../security/airy/airy_cap.h"
 #include "airy_obs.h"
 #include "airy_token.h"
 
@@ -80,17 +75,7 @@ static void tok_roll(struct tok_agent *a, u64 now)
  */
 u32 airy_tok_ratio(u64 num, u64 den)
 {
-	u64 ratio;
-
-	if (!den)
-		return 0;
-
-	if (num > div64_u64(U64_MAX, 1000000ULL))
-		return U32_MAX;
-
-	ratio = div64_u64(num * 1000000ULL, den);
-
-	return ratio > U32_MAX ? U32_MAX : (u32)ratio;
+	return airy_obs_ppm(num, den);
 }
 
 /**
@@ -291,38 +276,21 @@ static struct tok_agent *tok_node(u32 id, bool create)
  * tok_report_ok - Check that the reporter may report for @id.
  * @id: Agent the delta claims to belong to.
  *
- * The slowpath slot check only proves that agent @id is live and holds
- * SEND; it does not prove that the caller is that agent.  Identity comes
- * from the LSM task blob, which the kernel owns, so the two are combined:
- * a task may only report for its own agent id.
- *
  * Return: true when the report is authorized.
  */
 static bool tok_report_ok(u32 id)
 {
-	if (capable(CAP_SYS_PTRACE))
-		return true;
-
-	return airy_agent_id(current) == id &&
-	       airy_cap_check(id, AIRY_CAP_PERM_SEND) == 0;
+	return airy_obs_self(id);
 }
 
 /**
  * tok_sup_ok - Check that the caller holds supervisor authority.
  *
- * Budget is a cross-agent control, so the permission bit is read from
- * the caller's own slot, never from the target's.
- *
  * Return: true when the caller may adjust budgets.
  */
 static bool tok_sup_ok(void)
 {
-	u32 self = airy_agent_id(current);
-
-	if (capable(CAP_SYS_PTRACE))
-		return true;
-
-	return self && airy_cap_check(self, AIRY_CAP_PERM_SUPERVISE) == 0;
+	return airy_obs_supervise();
 }
 
 static long tok_report(const struct airy_token_delta __user *up)

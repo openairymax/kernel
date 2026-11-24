@@ -25,6 +25,10 @@
 # 1 [IND] layer header (auto-exported, outside the [SC] set):
 #   superv.h (Micro-Supervisor control protocol, macro_d <-> kernel)
 #
+# 2 metering headers (auto-exported):
+#   token.h (/dev/airy_token and /proc/airy/agents/<id>/token_stats)
+#   mem.h   (/dev/airy_mem and /proc/airy/agents/<id>/memory_stats)
+#
 # 3 SSoT sources (NOT headers, not exported):
 #   syscall.xml (codegen single source of truth)
 #   structures_64.bf (R-02 bitfield contract source)

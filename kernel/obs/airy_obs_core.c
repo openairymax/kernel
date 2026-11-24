@@ -17,19 +17,91 @@
 
 #include <generated/compile.h>
 #include <generated/utsrelease.h>
+#include <linux/capability.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/kobject.h>
+#include <linux/limits.h>
+#include <linux/math64.h>
 #include <linux/printk.h>
+#include <linux/sched.h>
 #include <linux/sysfs.h>
 
+#include <airymax/airy_agent.h>
+
+#include "../../security/airy/airy_cap.h"
 #include "../../security/airy/airy_probe.h"
+#include "airy_mem.h"
 #include "airy_obs.h"
 #include "airy_token.h"
 
 static struct kset *airy_obs_kset;
 
 bool airy_obs_ready;
+
+/**
+ * airy_obs_ppm - Express @num / @den in parts per million.
+ * @num: Numerator.
+ * @den: Denominator; zero yields 0 instead of a division fault.
+ *
+ * Ratios above 1.0 are kept (an overrun must stay visible) and saturate at
+ * U32_MAX.  Every meter reports ppm through this one conversion so two
+ * observation surfaces can never disagree on rounding.
+ *
+ * Return: The ratio in ppm.
+ */
+u32 airy_obs_ppm(u64 num, u64 den)
+{
+	u64 ratio;
+
+	if (!den)
+		return 0;
+
+	if (num > div64_u64(U64_MAX, 1000000ULL))
+		return U32_MAX;
+
+	ratio = div64_u64(num * 1000000ULL, den);
+
+	return ratio > U32_MAX ? U32_MAX : (u32)ratio;
+}
+
+/**
+ * airy_obs_self - Check that the caller may report for @id.
+ * @id: Agent the report claims to belong to.
+ *
+ * The slot check only proves that agent @id is live and holds SEND; it
+ * does not prove that the caller is that agent.  Identity comes from the
+ * LSM task blob, which the kernel owns, so the two are combined: a task
+ * may only report for its own agent id.
+ *
+ * Return: true when the report is authorized.
+ */
+bool airy_obs_self(u32 id)
+{
+	if (capable(CAP_SYS_PTRACE))
+		return true;
+
+	return airy_agent_id(current) == id &&
+	       airy_cap_check(id, AIRY_CAP_PERM_SEND) == 0;
+}
+
+/**
+ * airy_obs_supervise - Check that the caller holds supervisor authority.
+ *
+ * Cross-agent controls (budgets, quotas) read the permission bit from the
+ * caller's own slot, never from the target's.
+ *
+ * Return: true when the caller may adjust limits.
+ */
+bool airy_obs_supervise(void)
+{
+	u32 self = airy_agent_id(current);
+
+	if (capable(CAP_SYS_PTRACE))
+		return true;
+
+	return self && airy_cap_check(self, AIRY_CAP_PERM_SUPERVISE) == 0;
+}
 
 /**
  * airy_obs_dir - Create a child directory under an observation node.
@@ -158,6 +230,10 @@ static int __init airy_obs_init(void)
 	rc = airy_token_init();
 	if (rc)
 		pr_warn("airy: token meter unavailable: %d\n", rc);
+
+	rc = airy_mem_init();
+	if (rc)
+		pr_warn("airy: memory meter unavailable: %d\n", rc);
 
 	airy_obs_ready = true;
 

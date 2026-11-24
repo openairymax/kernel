@@ -60,6 +60,11 @@ struct proc_dir_entry *airy_obs_proc_root(void);
 /* /proc/airy/agents/<id>：多个计量模块共用，首次需要时创建。 */
 struct proc_dir_entry *airy_obs_agent_dir(u32 id, bool create);
 
+/* 比例换算与上报者鉴权：所有计量模块共用同一套口径。 */
+u32 airy_obs_ppm(u64 num, u64 den);
+bool airy_obs_self(u32 id);
+bool airy_obs_supervise(void);
+
 /* 能力槽行格式化：debugfs 与 KUnit 共用，永不输出防伪随机标签。 */
 void airy_obs_cap_fmt(char *buf, size_t len, u32 id,
 		      const struct airy_cap_slot *slot);
