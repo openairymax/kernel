@@ -164,6 +164,7 @@ config AIRY_KUNIT
 	    - security/airy/airy_contract_test.c       (A-11 [SC] contract snapshot)
 	    - security/airy/airy_lockdown_test.c       (B-05 lockdown ladder)
 	    - security/airy/airy_policy_test.c         (B-06 policy runtime)
+	    - kernel/obs/airy_token_test.c             (token meter windows)
 
 	  Each test exercises the fixed path with no functional change to
 	  production code.  Say N if unsure.

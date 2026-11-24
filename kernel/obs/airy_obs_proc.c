@@ -53,12 +53,24 @@ static const struct proc_ops fault_log_ops = {
 };
 
 /**
+ * airy_obs_proc_root - Expose /proc/airy to sibling observation modules.
+ *
+ * Return: The directory entry, or NULL when procfs is not mounted.
+ */
+struct proc_dir_entry *airy_obs_proc_root(void)
+{
+	return airy_proc_dir;
+}
+
+/**
  * airy_obs_proc_init - Create /proc/airy and the fault log.
  *
- * Only the fault log has a kernel-side data source.  The agents,
- * daemons and config subdirectories would be empty until their owner
- * daemons exist, and an empty directory reads as "nothing is running"
- * rather than "this interface is not up yet", so they are left out.
+ * Only the fault log has a kernel-side data source here.  The daemons
+ * and config subdirectories would be empty until their owner daemons
+ * exist, and an empty directory reads as "nothing is running" rather
+ * than "this interface is not up yet", so they are left out.  The
+ * agents subtree is owned by the token meter, which creates it only
+ * together with its first real data source.
  *
  * Return: 0 on success; -ENOMEM when the directory or file cannot be
  *         created.

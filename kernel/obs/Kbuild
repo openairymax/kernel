@@ -6,7 +6,7 @@
 obj-$(CONFIG_AIRY_OBS) += airy_obs.o
 
 airy_obs-y := airy_obs_core.o airy_obs_sec.o airy_obs_superv.o \
-	      airy_obs_daemons.o airy_uevent.o airy_obs_proc.o
+	      airy_obs_daemons.o airy_uevent.o airy_obs_proc.o airy_token.o
 
 # The scheduling, IPC and log nodes read counters owned by subsystems that
 # only exist in a full build.  KUnit does not enable them, so the table has
@@ -19,4 +19,4 @@ airy_obs-$(CONFIG_AIRY_LOG) += airy_obs_log.o
 # bytes.  It is optional, so the object follows CONFIG_DEBUG_FS.
 airy_obs-$(CONFIG_DEBUG_FS) += airy_obs_debugfs.o
 
-airy_obs-$(CONFIG_AIRY_KUNIT) += airy_obs_test.o
+airy_obs-$(CONFIG_AIRY_KUNIT) += airy_obs_test.o airy_token_test.o

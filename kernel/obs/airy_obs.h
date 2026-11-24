@@ -55,6 +55,7 @@ struct kobject *airy_obs_dir(struct kobject *parent, const char *name);
 int airy_obs_register(struct kobject *root, const char *dir,
 		      const struct airy_obs_attr *attrs, unsigned int nr);
 int __init airy_obs_proc_init(void);
+struct proc_dir_entry *airy_obs_proc_root(void);
 
 /* 能力槽行格式化：debugfs 与 KUnit 共用，永不输出防伪随机标签。 */
 void airy_obs_cap_fmt(char *buf, size_t len, u32 id,

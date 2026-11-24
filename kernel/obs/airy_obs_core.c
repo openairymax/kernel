@@ -25,6 +25,7 @@
 
 #include "../../security/airy/airy_probe.h"
 #include "airy_obs.h"
+#include "airy_token.h"
 
 static struct kset *airy_obs_kset;
 
@@ -153,6 +154,10 @@ static int __init airy_obs_init(void)
 	if (rc)
 		goto err;
 #endif
+
+	rc = airy_token_init();
+	if (rc)
+		pr_warn("airy: token meter unavailable: %d\n", rc);
 
 	airy_obs_ready = true;
 
