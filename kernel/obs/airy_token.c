@@ -45,12 +45,10 @@
 #include "airy_token.h"
 
 #define TOK_DEV_NAME	"airy_token"
-#define TOK_SUBTREE	"agents"
 #define TOK_FILE	"token_stats"
 
 static DEFINE_XARRAY(tok_map);
 static DEFINE_MUTEX(tok_lock);
-static struct proc_dir_entry *tok_agents;
 
 /**
  * tok_roll - Advance the observation and budget windows to @now.
@@ -233,40 +231,21 @@ static int tok_show(struct seq_file *m, void *v)
 /**
  * tok_proc_add - Publish /proc/airy/agents/<id>/token_stats.
  * @a: Agent record, passed to the show callback.
- * @id: Agent number used as the directory name.
  *
- * A missing procfs root is not an error: the device still meters, only
- * the text view is unavailable.
- *
- * Return: The new directory entry, or NULL when procfs is not mounted.
+ * The Agent directory is shared with the other meters, so it is created
+ * through airy_obs_agent_dir().  A missing procfs root is not an error:
+ * the device still meters, only the text view is unavailable.
  */
-static struct proc_dir_entry *tok_proc_add(struct tok_agent *a, u32 id)
+static void tok_proc_add(struct tok_agent *a)
 {
 	struct proc_dir_entry *de;
-	struct proc_dir_entry *root;
-	char name[16];
 
-	if (!tok_agents) {
-		root = airy_obs_proc_root();
-		if (!root)
-			return NULL;
+	if (a->de)
+		return;
 
-		tok_agents = proc_mkdir(TOK_SUBTREE, root);
-		if (!tok_agents)
-			return NULL;
-	}
-
-	snprintf(name, sizeof(name), "%u", id);
-	de = proc_mkdir(name, tok_agents);
-	if (!de)
-		return NULL;
-
-	if (!proc_create_single_data(TOK_FILE, 0444, de, tok_show, a)) {
-		proc_remove(de);
-		return NULL;
-	}
-
-	return de;
+	de = airy_obs_agent_dir(a->agent_id, true);
+	if (de && proc_create_single_data(TOK_FILE, 0444, de, tok_show, a))
+		a->de = de;
 }
 
 /**
@@ -303,7 +282,7 @@ static struct tok_agent *tok_node(u32 id, bool create)
 		return NULL;
 	}
 
-	a->de = tok_proc_add(a, id);
+	tok_proc_add(a);
 
 	return a;
 }

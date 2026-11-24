@@ -57,6 +57,9 @@ int airy_obs_register(struct kobject *root, const char *dir,
 int __init airy_obs_proc_init(void);
 struct proc_dir_entry *airy_obs_proc_root(void);
 
+/* /proc/airy/agents/<id>：多个计量模块共用，首次需要时创建。 */
+struct proc_dir_entry *airy_obs_agent_dir(u32 id, bool create);
+
 /* 能力槽行格式化：debugfs 与 KUnit 共用，永不输出防伪随机标签。 */
 void airy_obs_cap_fmt(char *buf, size_t len, u32 id,
 		      const struct airy_cap_slot *slot);

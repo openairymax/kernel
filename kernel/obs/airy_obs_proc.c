@@ -11,8 +11,11 @@
 
 #include <linux/errno.h>
 #include <linux/init.h>
+#include <linux/mutex.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+#include <linux/slab.h>
+#include <linux/xarray.h>
 
 #include <linux/airymax/superv.h>
 
@@ -20,6 +23,11 @@
 #include "airy_obs.h"
 
 static struct proc_dir_entry *airy_proc_dir;
+
+/* /proc/airy/agents 一级目录与其中每个 Agent 的目录，按 id 索引。 */
+static DEFINE_XARRAY(airy_agent_dirs);
+static DEFINE_MUTEX(airy_agent_lock);
+static struct proc_dir_entry *airy_agents_root;
 
 static int fault_log_show(struct seq_file *m, void *v)
 {
@@ -60,6 +68,52 @@ static const struct proc_ops fault_log_ops = {
 struct proc_dir_entry *airy_obs_proc_root(void)
 {
 	return airy_proc_dir;
+}
+
+/**
+ * airy_obs_agent_dir - Return /proc/airy/agents/<id>, creating it on demand.
+ * @id: Agent number, used verbatim as the directory name.
+ * @create: Whether a missing directory may be created.
+ *
+ * Several meters publish under one Agent directory, so the directory can
+ * not belong to any single one of them.  Creation is again lazy: an
+ * agents subtree with no files would claim more than the kernel knows.
+ * Name allocation goes through kasprintf() because the observation
+ * contract forbids formatting through a fixed buffer.
+ *
+ * Return: The directory entry; NULL when procfs is unavailable, when the
+ *         directory is missing and @create is false, or on allocation
+ *         failure.
+ */
+struct proc_dir_entry *airy_obs_agent_dir(u32 id, bool create)
+{
+	struct proc_dir_entry *de;
+	char *name;
+
+	if (!airy_proc_dir)
+		return NULL;
+
+	de = xa_load(&airy_agent_dirs, id);
+	if (de || !create)
+		return de;
+
+	mutex_lock(&airy_agent_lock);
+	de = xa_load(&airy_agent_dirs, id);
+	if (!de) {
+		if (!airy_agents_root)
+			airy_agents_root = proc_mkdir("agents", airy_proc_dir);
+		name = kasprintf(GFP_KERNEL, "%u", id);
+		if (airy_agents_root && name)
+			de = proc_mkdir(name, airy_agents_root);
+		kfree(name);
+		if (de && xa_insert(&airy_agent_dirs, id, de, GFP_KERNEL)) {
+			proc_remove(de);
+			de = NULL;
+		}
+	}
+	mutex_unlock(&airy_agent_lock);
+
+	return de;
 }
 
 /**
