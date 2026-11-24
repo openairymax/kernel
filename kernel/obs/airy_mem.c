@@ -42,7 +42,7 @@
 #define MEM_DEV_NAME	"airy_mem"
 #define MEM_FILE	"memory_stats"
 
-static DEFINE_XARRAY(mem_map);
+static DEFINE_XARRAY(mem_agents);
 static DEFINE_MUTEX(mem_lock);
 
 /**
@@ -318,7 +318,7 @@ static struct mem_agent *mem_node(u32 id, bool create)
 
 	lockdep_assert_held(&mem_lock);
 
-	a = xa_load(&mem_map, id);
+	a = xa_load(&mem_agents, id);
 	if (a || !create)
 		return a;
 
@@ -331,7 +331,7 @@ static struct mem_agent *mem_node(u32 id, bool create)
 	a->quota_kb = AIRY_MEM_QUOTA_DEFAULT;
 	a->win_start = now;
 
-	if (xa_insert(&mem_map, id, a, GFP_KERNEL)) {
+	if (xa_insert(&mem_agents, id, a, GFP_KERNEL)) {
 		kfree(a);
 		return NULL;
 	}
