@@ -33,6 +33,7 @@
 #include <linux/uaccess.h>
 #include <linux/xarray.h>
 
+#include <linux/airymax/lsm_types.h>
 #include <linux/airymax/security_types.h>
 #include <linux/airymax/token.h>
 

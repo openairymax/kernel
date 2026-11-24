@@ -32,6 +32,7 @@
 #include <linux/uaccess.h>
 #include <linux/xarray.h>
 
+#include <linux/airymax/lsm_types.h>
 #include <linux/airymax/mem.h>
 #include <linux/airymax/security_types.h>
 
