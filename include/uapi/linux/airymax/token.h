@@ -4,19 +4,13 @@
  *
  * Airymax token meter — [SC] shared contract header.
  *
- * 内核只保存事实：四类计数、60 秒观测窗口、1 小时预算窗口。消耗方
- * 通过 /dev/airy_token 的 REPORT 上报增量，读取方通过 QUERY 或
- * /proc/airy/agents/<id>/token_stats 取得快照。处置（提示优化、降级、
- * 终止）由 macro_d 依据 alert_state 决定，内核不跨层回调监管路径。
+ * 内核只保存事实：四类互不重叠的计数、60 秒观测窗口、1 小时预算窗口；
+ * 处置（降级、终止）由 macro_d 依 alert_state 决定，内核不回调监管路径。
+ * 比例一律 ppm，便于用户态避免浮点。
  *
- * 口径：四类计数互不重叠，total 是其和；比例一律 ppm（百万分之一），
- * 便于用户态避免浮点。
- *
- * 写入权限：持有目标 Agent badge（AIRY_CAP_PERM_SEND）者只能上报自己；
- * 调整预算需要调用者自身的 AIRY_CAP_PERM_SUPERVISE；具备 CAP_SYS_PTRACE
- * 的监督进程两者皆可，用于抹平早期引导阶段尚无 badge 的空窗。
- * /dev/airy_token 允许任意本地进程打开，写路径由上面的能力判定把关；
- * QUERY 与 /proc/airy/agents/<id>/token_stats 的 0444 视图同权。
+ * 写入：持目标 Agent badge（AIRY_CAP_PERM_SEND）者只能上报自己；调整
+ * 预算需调用者自身的 SUPERVISE；CAP_SYS_PTRACE 监督进程两者皆可。读
+ * 路径（QUERY 与 0444 快照）同权。
  *
  * 设计依据：docs-linux/90-observability/07-token-efficiency.md
  */

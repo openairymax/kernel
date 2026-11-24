@@ -5,17 +5,15 @@
  * airymax/user_events.h — daemon trace event contract ([SC] layer).
  *
  * user_events is the only channel through which user-space daemons report
- * trace events (OS-OBS-061). This header fixes the part that every producer
- * and consumer must agree on: registration names, registration format
- * strings and payload layouts. It declares no runtime handle — a handle owns
- * a file descriptor and an mmap'd enable word, so it belongs to the
- * user-space library, which is an [IND] implementation (OS-OBS-065).
+ * trace events (OS-OBS-061). This header fixes what every producer and
+ * consumer must agree on: registration names, format strings, payload
+ * layouts. It declares no runtime handle: a handle owns a fd and an
+ * mmap'd enable word, so it belongs to the [IND] user-space library.
  *
  * A producer registers AIRY_UEVENT_<event> with the matching
- * AIRY_UEVENT_FMT_<event> string; tracefs then exposes the event at
- * /sys/kernel/tracing/events/user_events/airy_user_<event>. The kernel side
- * only publishes the same table read-only at /sys/airy/events, so a
- * producer can check its registration before touching tracefs.
+ * AIRY_UEVENT_FMT_<event> string; tracefs exposes the event under
+ * /sys/kernel/tracing/events/user_events/, and the kernel republishes the
+ * same table read-only at /sys/airy/events for pre-registration checks.
  *
  * SSoT: 90-observability/06-user-events.md
  */
