@@ -5,8 +5,8 @@
 
 obj-$(CONFIG_AIRY_LOG) += airy_log.o
 
-airy_log-y := airy_log_kern.o airy_log_ring.o airy_log_persist.o \
-	      airy_log_dev.o airy_log_console.o
+airy_log-y := airy_log_kern.o airy_log_ring.o airy_log_dev.o \
+	      airy_log_console.o
 
 # KUnit regression for the fixed-record ring: capacity after the header,
 # overrun reporting, payload clipping and the freeze path, all observed
