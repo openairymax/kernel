@@ -69,6 +69,15 @@ bool airy_obs_supervise(void);
 void airy_obs_cap_fmt(char *buf, size_t len, u32 id,
 		      const struct airy_cap_slot *slot);
 
+/* 能力位名：sysfs 的 ipc/capabilities 按位拼接，KUnit 复用同一份表。 */
+void airy_obs_cap_perms(char *buf, size_t len, u16 perms);
+
+/*
+ * 预算快照目录 /sys/airy/superv/budgets：superv 只发布目录，文件由持有
+ * 计量记录的 token 模块按 Agent 建立，读值因此与 /proc 视图同源。
+ */
+struct kobject *airy_obs_budgets(void);
+
 /* 监督命令与裁决名由 sysfs 与 debugfs 共用，避免两份映射。 */
 const char *airy_sv_obs_op_name(u32 op);
 const char *airy_sv_obs_adjud_name(u32 adjud);
@@ -89,6 +98,7 @@ int airy_obs_log_init(struct kobject *root);
 #if IS_ENABLED(CONFIG_AIRY_KUNIT)
 const struct airy_obs_attr *airy_obs_sec_attrs(unsigned int *nr);
 const struct airy_obs_attr *airy_obs_superv_attrs(unsigned int *nr);
+const struct airy_obs_attr *airy_obs_macro_attrs(unsigned int *nr);
 const struct airy_obs_attr *airy_obs_daemons_attrs(unsigned int *nr);
 const struct airy_obs_attr *airy_obs_uevent_attrs(unsigned int *nr);
 const struct airy_uevent_def *airy_uevent_defs(unsigned int *nr);

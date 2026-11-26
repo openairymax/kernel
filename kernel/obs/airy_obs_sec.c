@@ -96,6 +96,63 @@ void airy_obs_cap_fmt(char *buf, size_t len, u32 id,
 	seq_buf_str(&sb);
 }
 
+/*
+ * 权限位与名字一一对应，顺序与 UAPI 的 AIRY_CAP_PERM_* 保持一致：
+ * 新增权限位时必须同时补在这里，否则 sysfs 认不出这一位。
+ */
+static const struct {
+	u16 bit;
+	const char *name;
+} obs_perm_names[] = {
+	{ AIRY_CAP_PERM_SEND,		"SEND" },
+	{ AIRY_CAP_PERM_RECV,		"RECV" },
+	{ AIRY_CAP_PERM_DERIVE,		"DERIVE" },
+	{ AIRY_CAP_PERM_KILL,		"KILL" },
+	{ AIRY_CAP_PERM_FILE_OPEN,	"FILE_OPEN" },
+	{ AIRY_CAP_PERM_ROTATE,		"ROTATE" },
+	{ AIRY_CAP_PERM_SUPERVISE,	"SUPERVISE" },
+};
+
+/**
+ * airy_obs_cap_perms - Render a permission mask as pipe-separated names.
+ * @buf: Destination buffer.
+ * @len: Capacity of @buf in bytes.
+ * @perms: Permission bits of one slot.
+ *
+ * A slot with no bit set renders as NONE, so the reader can tell "no
+ * permission" from a truncated line.  Bits unknown to this table are
+ * ignored; the raw mask stays available in the debugfs cap table.
+ */
+void airy_obs_cap_perms(char *buf, size_t len, u16 perms)
+{
+	struct seq_buf sb;
+	bool first = true;
+	unsigned int i;
+
+	if (!len)
+		return;
+
+	seq_buf_init(&sb, buf, (unsigned int)len);
+
+	if (!perms) {
+		seq_buf_puts(&sb, "NONE");
+	} else {
+		for (i = 0; i < ARRAY_SIZE(obs_perm_names); i++) {
+			if (!(perms & obs_perm_names[i].bit))
+				continue;
+			if (!first)
+				seq_buf_puts(&sb, "|");
+			seq_buf_puts(&sb, obs_perm_names[i].name);
+			first = false;
+		}
+		/* 只剩保留位：UAPI 不允许授予，按"无已知权限"呈现。 */
+		if (first)
+			seq_buf_puts(&sb, "NONE");
+	}
+
+	seq_buf_str(&sb);
+}
+
 static const struct airy_obs_attr sec_attrs[] = {
 	AIRY_OBS_ATTR(stats),
 	AIRY_OBS_ATTR(lsm),

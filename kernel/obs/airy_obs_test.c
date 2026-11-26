@@ -107,6 +107,47 @@ static void obs_superv_table(struct kunit *test)
 	KUNIT_EXPECT_NOT_NULL(test, strstr(out, "macro_adjudications:"));
 }
 
+static void obs_superv_macro(struct kunit *test)
+{
+	const struct airy_obs_attr *attrs;
+	const char *out;
+	unsigned int nr;
+
+	attrs = airy_obs_macro_attrs(&nr);
+	obs_table(test, attrs, nr);
+
+	/* 告警计数是纯数字，出现其他字符说明格式化串写错了。 */
+	out = obs_show(attrs, nr, "budget_alerts");
+	KUNIT_ASSERT_NOT_NULL(test, out);
+	KUNIT_EXPECT_EQ(test, strlen(out), strspn(out, "0123456789\n"));
+}
+
+static void obs_cap_perms(struct kunit *test)
+{
+	char line[64];
+
+	airy_obs_cap_perms(line, sizeof(line), AIRY_CAP_PERM_NONE);
+	KUNIT_EXPECT_STREQ(test, "NONE", line);
+
+	airy_obs_cap_perms(line, sizeof(line),
+			   AIRY_CAP_PERM_SEND | AIRY_CAP_PERM_RECV);
+	KUNIT_EXPECT_STREQ(test, "SEND|RECV", line);
+
+	airy_obs_cap_perms(line, sizeof(line), AIRY_CAP_PERM_ALL);
+	KUNIT_EXPECT_NOT_NULL(test, strstr(line, "DERIVE"));
+	KUNIT_EXPECT_NOT_NULL(test, strstr(line, "SUPERVISE"));
+}
+
+static void obs_cap_perms_short(struct kunit *test)
+{
+	char line[8];
+
+	airy_obs_cap_perms(line, sizeof(line), AIRY_CAP_PERM_ALL);
+
+	/* 截断后仍是终止字符串，不会读越过缓冲区。 */
+	KUNIT_EXPECT_LT(test, strlen(line), sizeof(line));
+}
+
 static void obs_daemons_table(struct kunit *test)
 {
 	const struct airy_obs_attr *attrs;
@@ -345,11 +386,14 @@ static void obs_uevent_layout(struct kunit *test)
 static struct kunit_case airy_obs_cases[] = {
 	KUNIT_CASE(obs_sec_table),
 	KUNIT_CASE(obs_superv_table),
+	KUNIT_CASE(obs_superv_macro),
 	KUNIT_CASE(obs_daemons_table),
 	KUNIT_CASE(obs_uevent_table),
 	KUNIT_CASE(obs_uevent_layout),
 	KUNIT_CASE(obs_cap_fmt),
 	KUNIT_CASE(obs_cap_fmt_short),
+	KUNIT_CASE(obs_cap_perms),
+	KUNIT_CASE(obs_cap_perms_short),
 	KUNIT_CASE(obs_dir_guard),
 	KUNIT_CASE(obs_fev_guard),
 	{}

@@ -16,10 +16,12 @@
  * 四类计数互不重叠，total 是其和，比例一律 ppm。
  */
 
+#include <linux/atomic.h>
 #include <linux/errno.h>
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
+#include <linux/kobject.h>
 #include <linux/ktime.h>
 #include <linux/lockdep.h>
 #include <linux/math64.h>
@@ -29,6 +31,7 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
+#include <linux/sysfs.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
 #include <linux/xarray.h>
@@ -45,6 +48,34 @@
 
 static DEFINE_XARRAY(tok_map);
 static DEFINE_MUTEX(tok_lock);
+static atomic64_t tok_alerts = ATOMIC64_INIT(0);
+
+/**
+ * tok_note - Record a new alert level, counting escalations only.
+ * @a: Agent record; caller holds tok_lock.
+ * @alert: Level recomputed from the current usage and budget.
+ *
+ * Escalation is what a supervisor reacts to, so the counter rises only
+ * when the level moves up.  Recovery and repeats leave it alone; the
+ * per-Agent text view still reports the current level.
+ */
+static void tok_note(struct tok_agent *a, u32 alert)
+{
+	if (alert > a->alert)
+		atomic64_inc(&tok_alerts);
+
+	a->alert = alert;
+}
+
+/**
+ * airy_tok_alerts - Report the number of escalations since boot.
+ *
+ * Return: Escalation count across all Agents.
+ */
+u64 airy_tok_alerts(void)
+{
+	return (u64)atomic64_read(&tok_alerts);
+}
 
 /**
  * tok_roll - Advance the observation and budget windows to @now.
@@ -125,7 +156,7 @@ void airy_tok_add(struct tok_agent *a, const struct airy_token_delta *d,
 
 	a->win_tokens += add;
 	a->bused += add;
-	a->alert = airy_tok_alert(a->bused, a->budget);
+	tok_note(a, airy_tok_alert(a->bused, a->budget));
 	a->updated = now;
 }
 
@@ -235,6 +266,97 @@ static void tok_proc_add(struct tok_agent *a)
 }
 
 /**
+ * struct tok_view - One file under /sys/airy/superv/budgets.
+ * @attr: Attribute whose name is the Agent id.
+ * @rec: Agent record the file reports on.
+ *
+ * An Agent id is reused across boots but never recycled within one, so
+ * the file is created once and lives until reboot; no removal path is
+ * needed and the name allocation has the same lifetime.
+ */
+struct tok_view {
+	struct kobj_attribute attr;
+	struct tok_agent *rec;
+};
+
+static ssize_t tok_budget_show(struct kobject *kobj,
+			       struct kobj_attribute *attr, char *buf)
+{
+	struct tok_view *v = container_of(attr, struct tok_view, attr);
+	struct tok_agent *a = v->rec;
+	u64 now = ktime_get_mono_fast_ns();
+	u64 used;
+	u64 left;
+	u32 ratio;
+	u32 alert;
+
+	mutex_lock(&tok_lock);
+	tok_roll(a, now);
+	used = a->bused;
+	left = used >= a->budget ? 0 : a->budget - used;
+	ratio = airy_tok_ratio(used, a->budget);
+	/* 视图按当前用量重算档位，窗口刚回绕时不显示残留档位。 */
+	alert = airy_tok_alert(used, a->budget);
+	mutex_unlock(&tok_lock);
+
+	return sysfs_emit(buf,
+			  "agent_id: %u\n"
+			  "token_budget: %llu\n"
+			  "token_used: %llu\n"
+			  "token_remaining: %llu\n"
+			  "budget_ratio: %u.%02u\n"
+			  "alert_threshold: %u.%u\n"
+			  "action_threshold: %u.%u\n"
+			  "state: %s\n",
+			  a->agent_id, a->budget, used, left,
+			  ratio / 10000, (ratio % 10000) / 100,
+			  AIRY_TOKEN_SOFT_PPM / 10000,
+			  (AIRY_TOKEN_SOFT_PPM % 10000) / 100,
+			  AIRY_TOKEN_HARD_PPM / 10000,
+			  (AIRY_TOKEN_HARD_PPM % 10000) / 100,
+			  tok_alert_name(alert));
+}
+
+/**
+ * tok_view_add - Publish the budget file of one Agent.
+ * @a: Agent record; caller holds tok_lock.
+ *
+ * A missing budgets directory is not an error: metering and the procfs
+ * view still work, only the sysfs mirror is unavailable.
+ */
+static void tok_view_add(struct tok_agent *a)
+{
+	struct kobject *parent = airy_obs_budgets();
+	struct tok_view *v;
+	char *name;
+
+	if (!parent || a->view)
+		return;
+
+	v = kzalloc(sizeof(*v), GFP_KERNEL);
+	name = kasprintf(GFP_KERNEL, "%u", a->agent_id);
+	if (!v || !name) {
+		kfree(v);
+		kfree(name);
+		return;
+	}
+
+	v->rec = a;
+	sysfs_attr_init(&v->attr.attr);
+	v->attr.attr.name = name;
+	v->attr.attr.mode = 0444;
+	v->attr.show = tok_budget_show;
+
+	if (sysfs_create_file(parent, &v->attr.attr)) {
+		kfree(name);
+		kfree(v);
+		return;
+	}
+
+	a->view = v;
+}
+
+/**
  * tok_node - Look up an Agent record, creating it when asked.
  * @id: Agent number, already bounded by the caller.
  * @create: Whether a missing record may be allocated.
@@ -269,6 +391,7 @@ static struct tok_agent *tok_node(u32 id, bool create)
 	}
 
 	tok_proc_add(a);
+	tok_view_add(a);
 
 	return a;
 }
@@ -395,7 +518,7 @@ static long tok_budget(const struct airy_token_budget __user *up)
 		rc = -ENOMEM;
 	} else {
 		a->budget = b.tokens;
-		a->alert = airy_tok_alert(a->bused, a->budget);
+		tok_note(a, airy_tok_alert(a->bused, a->budget));
 	}
 	mutex_unlock(&tok_lock);
 

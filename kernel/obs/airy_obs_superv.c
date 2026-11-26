@@ -20,6 +20,7 @@
 #include "../superv/airy_superv.h"
 #include "../../security/airy/airy_cap.h"
 #include "airy_obs.h"
+#include "airy_token.h"
 
 static const char *const obs_op_name[] = {
 	[AIRY_SV_OBS_NONE]	= "none",
@@ -149,6 +150,23 @@ static ssize_t watchdog_show(struct kobject *kobj, struct kobj_attribute *attr,
 			  latched ? 1 : 0);
 }
 
+/*
+ * 预算快照目录由 superv 发布、由 token 模块挂文件：谁持有记录谁建文件，
+ * 读值因此与 /proc/airy/agents/<id>/token_stats 同源，不会出现两份账。
+ */
+static struct kobject *obs_budgets;
+
+struct kobject *airy_obs_budgets(void)
+{
+	return obs_budgets;
+}
+
+static ssize_t budget_alerts_show(struct kobject *kobj,
+				  struct kobj_attribute *attr, char *buf)
+{
+	return sysfs_emit(buf, "%llu\n", airy_tok_alerts());
+}
+
 static const struct airy_obs_attr stats_attrs[] = {
 	AIRY_OBS_ATTR(stats),
 };
@@ -161,6 +179,7 @@ static const struct airy_obs_attr micro_attrs[] = {
 static const struct airy_obs_attr macro_attrs[] = {
 	AIRY_OBS_ATTR(adjudications),
 	AIRY_OBS_ATTR(last_adjudication),
+	AIRY_OBS_ATTR(budget_alerts),
 };
 
 static const struct airy_obs_attr device_attrs[] = {
@@ -192,9 +211,17 @@ int airy_obs_superv_init(struct kobject *root)
 	if (rc)
 		goto out;
 
+	obs_budgets = airy_obs_dir(dir, "budgets");
+	if (!obs_budgets) {
+		rc = -ENOMEM;
+		goto out;
+	}
+
 	rc = airy_obs_register(dir, NULL, device_attrs,
 			       ARRAY_SIZE(device_attrs));
 out:
+	if (rc)
+		obs_budgets = NULL;
 	kobject_put(dir);
 	return rc;
 }
@@ -204,5 +231,11 @@ const struct airy_obs_attr *airy_obs_superv_attrs(unsigned int *nr)
 {
 	*nr = ARRAY_SIZE(stats_attrs);
 	return stats_attrs;
+}
+
+const struct airy_obs_attr *airy_obs_macro_attrs(unsigned int *nr)
+{
+	*nr = ARRAY_SIZE(macro_attrs);
+	return macro_attrs;
 }
 #endif

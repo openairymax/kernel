@@ -101,10 +101,41 @@ static void tok_window_roll(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, AIRY_TOKEN_HARD, airy_tok_alert(a.bused, a.budget));
 }
 
+static void tok_alert_count(struct kunit *test)
+{
+	struct tok_agent a = { };
+	struct airy_token_delta d = { .agent_id = 3, .input = 50 };
+	u64 before = airy_tok_alerts();
+
+	a.budget = 100;
+	a.win_start = TOK_T0;
+	a.bstart = TOK_T0;
+
+	/* 50%：仍是 NORMAL，不计。 */
+	airy_tok_add(&a, &d, TOK_T0);
+	KUNIT_EXPECT_EQ(test, before, airy_tok_alerts());
+
+	/* 80%：首次进入 SOFT，计一次。 */
+	d.input = 30;
+	airy_tok_add(&a, &d, TOK_T0 + 1);
+	KUNIT_EXPECT_EQ(test, before + 1, airy_tok_alerts());
+
+	/* 85%：同档重复上报不重复计数。 */
+	d.input = 5;
+	airy_tok_add(&a, &d, TOK_T0 + 2);
+	KUNIT_EXPECT_EQ(test, before + 1, airy_tok_alerts());
+
+	/* 105%：升到 HARD，再计一次。 */
+	d.input = 20;
+	airy_tok_add(&a, &d, TOK_T0 + 3);
+	KUNIT_EXPECT_EQ(test, before + 2, airy_tok_alerts());
+}
+
 static struct kunit_case airy_token_cases[] = {
 	KUNIT_CASE(tok_ratio_zero),
 	KUNIT_CASE(tok_ratio_half),
 	KUNIT_CASE(tok_alert_edges),
+	KUNIT_CASE(tok_alert_count),
 	KUNIT_CASE(tok_apply_delta),
 	KUNIT_CASE(tok_window_roll),
 	{}

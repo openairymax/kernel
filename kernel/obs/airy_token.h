@@ -17,10 +17,12 @@
 #include <linux/airymax/token.h>
 
 struct proc_dir_entry;
+struct tok_view;
 
 /**
  * struct tok_agent - 一个 Agent 的计量记录
  * @de: /proc/airy/agents/<id> 目录项；PROC_FS 关闭时为空
+ * @view: /sys/airy/superv/budgets/<id> 的文件描述；无 sysfs 时为空
  * @agent_id: Agent 标识，与 xarray 索引一致
  * @input: 累计输入
  * @output: 累计输出
@@ -36,6 +38,7 @@ struct proc_dir_entry;
  */
 struct tok_agent {
 	struct proc_dir_entry *de;
+	struct tok_view *view;
 	u32 agent_id;
 	u64 input;
 	u64 output;
@@ -59,6 +62,9 @@ u32 airy_tok_alert(u64 used, u64 budget);
 /* 推进窗口并累加一次增量；调用方负责串行化。 */
 void airy_tok_add(struct tok_agent *a, const struct airy_token_delta *d,
 		  u64 now);
+
+/* 开机以来档位上升的次数，供 superv 的 budget_alerts 读取。 */
+u64 airy_tok_alerts(void);
 
 int __init airy_token_init(void);
 
