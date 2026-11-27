@@ -300,6 +300,18 @@ static int __init airy_init(void)
 		return rc;
 	}
 
+	/*
+	 * Publish the reference policy compiled from .adl.  These tables are
+	 * the creation/open observability baseline plus the reserved uring
+	 * opcode refusal; capability checks and the W^X table still decide
+	 * every operation on their own, so a failure here is reported once
+	 * and boot continues.
+	 */
+	rc = airy_policy_tables_register();
+	if (rc)
+		pr_err("airy: continuing without the reference policy tables: %d\n",
+		       rc);
+
 	/* Register die notifier at INT_MAX priority (airy_die_notify.c) */
 	airy_die_notify_init();
 

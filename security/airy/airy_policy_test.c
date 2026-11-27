@@ -469,6 +469,42 @@ static void policy_wx(struct kunit *test)
 					  miss, NULL));
 }
 
+static void policy_tables(struct kunit *test)
+{
+	u64 reserved[AIRY_POLICY_MAX_FIELDS] = { 31 };
+	u64 privileged[AIRY_POLICY_MAX_FIELDS] = { 0, 0x40000000 };
+	u64 idle[AIRY_POLICY_MAX_FIELDS] = { 0 };
+	u64 userns[AIRY_POLICY_MAX_FIELDS] = { 0x10000000, 1 };
+	u64 worker[AIRY_POLICY_MAX_FIELDS] = { 0, 0 };
+	u64 readwrite[AIRY_POLICY_MAX_FIELDS] = { 0, 3 };
+	u64 plain[AIRY_POLICY_MAX_FIELDS] = { 0, 1 };
+
+	airy_policy_reset();
+	KUNIT_ASSERT_EQ(test, 0, airy_policy_tables_register());
+
+	KUNIT_EXPECT_EQ(test, -EACCES,
+			airy_policy_check(AIRY_POLICY_HOOK_URING_CMD,
+					  reserved, NULL));
+	KUNIT_EXPECT_EQ(test, 0,
+			airy_policy_check(AIRY_POLICY_HOOK_URING_CMD,
+					  privileged, NULL));
+	KUNIT_EXPECT_EQ(test, 0,
+			airy_policy_check(AIRY_POLICY_HOOK_URING_CMD,
+					  idle, NULL));
+	KUNIT_EXPECT_EQ(test, 0,
+			airy_policy_check(AIRY_POLICY_HOOK_TASK_ALLOC,
+					  userns, NULL));
+	KUNIT_EXPECT_EQ(test, 0,
+			airy_policy_check(AIRY_POLICY_HOOK_TASK_ALLOC,
+					  worker, NULL));
+	KUNIT_EXPECT_EQ(test, 0,
+			airy_policy_check(AIRY_POLICY_HOOK_FILE_OPEN,
+					  readwrite, NULL));
+	KUNIT_EXPECT_EQ(test, 0,
+			airy_policy_check(AIRY_POLICY_HOOK_FILE_OPEN,
+					  plain, NULL));
+}
+
 static struct kunit_case airy_policy_cases[] = {
 	KUNIT_CASE(policy_cmp),
 	KUNIT_CASE(policy_match),
@@ -487,6 +523,7 @@ static struct kunit_case airy_policy_cases[] = {
 	KUNIT_CASE(policy_full),
 	KUNIT_CASE(policy_reset),
 	KUNIT_CASE(policy_wx),
+	KUNIT_CASE(policy_tables),
 	{}
 };
 
